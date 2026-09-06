@@ -166,6 +166,8 @@ function MwlsManagement() {
     } catch (err) {
       alert("Sync failed");
     }
+  };
+
   const handleSaveOhifUrl = () => {
     if (ohifUrl.trim()) {
       localStorage.setItem("OHIF_VIEWER_URL", ohifUrl.trim());
