@@ -11,7 +11,13 @@ export const getViewerUrl = (studyUID, _mode = "@ohif/mode-longitudinal") => {
     return `/lite?study=${encodeURIComponent(studyUID)}`;
   }
 
-  // Same-origin proxied OHIF viewer URL for 100% direct screen canvas capture and split view loading
+  const customOhifUrl = localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL;
+  if (customOhifUrl && customOhifUrl.trim()) {
+    const base = customOhifUrl.trim();
+    const separator = base.includes("?") ? "&" : "?";
+    return `${base}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID)}`;
+  }
+
   return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID)}`;
 };
 

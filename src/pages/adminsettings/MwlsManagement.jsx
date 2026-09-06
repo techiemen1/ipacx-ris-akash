@@ -5,12 +5,13 @@ import { Server, Radio, HardDrive, Cpu, CheckCircle, RefreshCw, Plus, Edit2, Tra
 import "./MwlsManagement.css";
 
 function MwlsManagement() {
-  const [activeTab, setActiveTab] = useState("status"); // status | modalities | pacs
+  const [activeTab, setActiveTab] = useState("status"); // status | modalities | pacs | ohif
   const [mappings, setMappings] = useState([]);
   const [pacsList, setPacsList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [serviceStatus, setServiceStatus] = useState({ success: null, error: null, checking: false });
   const [modalityOptions, setModalityOptions] = useState([{ code: "ALL", name: "All Modalities" }]);
+  const [ohifUrl, setOhifUrl] = useState(localStorage.getItem("OHIF_VIEWER_URL") || "");
 
   // Modality Form
   const [form, setForm] = useState({
@@ -165,6 +166,14 @@ function MwlsManagement() {
     } catch (err) {
       alert("Sync failed");
     }
+  const handleSaveOhifUrl = () => {
+    if (ohifUrl.trim()) {
+      localStorage.setItem("OHIF_VIEWER_URL", ohifUrl.trim());
+      alert("External OHIF Viewer URL saved!");
+    } else {
+      localStorage.removeItem("OHIF_VIEWER_URL");
+      alert("Reset to default OHIF path.");
+    }
   };
 
   return (
@@ -250,6 +259,12 @@ function MwlsManagement() {
             onClick={() => setActiveTab('pacs')}
           >
             <HardDrive size={15} /> 3. Archival PACS Nodes
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'ohif' ? 'active' : ''}`}
+            onClick={() => setActiveTab('ohif')}
+          >
+            <Activity size={15} /> 4. External OHIF Viewer URL
           </button>
         </div>
 
@@ -442,6 +457,44 @@ function MwlsManagement() {
                     {pacsList.length === 0 && <tr><td colSpan="6" style={{ textAlign: 'center', color: '#94a3b8', padding: 24 }}>No PACS nodes configured</td></tr>}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: EXTERNAL OHIF VIEWER */}
+          {activeTab === 'ohif' && (
+            <div className="ohif-section">
+              <div className="mwl-card-form" style={{ maxWidth: 640 }}>
+                <h3><Activity size={18} className="text-indigo-600 inline mr-2" /> External OHIF Viewer Configuration</h3>
+                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+                  Configure the base URL of your remote OHIF Viewer server (e.g. <code>http://192.168.1.100:3000/viewer</code> or <code>http://pacs.hospital.org/ohif/</code>).
+                </p>
+
+                <div className="mwl-field" style={{ marginBottom: 16 }}>
+                  <label>External OHIF Viewer URL (IP:Port / Path)</label>
+                  <input 
+                    type="text" 
+                    placeholder="http://192.168.1.50:3000/viewer"
+                    value={ohifUrl}
+                    onChange={(e) => setOhifUrl(e.target.value)}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontFamily: 'monospace' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="mwl-save-btn" onClick={handleSaveOhifUrl}>
+                    Save OHIF Viewer Path
+                  </button>
+                  {ohifUrl && (
+                    <button 
+                      className="mwl-save-btn" 
+                      style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
+                      onClick={() => window.open(ohifUrl, '_blank')}
+                    >
+                      Test Open URL
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

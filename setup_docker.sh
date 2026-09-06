@@ -19,12 +19,12 @@ if [ ! -f .env ]; then
     echo -e "${YELLOW}📄 Creating default .env file...${NC}"
     echo "POSTGRES_PASSWORD=lekhana" > .env
     echo "JWT_SECRET=bhEs3RR+q74v+rK3w/3dWWTpiBpEXZ++KT7wrxMWjyUSsETbpJvORaEoAGpA+ejq" >> .env
-    echo "REACT_APP_API_URL=http://localhost:3000" >> .env
+    echo "REACT_APP_API_URL=http://localhost:3015" >> .env
 fi
 
 # 1. Resolve Port Conflicts
-echo -e "${YELLOW}🔍 Checking for port conflicts (3000, 8042, 11118)...${NC}"
-for port in 3000 8042 11118; do
+echo -e "${YELLOW}🔍 Checking for port conflicts (3010, 3015, 11118)...${NC}"
+for port in 3010 3015 11118; do
     CONFLICT_PID=$(sudo lsof -t -i:$port || true)
     if [ ! -z "$CONFLICT_PID" ]; then
         echo -e "${RED}⚠️ Port $port is in use by PID $CONFLICT_PID. Attempting to stop...${NC}"
@@ -101,11 +101,10 @@ sudo docker cp db_fix.sql ipacx-db:/tmp/db_fix.sql
 sudo docker exec ipacx-db psql -U postgres -d ris -f /tmp/db_fix.sql > /dev/null 2>&1 || echo -e "${RED}⚠️ DB Fix warning (check logs)${NC}"
 
 echo -e "\n----------------------------------------------------------------"
-echo -e "${GREEN}iPacx RIS Deployment Successful (v1.1.2 Reporting Restoration)!${NC}"
+echo -e "${GREEN}iPacx RIS Deployment Successful!${NC}"
 echo "----------------------------------------------------------------"
-echo -e "${BLUE}Login URL:${NC} http://localhost:3000"
-echo -e "${BLUE}OHIF Viewer:${NC} http://localhost:3000/viewer/viewer/"
-echo -e "${BLUE}iPacx Lite (Mobile):${NC} http://localhost:3000/lite?study=[UID]"
+echo -e "${BLUE}Frontend Portal URL:${NC} http://localhost:3010"
+echo -e "${BLUE}Backend API URL:${NC} http://localhost:3015"
 echo -e "${BLUE}MWL Service:${NC} dicom://localhost:11118"
 echo "----------------------------------------------------------------"
 echo -e "${YELLOW}Credentials: admin / admin123${NC}"

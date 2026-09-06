@@ -55,7 +55,7 @@ services:
       - MWL_SCP_PORT=11118
       - REDIS_URL=redis://redis:6379
     ports:
-      - "5000:5000"
+      - "3015:5000"
     depends_on:
       - db
       - redis
@@ -70,7 +70,7 @@ services:
     image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-frontend:${IMAGE_TAG:-latest}
     container_name: ipacx-frontend
     ports:
-      - "80:80"
+      - "3010:80"
     depends_on:
       - backend
     networks:
