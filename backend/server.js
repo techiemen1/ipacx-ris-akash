@@ -31,13 +31,17 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "http://localhost:3010",
+  "http://127.0.0.1:3010",
   "http://localhost:8080",
   "http://127.0.0.1:8080",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
+  "http://localhost:3015",
+  "http://127.0.0.1:3015",
 ].filter(Boolean);
 
-const lanOriginPattern = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|5000)$/;
+const lanOriginPattern = /^http:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/;
 
 const corsOptions = {
   origin(origin, callback) {
