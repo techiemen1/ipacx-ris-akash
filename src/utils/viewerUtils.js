@@ -11,14 +11,18 @@ export const getViewerUrl = (studyUID, _mode = "@ohif/mode-longitudinal") => {
     return `/lite?study=${encodeURIComponent(studyUID)}`;
   }
 
-  const customOhifUrl = localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL;
-  if (customOhifUrl && customOhifUrl.trim()) {
-    const base = customOhifUrl.trim();
-    const separator = base.includes("?") ? "&" : "?";
-    return `${base}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID)}`;
+  let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
+
+  if (customOhifUrl) {
+    // If user pasted full URL with StudyInstanceUIDs=..., strip existing query parameter value
+    if (customOhifUrl.includes("StudyInstanceUIDs=")) {
+      customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
+    }
+    const separator = customOhifUrl.includes("?") ? "&" : "?";
+    return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
   }
 
-  return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID)}`;
+  return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
 
 export const openStudyViewer = (study) => {

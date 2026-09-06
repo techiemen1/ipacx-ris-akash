@@ -466,21 +466,58 @@ function MwlsManagement() {
           {/* TAB 4: EXTERNAL OHIF VIEWER */}
           {activeTab === 'ohif' && (
             <div className="ohif-section">
-              <div className="mwl-card-form" style={{ maxWidth: 640 }}>
+              <div className="mwl-card-form" style={{ maxWidth: 680 }}>
                 <h3><Activity size={18} className="text-indigo-600 inline mr-2" /> External OHIF Viewer Configuration</h3>
-                <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
-                  Configure the base URL of your remote OHIF Viewer server (e.g. <code>http://192.168.1.100:3000/viewer</code> or <code>http://pacs.hospital.org/ohif/</code>).
+                <p style={{ fontSize: 13, color: '#475569', marginBottom: 14, lineHeight: 1.5 }}>
+                  Set your remote or external OHIF Viewer address (IP:Port / Path). When clicking any study in PACS or Reporting, iPACX automatically opens this viewer with <code>?StudyInstanceUIDs=...</code> appended.
                 </p>
 
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 8 }}>💡 Supported Format Examples:</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: '#64748b', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <li><strong>Orthanc Built-in OHIF:</strong> <code>http://192.168.1.7:8042/ohif/viewer</code> or <code>http://localhost:8042/ohif/viewer</code></li>
+                    <li><strong>Standalone OHIF Node:</strong> <code>http://192.168.1.50:3000/viewer</code> or <code>http://pacs.hospital.org/viewer</code></li>
+                    <li><em>Note: If you paste a full link (e.g. <code>.../viewer?StudyInstanceUIDs=1.2.3...</code>), iPACX automatically formats study UIDs dynamically.</em></li>
+                  </ul>
+                </div>
+
                 <div className="mwl-field" style={{ marginBottom: 16 }}>
-                  <label>External OHIF Viewer URL (IP:Port / Path)</label>
+                  <label style={{ fontWeight: 700, color: '#0f172a' }}>External OHIF Viewer Base URL (IP:Port / Path)</label>
                   <input 
                     type="text" 
-                    placeholder="http://192.168.1.50:3000/viewer"
+                    placeholder="http://localhost:8042/ohif/viewer"
                     value={ohifUrl}
                     onChange={(e) => setOhifUrl(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontFamily: 'monospace' }}
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: 13 }}
                   />
+                </div>
+
+                {/* QUICK PRESETS */}
+                <div style={{ marginBottom: 16 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginRight: 8 }}>Quick Presets:</span>
+                  <div style={{ display: 'inline-flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button 
+                      type="button"
+                      style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, background: '#e0e7ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 6, cursor: 'pointer' }}
+                      onClick={() => setOhifUrl("http://localhost:8042/ohif/viewer")}
+                    >
+                      Local Orthanc (8042)
+                    </button>
+                    <button 
+                      type="button"
+                      style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, background: '#e0e7ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 6, cursor: 'pointer' }}
+                      onClick={() => setOhifUrl(`http://${window.location.hostname}:8042/ohif/viewer`)}
+                    >
+                      Host Orthanc ({window.location.hostname}:8042)
+                    </button>
+                    <button 
+                      type="button"
+                      style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                      onClick={() => setOhifUrl("/ohif/viewer")}
+                    >
+                      Default Internal (/ohif/viewer)
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -489,11 +526,15 @@ function MwlsManagement() {
                   </button>
                   {ohifUrl && (
                     <button 
+                      type="button"
                       className="mwl-save-btn" 
                       style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}
-                      onClick={() => window.open(ohifUrl, '_blank')}
+                      onClick={() => {
+                        handleSaveOhifUrl();
+                        window.open(ohifUrl, '_blank');
+                      }}
                     >
-                      Test Open URL
+                      Save & Test Open URL
                     </button>
                   )}
                 </div>

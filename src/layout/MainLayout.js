@@ -200,30 +200,6 @@ export default function MainLayout({ children }) {
           </div>
         )}
 
-        {/* CLINIC SWITCHER DROPDOWN */}
-        {!collapsed && clinics && clinics.length > 0 && (
-          <div className="ris-clinic-card">
-            <div className="ris-clinic-header">
-              <Building2 size={13} />
-              <span>Active Node / Clinic</span>
-            </div>
-            <select
-              value={activeClinic?.code || activeClinic?.id || ""}
-              onChange={(e) => {
-                const selected = clinics.find((c) => String(c.code) === e.target.value || String(c.id) === e.target.value);
-                if (selected && switchClinic) switchClinic(selected);
-              }}
-              className="ris-clinic-select"
-            >
-              {clinics.map((c) => (
-                <option key={c.code || c.id} value={c.code || c.id}>
-                  🏥 {c.name || c.code}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         {/* MAIN NAVIGATION MENU */}
         <nav className="ris-menu">
           {menuItems.map((item) => {
@@ -268,8 +244,6 @@ export default function MainLayout({ children }) {
               {showAdminMenu && (
                 <div className={`ris-admin-submenu ${collapsed ? "collapsed" : ""}`}>
                   {[
-                    { name: "Hospital Networks", path: "/admin/hospitals", icon: <Building2 size={14} /> },
-                    { name: "Clinic Management", path: "/admin/clinics", icon: <Building size={14} /> },
                     { name: "User Management", path: "/admin/user-management", icon: <UserCheck size={14} /> },
                     { name: "Template Studio", path: "/admin/templates", icon: <FileCode size={14} /> },
                     { name: "MWLS & PACS Gateway", path: "/admin/mwls-management", icon: <Radio size={14} /> },
@@ -295,7 +269,7 @@ export default function MainLayout({ children }) {
           )}
         </nav>
 
-        {/* USER PROFILE FOOTER */}
+        {/* USER PROFILE & DEDICATED LOGOUT FOOTER */}
         <div className="ris-user-card">
           <div className="ris-user-profile" onClick={() => !collapsed && setShowUserInfo(!showUserInfo)}>
             <div className="user-avatar">{getInitials(username)}</div>
@@ -313,11 +287,18 @@ export default function MainLayout({ children }) {
                 <span className="dropdown-label">System Role:</span>
                 <span className="dropdown-val">{role}</span>
               </div>
-              <button onClick={handleLogout} className="ris-logout-btn">
-                <LogOut size={14} /> Sign Out
-              </button>
             </div>
           )}
+
+          {/* DEDICATED ALWAYS-VISIBLE 1-CLICK LOGOUT BUTTON */}
+          <button 
+            onClick={handleLogout} 
+            className={`ris-logout-btn-direct ${collapsed ? "collapsed" : ""}`}
+            title="Sign Out of iPACX RIS"
+          >
+            <LogOut size={16} />
+            {!collapsed && <span>Log Out</span>}
+          </button>
         </div>
       </aside>
 
