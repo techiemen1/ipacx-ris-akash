@@ -37,7 +37,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
       - POSTGRES_DB=${POSTGRES_DB:-ris}
       - JWT_SECRET=${JWT_SECRET:-bhEs3RR+q74v+rK3w/3dWWTpiBpEXZ++KT7wrxMWjyUSsETbpJvORaEoAGpA+ejq}
-      - ORTHANC_URL=http://orthanc:8042/
+      - ORTHANC_URL=${EXTERNAL_ORTHANC_URL:-http://localhost:8042/}
       - ORTHANC_USER=${ORTHANC_USER:-orthanc}
       - ORTHANC_PASS=${ORTHANC_PASS:-orthanc}
       - MWL_SERVICE_HOST=mwl-service
@@ -66,21 +66,6 @@ services:
       - ipacx-network
     restart: always
 
-  orthanc:
-    image: jodogne/orthanc-plugins:latest
-    container_name: ipacx-orthanc
-    ports:
-      - "8042:8042"
-      - "4242:4242"
-    environment:
-      - ORTHANC_WEB_VIEWER_ENABLED=true
-    volumes:
-      - ./orthanc.json:/etc/orthanc/orthanc.json:ro
-      - orthanc_db:/var/lib/orthanc/db
-    networks:
-      - ipacx-network
-    restart: always
-
   mwl-service:
     image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-mwl-service:${IMAGE_TAG:-latest}
     container_name: ipacx-mwl-service
@@ -102,17 +87,6 @@ services:
       - ipacx-network
     restart: always
 
-  ohif:
-    image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-ohif:${IMAGE_TAG:-latest}
-    container_name: ipacx-ohif
-    ports:
-      - "3001:8080"
-    depends_on:
-      - orthanc
-    networks:
-      - ipacx-network
-    restart: always
-
 networks:
   ipacx-network:
     driver: bridge
@@ -120,6 +94,5 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  orthanc_db:
   backend_uploads:
   backend_pdfs:
