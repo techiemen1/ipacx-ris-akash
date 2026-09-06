@@ -2,9 +2,7 @@
 const { Pool } = require("pg");
 require("dotenv").config(); // load .env variables
 
-const host = process.env.POSTGRES_HOST === "db" && !process.env.DOCKER_ENV
-  ? "localhost"
-  : process.env.POSTGRES_HOST || "localhost";
+const host = process.env.POSTGRES_HOST || "localhost";
 
 const pool = new Pool({
   host,

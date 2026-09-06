@@ -82,24 +82,28 @@ app.use(express.urlencoded({ limit: "1000mb", extended: true }));
 app.use("/uploads/report_images", express.static(path.join(__dirname, "uploads/report_images")));
 app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/signatures")));
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication
-const { createProxyMiddleware } = require("http-proxy-middleware");
-const orthancUser = process.env.ORTHANC_USER || "orthanc";
-const orthancPass = process.env.ORTHANC_PASS || "orthanc";
-const authHeader = "Basic " + Buffer.from(`${orthancUser}:${orthancPass}`).toString("base64");
+try {
+  const { createProxyMiddleware } = require("http-proxy-middleware");
+  const orthancUser = process.env.ORTHANC_USER || "orthanc";
+  const orthancPass = process.env.ORTHANC_PASS || "orthanc";
+  const authHeader = "Basic " + Buffer.from(`${orthancUser}:${orthancPass}`).toString("base64");
 
-app.use(
-  ["/ohif-proxy", "/api/pacs/ohif-viewer"],
-  createProxyMiddleware({
-    target: process.env.ORTHANC_URL || "http://localhost:8042",
-    changeOrigin: true,
-    auth: `${orthancUser}:${orthancPass}`,
-    pathRewrite: { "^/ohif-proxy": "", "^/api/pacs/ohif-viewer": "" },
-    ws: true,
-    onProxyReq: (proxyReq) => {
-      proxyReq.setHeader("Authorization", authHeader);
-    }
-  })
-);
+  app.use(
+    ["/ohif-proxy", "/api/pacs/ohif-viewer"],
+    createProxyMiddleware({
+      target: process.env.ORTHANC_URL || "http://localhost:8042",
+      changeOrigin: true,
+      auth: `${orthancUser}:${orthancPass}`,
+      pathRewrite: { "^/ohif-proxy": "", "^/api/pacs/ohif-viewer": "" },
+      ws: true,
+      onProxyReq: (proxyReq) => {
+        proxyReq.setHeader("Authorization", authHeader);
+      }
+    })
+  );
+} catch (err) {
+  logger.warn("http-proxy-middleware module omitted; skipping embedded OHIF proxy middleware.");
+}
 
 // Routes Mounts
 const authRoutes = require("./routes/auth");
