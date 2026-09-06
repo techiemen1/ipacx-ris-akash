@@ -1,0 +1,39 @@
+@media print {
+  /* Hide non-print elements */
+  body * {
+    visibility: visible; /* Show everything by default */
+  }
+  #print-area {
+    visibility: visible;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+  }
+
+  /* Hide unwanted elements */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Page settings */
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  /* Images scale & avoid cutting */
+  #print-area img {
+    max-width: 100%;
+    height: auto;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Page breaks between sections */
+  .page-break {
+    page-break-before: always;
+  }
+}

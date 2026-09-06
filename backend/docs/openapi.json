@@ -1,0 +1,56 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "iPACX Radiology Information System (RIS) API",
+    "version": "1.1.0",
+    "description": "Enterprise OpenAPI specification for iPACX RIS backend endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api",
+      "description": "Local API Server"
+    }
+  ],
+  "paths": {
+    "/login": {
+      "post": {
+        "summary": "User Authentication Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Successful Authentication" },
+          "401": { "description": "Invalid Credentials" }
+        }
+      }
+    },
+    "/patients": {
+      "get": {
+        "summary": "Fetch Patient Master Index",
+        "responses": {
+          "200": { "description": "List of Registered Patients" }
+        }
+      }
+    },
+    "/ai/generate-impression": {
+      "post": {
+        "summary": "Generate AI Diagnostic Impression Summary",
+        "responses": {
+          "200": { "description": "Structured AI Clinical Impression" }
+        }
+      }
+    }
+  }
+}

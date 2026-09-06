@@ -1,0 +1,677 @@
+/* MWLS.css — Enterprise DICOM Modality Worklist (MWL) Engine Styling */
+
+.mwl-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #0f172a;
+}
+
+/* HEADER HERO BAR */
+.mwl-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  background: #ffffff;
+  padding: 20px 24px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.mwl-title-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.mwl-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 16px -4px rgba(79, 70, 229, 0.4);
+}
+
+.mwl-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.page-header {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 2px 0;
+  letter-spacing: -0.02em;
+}
+
+.mwl-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+
+.mwl-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* TOGGLE CARD */
+.mwl-toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 6px 14px;
+}
+
+.mwl-toggle-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.mwl-toggle-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.mwl-toggle-value {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.mwl-toggle {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  background: #cbd5e1;
+  transition: background 0.2s;
+}
+
+.mwl-toggle.on {
+  background: #10b981;
+}
+
+.mwl-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: left 0.2s;
+}
+
+.mwl-toggle.on .mwl-toggle-knob {
+  left: 23px;
+}
+
+.mwl-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  transition: all 0.15s ease;
+}
+
+.mwl-new-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.4);
+}
+
+/* KPI STATS STRIP */
+.mwl-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.mwl-stat-card {
+  background: #ffffff;
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.mwl-stat-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mwl-stat-icon.indigo { background: #e0e7ff; color: #4338ca; }
+.mwl-stat-icon.amber { background: #fef3c7; color: #b45309; }
+.mwl-stat-icon.emerald { background: #dcfce7; color: #166534; }
+.mwl-stat-icon.purple { background: #f3e8ff; color: #6b21a8; }
+
+.mwl-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.mwl-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+/* FILTER & SEARCH CARD */
+.mwl-filter-row {
+  background: #ffffff;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mwl-search {
+  position: relative;
+  width: 100%;
+}
+
+.mwl-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+
+.mwl-search input {
+  width: 100%;
+  padding: 10px 14px 10px 38px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+  outline: none;
+  background: #f8fafc;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.mwl-search input:focus {
+  border-color: #4f46e5;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.mwl-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mwl-chips-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  margin-right: 4px;
+}
+
+.mwl-chip {
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mwl-chip.active {
+  background: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+}
+
+.mwl-chip:hover:not(.active) {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
+/* WORKLIST CARDS GRID */
+.mwl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mwl-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
+}
+
+.mwl-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.04);
+}
+
+.mwl-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 280px;
+  flex: 1;
+}
+
+.mwl-modality {
+  min-width: 44px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: #365c7a;
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.mwl-modality.ct { background: #e0f2fe; color: #0369a1; }
+.mwl-modality.mr { background: #f3e8ff; color: #6b21a8; }
+.mwl-modality.us { background: #dcfce7; color: #15803d; }
+.mwl-modality.dx, .mwl-modality.cr { background: #ffedd5; color: #c2410c; }
+.mwl-modality.mg { background: #ffe4e6; color: #be123c; }
+.mwl-modality.nm { background: #f2e9ff; color: #6b3fa0; }
+.mwl-modality.xa { background: #e0e7ff; color: #3730a3; }
+
+.mwl-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mwl-patient-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mwl-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e0e7ff;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mwl-card-name {
+  font-weight: 800;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.mwl-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.mwl-card-id {
+  color: #4338ca;
+  font-family: monospace;
+}
+
+.mwl-card-acc {
+  color: #0f172a;
+  font-family: monospace;
+}
+
+.mwl-card-desc {
+  color: #475569;
+}
+
+.mwl-card-sep {
+  color: #cbd5e1;
+}
+
+.mwl-card-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.mwl-info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mwl-info-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.mwl-info-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.mwl-info-value.aet {
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  font-family: monospace;
+}
+
+.mwl-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.mwl-status-dot.ok {
+  background: #10b981;
+}
+
+.mwl-status-text {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mwl-status-text.warn {
+  color: #b45309;
+}
+
+.mwl-status-text.ok {
+  color: #15803d;
+}
+
+.mwl-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mwl-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.mwl-action-btn.push {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.mwl-action-btn.push:hover {
+  background: #4338ca;
+}
+
+.mwl-action-btn.edit {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.mwl-action-btn.edit:hover {
+  background: #0369a1;
+}
+
+.mwl-action-btn.delete {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.mwl-action-btn.delete:hover {
+  background: #dc2626;
+}
+
+.mwl-loading-box, .mwl-empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: #64748b;
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* MODAL OVERLAYS */
+.mwl-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.mwl-modal {
+  background: #ffffff;
+  border-radius: 20px;
+  max-width: 620px;
+  width: 100%;
+  padding: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.mwl-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mwl-modal-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mwl-modal-close {
+  background: #f1f5f9;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.mwl-editor {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.mwl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mwl-field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.mwl-field input, .mwl-field select {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+  outline: none;
+  background: #f8fafc;
+  box-sizing: border-box;
+}
+
+.mwl-field input:focus, .mwl-field select:focus {
+  border-color: #4f46e5;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.mwl-field.wide {
+  grid-column: span 2;
+}
+
+.mwl-editor-actions {
+  grid-column: span 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 8px;
+}
+
+.mwl-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mwl-btn.primary {
+  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+  color: #ffffff;
+  border: none;
+}
+
+.mwl-btn.ghost {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.mwl-review-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.mwl-review-title {
+  font-size: 11px;
+  font-weight: 800;
+  color: #3730a3;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.mwl-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  font-size: 12px;
+}
+
+.mwl-review-label {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.mwl-review-value {
+  font-weight: 800;
+  color: #0f172a;
+}

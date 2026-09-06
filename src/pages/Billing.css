@@ -1,0 +1,308 @@
+/* =========================================================
+   IPACX BILLING & CASHIER GATEWAY — ULTRA-COMPACT GMAIL STYLE
+   ========================================================= */
+
+.bl-container {
+  min-height: calc(100vh - 60px);
+  background: #f8fafc;
+  padding: 8px 12px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: #0f172a;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* HEADER BAR */
+.bl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: #ffffff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+.bl-title-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bl-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #4338ca;
+  background: #e0e7ff;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bl-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.bl-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bl-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.bl-btn-primary {
+  background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(67, 56, 202, 0.25);
+}
+
+.bl-btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+.bl-btn-outline {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+
+.bl-btn-outline:hover {
+  background: #f1f5f9;
+}
+
+/* KPI CARDS GRID (COMPACT PILLS) */
+.bl-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.bl-kpi-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: transform 0.15s ease;
+}
+
+.bl-kpi-card:hover {
+  transform: translateY(-1px);
+}
+
+.bl-kpi-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.bl-kpi-icon.emerald { background: #d1fae5; color: #059669; }
+.bl-kpi-icon.amber { background: #fef3c7; color: #d97706; }
+.bl-kpi-icon.indigo { background: #e0e7ff; color: #4338ca; }
+
+.bl-kpi-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.bl-kpi-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bl-kpi-value {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.bl-kpi-sub {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* MAIN TWO-COLUMN BILLING WORKSPACE */
+.bl-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.bl-card {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.bl-card-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* PATIENT SELECTOR ITEM */
+.bl-patient-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 6px;
+}
+
+.bl-patient-item:hover {
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+}
+
+.bl-patient-item.selected {
+  background: #e0e7ff;
+  border-color: #4338ca;
+}
+
+.bl-patient-name {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.bl-patient-sub {
+  font-size: 10.5px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* INVOICE BUILDER FORM */
+.bl-form-group {
+  margin-bottom: 8px;
+}
+
+.bl-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.bl-input, .bl-select {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.bl-input:focus, .bl-select:focus {
+  border-color: #4338ca;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(67, 56, 202, 0.15);
+}
+
+/* RECENT INVOICES DATA TABLE CARD */
+.bl-table-card {
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  overflow: hidden;
+}
+
+.bl-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+
+.bl-table th {
+  background: #f8fafc;
+  padding: 8px 12px;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.bl-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.bl-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.bl-badge-paid {
+  background: #d1fae5;
+  color: #047857;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 10px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+  .bl-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .bl-main-grid {
+    grid-template-columns: 1fr;
+  }
+}

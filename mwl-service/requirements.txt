@@ -1,0 +1,7 @@
+pynetdicom
+pydicom
+psycopg2-binary
+hl7
+fastapi
+uvicorn
+python-dotenv

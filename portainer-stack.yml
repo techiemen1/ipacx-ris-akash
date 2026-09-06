@@ -1,0 +1,135 @@
+version: '3.8'
+
+# ==============================================================================
+# iPacx RIS/PACS - Portainer Single Hospital Deployment Stack
+# ==============================================================================
+# Paste this file into Portainer > Stacks > Add Stack > Web Editor
+# or connect Portainer directly to your GitHub repository:
+# https://github.com/<your-username>/ipacx-ris-akash.git
+# ==============================================================================
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ipacx-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lekhana}
+      POSTGRES_DB: ${POSTGRES_DB:-ris}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema_docker_init.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./master_data.sql:/docker-entrypoint-initdb.d/02_master_data.sql:ro
+    networks:
+      - ipacx-network
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: ipacx-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - ipacx-network
+    restart: always
+
+  backend:
+    image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-backend:${IMAGE_TAG:-latest}
+    container_name: ipacx-backend
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
+      - POSTGRES_DB=${POSTGRES_DB:-ris}
+      - JWT_SECRET=${JWT_SECRET:-bhEs3RR+q74v+rK3w/3dWWTpiBpEXZ++KT7wrxMWjyUSsETbpJvORaEoAGpA+ejq}
+      - ORTHANC_URL=http://orthanc:8042/
+      - ORTHANC_USER=${ORTHANC_USER:-orthanc}
+      - ORTHANC_PASS=${ORTHANC_PASS:-orthanc}
+      - MWL_SERVICE_HOST=mwl-service
+      - MWL_SCP_PORT=11118
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ipacx-network
+    volumes:
+      - backend_uploads:/usr/src/app/uploads
+      - backend_pdfs:/usr/src/app/generated_pdfs
+    restart: always
+
+  frontend:
+    image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-frontend:${IMAGE_TAG:-latest}
+    container_name: ipacx-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - ipacx-network
+    restart: always
+
+  orthanc:
+    image: jodogne/orthanc-plugins:latest
+    container_name: ipacx-orthanc
+    ports:
+      - "8042:8042"
+      - "4242:4242"
+    environment:
+      - ORTHANC_WEB_VIEWER_ENABLED=true
+    volumes:
+      - ./orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc_db:/var/lib/orthanc/db
+    networks:
+      - ipacx-network
+    restart: always
+
+  mwl-service:
+    image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-mwl-service:${IMAGE_TAG:-latest}
+    container_name: ipacx-mwl-service
+    ports:
+      - "11118:11118"
+      - "6060:6060"
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
+      - POSTGRES_DB=${POSTGRES_DB:-ris}
+      - MWL_AE_TITLE=IPACX_MWL
+      - MWL_SCP_PORT=11118
+      - HL7_PORT=6060
+    depends_on:
+      - db
+    networks:
+      - ipacx-network
+    restart: always
+
+  ohif:
+    image: ${DOCKER_HUB_REPO:-ipacx}/ipacx-ohif:${IMAGE_TAG:-latest}
+    container_name: ipacx-ohif
+    ports:
+      - "3001:8080"
+    depends_on:
+      - orthanc
+    networks:
+      - ipacx-network
+    restart: always
+
+networks:
+  ipacx-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  orthanc_db:
+  backend_uploads:
+  backend_pdfs:

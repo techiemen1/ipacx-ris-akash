@@ -1,0 +1,38 @@
+{
+  "Name" : "iPacx Orthanc Storage",
+  "StorageDirectory" : "/var/lib/orthanc/db",
+  "IndexDirectory" : "/var/lib/orthanc/db",
+  "StorageCompression" : true,
+  "AuthenticationEnabled" : true,
+  "RemoteAccessAllowed" : true,
+  "RegisteredUsers" : {
+    "orthanc" : "orthanc"
+  },
+  "DicomWeb" : {
+    "Enable" : true,
+    "Root" : "/dicom-web/",
+    "EnableWado" : true,
+    "WadoRoot" : "/wado/",
+    "PublicRoot" : "/pacs/dicom-web/",
+    "Host" : "localhost",
+    "Ssl" : false
+  },
+  "Plugins" : [
+    "/usr/local/share/orthanc/plugins"
+  ],
+  "ConcurrentThreads" : 8,
+  "HttpServerEnabled" : true,
+  "HttpPort" : 8042,
+  "DicomServerEnabled" : true,
+  "DicomPort" : 4242,
+  "DicomAet" : "ORTHANC",
+  "StableAge" : 5,
+  "DicomScuTimeout" : 10,
+  "RegisterReceiver" : true,
+  "OHIF" : {
+    "DataSource" : "dicom-web",
+    "DicomWeb" : {
+      "Endpoint" : "http://localhost:8042/dicom-web"
+    }
+  }
+}

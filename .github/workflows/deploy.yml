@@ -1,0 +1,24 @@
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: Kubernetes namespace
+        required: true
+        default: ipacx-ris
+
+jobs:
+  helm-template:
+    name: Render Helm chart
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Render chart
+        run: helm template ipacx-ris ./helm/ipacx-ris --namespace "${{ inputs.namespace }}"

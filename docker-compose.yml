@@ -1,0 +1,131 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ipacx-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lekhana}
+      POSTGRES_DB: ris
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./schema_docker_init.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./master_data.sql:/docker-entrypoint-initdb.d/02_master_data.sql:ro
+    networks:
+      - ipacx-network
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: ipacx-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - ipacx-network
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ipacx-backend
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
+      - POSTGRES_DB=ris
+      - JWT_SECRET=${JWT_SECRET:-bhEs3RR+q74v+rK3w/3dWWTpiBpEXZ++KT7wrxMWjyUSsETbpJvORaEoAGpA+ejq}
+      - ORTHANC_URL=http://orthanc:8042/
+      - ORTHANC_USER=orthanc
+      - ORTHANC_PASS=orthanc
+      - MWL_SERVICE_HOST=mwl-service
+      - MWL_SCP_PORT=11118
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - ipacx-network
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+    command: npx nodemon server.js
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ipacx-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - ipacx-network
+    restart: always
+
+  orthanc:
+    image: jodogne/orthanc-plugins:latest
+    container_name: ipacx-orthanc
+    ports:
+      - "8042:8042"
+      - "4242:4242"
+    environment:
+      - ORTHANC_WEB_VIEWER_ENABLED=true
+    volumes:
+      - ./orthanc.json:/etc/orthanc/orthanc.json:ro
+      - ./orthanc_db:/var/lib/orthanc/db
+    networks:
+      - ipacx-network
+    restart: always
+
+  mwl-service:
+    build:
+      context: ./mwl-service
+      dockerfile: Dockerfile
+    container_name: ipacx-mwl-service
+    ports:
+      - "11118:11118"
+      - "6060:6060"
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
+      - POSTGRES_DB=ris
+      - MWL_AE_TITLE=IPACX_MWL
+      - MWL_SCP_PORT=11118
+      - HL7_PORT=6060
+    depends_on:
+      - db
+    networks:
+      - ipacx-network
+    restart: always
+
+  ohif:
+    build:
+      context: ./ohif-viewer
+      dockerfile: Dockerfile
+      args:
+        - APP_CONFIG=config/ipacx.js
+        - PUBLIC_URL=/viewer/
+    container_name: ipacx-ohif
+    depends_on:
+      - orthanc
+    networks:
+      - ipacx-network
+    restart: always
+
+networks:
+  ipacx-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,539 @@
+
+.create-report-layout {
+  min-height: 100vh;
+  font-family: "Times New Roman", Times, serif;
+  color: #000;
+}
+
+.create-report-arrows {
+  position: absolute;
+  top: 50%;
+             /* stick outside viewer panel */
+  transform: translateY(-50%);
+  z-index: 20;
+
+  width: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.color-picker-container {
+  position: relative;
+  display: inline-block;
+}
+
+.word-color-menu {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  width: 260px;
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 6px;
+  border-radius: 6px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+  z-index: 2000;
+}
+
+.section-title {
+  font-size: 14px;
+  color: #555;
+  margin: 6px 2px 4px;
+}
+
+.theme-grid {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.theme-grid .column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.standard-grid {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  border: 1px solid #888;
+  cursor: pointer;
+}
+
+.swatch:hover {
+  outline: 2px solid #000;
+}
+
+.color-option.automatic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.color-option:hover {
+  background: #eee;
+}
+
+.auto-box {
+  width: 20px;
+  height: 20px;
+  background: #000;
+  border: 1px solid #333;
+}
+
+.more-colors {
+  font-size: 12px;
+  color: #0078d7;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.more-colors:hover {
+  text-decoration: underline;
+}
+
+
+.create-report-arrows .arrow {
+  pointer-events: all; /* enable clicks */
+  font-size: 8px;
+  padding: 4px 4px;
+  cursor: pointer;
+  border: 1px solid #aaa;
+  background-color: #f5f5f5;
+  border-radius: 2px;
+  line-height: 0.8;
+}
+.create-report-layout .create-report-arrows {
+  transition: top 0.2s, left 0.2s;
+}
+#createReportPanel {
+  width: 100%;
+  padding: 6px 12px;
+  box-sizing: border-box;
+}
+
+
+/* RIGHT — Report Panel */
+#createReportPanel {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  transition: width 0.18s ease;
+}
+#createReportPanel.expanded {
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+
+/* ========================== */
+/* FIX: Status + Toolbar in 1 line */
+/* ========================== */
+
+.top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.status-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  flex-shrink: 1;
+}
+
+.editor-toolbar select,
+.editor-toolbar input[type="color"],
+.editor-toolbar button,
+.template-btn {
+  padding: 4px 6px;
+  font-size: 11px;
+  height: 28px;
+  white-space: nowrap;
+}
+
+.toolbar {
+  margin-bottom: 0 !important;
+}
+
+#createReportPanel .report-toolbar-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 800;
+}
+
+#createReportPanel [data-editor="history"],
+#createReportPanel [data-editor="findings"],
+#createReportPanel [data-editor="conclusion"] {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#createReportPanel .ghost-editor {
+  min-height: 100px;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#createReportPanel .ghost-key-images {
+  min-height: 120px;
+}
+
+#createReportPanel .page-flow {
+  display: flow-root;
+  padding-top: 0.1px; /* prevent top margin collapse on new pages */
+  box-sizing: border-box;
+}
+
+#createReportPanel .page-header {
+  box-sizing: border-box;
+}
+
+#createReportPanel .page-measure {
+  line-height: 1.4;
+}
+
+#createReportPanel .page-measure p,
+#createReportPanel .page-measure div {
+  margin: 0;
+}
+
+#createReportPanel .key-images {
+  border: none !important;
+}
+
+
+/* Status buttons */
+.report-status-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+
+.status-btn {
+  padding: 6px 14px;
+  border: none;
+  color: white;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.status-btn.draft {
+  background: #6c757d;
+}
+
+.status-btn.final {
+  background: #198754;
+}
+
+.status-btn.close {
+  background: #dc3545;
+}
+
+
+/* Hide the word "Colour" label if present */
+.label-colour {
+  display: none;
+}
+
+/* Patient data table */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+  table-layout: auto; /* let the browser adjust column width */
+}
+
+.data-table td {
+  padding: 4px 6px; /* reduce padding to fit long content */
+  vertical-align: middle;
+  font-size: 11.5px;
+  text-align: left;
+  border: 1px solid #000;
+  white-space: nowrap; /* prevent wrapping */
+}
+
+/* Equal 3 columns */
+.data-table td {
+  width: 33.33% !important;
+}
+
+/* Report title */
+.report-title {
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: bold;
+  margin-top: 8px;
+  outline: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+/* Sections */
+.section {
+  margin-bottom: 20px;
+}
+.section h3 {
+  font-size: 11.5px;
+  margin-bottom: 8px;
+}
+
+.key-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  border: 2px dashed #aaa;
+  min-height: 120px;
+  padding: 10px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.key-image-item {
+  position: relative;
+}
+
+.key-image-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  display: block;
+}
+
+.remove-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(220, 53, 69, 0.8);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.key-image-item:hover .remove-btn {
+  display: flex;
+}
+
+
+/* Footer row */
+.footer-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 30px;
+}
+.footer-row div {
+  font-weight: bold;
+  font-size: 11px !important;
+}
+.footer-row span {
+  border-bottom: 1px solid #000;
+  min-width: 200px;
+  display: inline-block;
+  padding: 2px 5px;
+}
+
+/* Buttons */
+.buttons {
+  margin-top: 12px;
+}
+.buttons button {
+  padding: 8px 12px;
+  font-size: 14px;
+  margin-right: 8px;
+  cursor: pointer;
+}
+
+/* Template button look */
+.template-btn {
+  background: #0b5ed7;
+  color: #fff;
+  border-radius: 4px;
+}
+#createReportPanel,
+.section div,
+[contenteditable] {
+  direction: ltr !important;
+  unicode-bidi: plaintext !important;
+}
+
+.editor-toolbar button {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+
+  cursor: pointer;
+}
+/* ================================= */
+/* ULTRA TIGHT PRINT LAYOUT */
+/* ================================= */
+@media print {
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  html, body {
+    width: 210mm !important;
+  }
+
+  /* Hide UI */
+  #createViewerPanel,
+  iframe,
+  .top-row,
+  .editor-toolbar,
+  .status-buttons,
+  .buttons,
+  .report-toolbar-wrapper {
+    display: none !important;
+  }
+
+  #createReportPanel {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .a4-container {
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .a4-page {
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    padding: 25.4mm 15mm !important;
+    box-sizing: border-box !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    overflow: hidden !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    transform: none !important;
+  }
+
+  #createReportPanel .page-flow {
+    font-family: "Times New Roman", Times, serif !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  #createReportPanel .page-flow p,
+  #createReportPanel .page-flow div {
+    text-align: justify !important;
+    text-justify: inter-word !important;
+  }
+
+  #createReportPanel .page-flow h1,
+  #createReportPanel .page-flow h2,
+  #createReportPanel .page-flow h3 {
+    text-align: left !important;
+  }
+
+  .section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  /* ============================== */
+  /* 🔥 ADD THIS PART AT THE END 🔥 */
+  /* ============================== */
+
+  /* Hide arrows completely */
+  /* Force hide arrows in print */
+.create-report-layout .create-report-arrows {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+}
+body .create-report-arrows {
+  display: none !important;
+}
+ .no-print {
+    display: none !important;
+ }
+ .no-print-border {
+    border: none !important;
+  }
+    .a4-page .report-title {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+.a4-page .report-title:focus {
+    outline: none !important;
+    border: none !important;
+  }
+   /* REMOVE REPORT TITLE BORDER COMPLETELY */
+  #createReportPanel .report-title,
+  .a4-page .report-title {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+
+  #createReportPanel .report-title:focus {
+    border: none !important;
+    outline: none !important;
+  }
+}

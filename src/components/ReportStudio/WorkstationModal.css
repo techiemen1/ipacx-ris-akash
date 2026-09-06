@@ -1,0 +1,186 @@
+/* =========================================================
+   IPACX ENTERPRISE DIAGNOSTIC WORKSTATION OVERLAY
+   ========================================================= */
+
+.dws-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #090d16;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #f8fafc;
+  animation: dwsFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes dwsFadeIn {
+  from { opacity: 0; transform: scale(0.995); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* TOP FLOATING ENTERPRISE WORKSTATION BAR */
+.dws-topbar {
+  background: #0f172a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  flex-shrink: 0;
+  backdrop-filter: blur(12px);
+}
+
+.dws-patient-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dws-patient-name {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.dws-badge {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.dws-badge-id { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3); }
+.dws-badge-modality { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+
+/* VIEW SWITCHER PILLS */
+.dws-mode-switcher {
+  display: flex;
+  background: #1e293b;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dws-mode-btn {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 800;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.dws-mode-btn.active {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+}
+
+/* TOP ACTIONS & CLOSE BUTTON */
+.dws-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dws-btn {
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  border: none;
+  white-space: nowrap;
+}
+
+.dws-btn-emerald { background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #ffffff; boxShadow: 0 2px 6px rgba(5, 150, 105, 0.3); }
+.dws-btn-emerald:hover { transform: translateY(-1px); }
+
+.dws-btn-dark { background: #1e293b; color: #f1f5f9; border: 1px solid rgba(255, 255, 255, 0.1); }
+.dws-btn-dark:hover { background: #334155; color: #ffffff; }
+
+.dws-btn-close {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  font-weight: 900;
+  padding: 7px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  font-size: 11.5px;
+  transition: all 0.15s ease;
+  box-shadow: 0 3px 10px rgba(239, 68, 68, 0.35);
+}
+
+.dws-btn-close:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.5);
+}
+
+/* MAIN VIEWPORT CONTAINER */
+.dws-viewport {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  background: #000000;
+}
+
+/* 50% LEFT OHIF / 50% RIGHT STUDIO SPLIT PANE */
+.dws-split-pane {
+  display: grid;
+  grid-template-columns: 50% 50%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dws-left-viewer {
+  background: #000000;
+  height: 100%;
+  border-right: 1px solid #334155;
+  position: relative;
+  overflow: hidden;
+}
+
+.dws-right-studio {
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px 20px;
+  background: #f8fafc;
+  box-sizing: border-box;
+  color: #0f172a;
+}
+
+.dws-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #000000;
+  display: block;
+}
