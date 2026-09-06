@@ -217,8 +217,20 @@ app.use(errorHandler);
 // Database Connection & Server Listener Startup
 pool
   .connect()
-  .then((client) => {
+  .then(async (client) => {
     logger.info("🟢 Connected to PostgreSQL database pool.");
+
+    try {
+      const schemaPath = path.join(__dirname, "schema_docker_init.sql");
+      if (fs.existsSync(schemaPath)) {
+        const sql = fs.readFileSync(schemaPath, "utf8");
+        await client.query(sql);
+        logger.info("✅ Verified and initialized database schema.");
+      }
+    } catch (dbErr) {
+      logger.warn("Auto-schema initialization notice:", dbErr.message);
+    }
+
     client.release();
 
     const buildPath = path.join(__dirname, "../build");
