@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# iPacx RIS/PACS - Docker Hub Build & Push Script
+# Docker Hub Build & Push Script (Test Project)
 # Usage:
 #   ./build_and_push_dockerhub.sh <dockerhub_username> [image_tag]
 # Example:
@@ -21,7 +21,7 @@ DOCKER_USER="${1:-ipacx}"
 TAG="${2:-latest}"
 
 echo -e "${BLUE}======================================================${NC}"
-echo -e "${BLUE}   iPacx RIS/PACS - Docker Hub Image Builder & Pusher   ${NC}"
+echo -e "${BLUE}   Docker Hub Image Builder & Pusher   ${NC}"
 echo -e "${BLUE}======================================================${NC}"
 echo -e "${YELLOW}Docker Hub Username/Organization:${NC} ${DOCKER_USER}"
 echo -e "${YELLOW}Image Tag:${NC} ${TAG}"
