@@ -140,13 +140,11 @@ router.post("/", asyncHandler(async (req, res) => {
     password,
   });
 
-  await logAction(
-    req.user ? req.user.id : 1,
-    id ? "UPDATE_PACS" : "CREATE_PACS",
-    "PACS_SETTINGS",
-    saved.id,
-    { ip_address, port }
-  );
+  await logAction(req, {
+    event: id ? "UPDATE_PACS" : "CREATE_PACS",
+    page: "PACS_SETTINGS",
+    details: { pacs_id: saved.id, pacs_name, ip_address, port }
+  });
 
   res.json(saved);
 }));
@@ -157,7 +155,11 @@ router.post("/", asyncHandler(async (req, res) => {
 router.delete("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
   await pacsService.delete(id);
-  await logAction(req.user ? req.user.id : 1, "DELETE_PACS", "PACS_SETTINGS", id, {});
+  await logAction(req, {
+    event: "DELETE_PACS",
+    page: "PACS_SETTINGS",
+    details: { pacs_id: id }
+  });
   res.json({ success: true, message: "PACS configuration removed" });
 }));
 

@@ -53,7 +53,9 @@ function ensureAuditTable() {
 }
 
 function getClientIp(req) {
-  const fwd = req.headers["x-forwarded-for"];
+  if (!req || typeof req !== "object") return "";
+  const headers = req.headers || {};
+  const fwd = headers["x-forwarded-for"];
   const normalize = (ip) => {
     const value = String(ip || "").trim();
     if (!value) return "";
@@ -64,6 +66,54 @@ function getClientIp(req) {
     return normalize(fwd.split(",")[0].trim());
   }
   return normalize(req.ip || req.socket?.remoteAddress || "");
+}
+
+function getActorFromReq(req) {
+  if (!req || typeof req !== "object") {
+    return { username: null, role: null, session_id: null };
+  }
+  if (req.user) {
+    return {
+      username: String(req.user.username || "").trim() || null,
+      role: String(req.user.role || "").trim() || null,
+      session_id: String(req.user.session_id || "").trim() || null,
+    };
+  }
+  const headers = req.headers || {};
+  const username = String(headers["x-audit-username"] || "").trim() || null;
+  const role = String(headers["x-audit-role"] || "").trim() || null;
+  const session_id = String(headers["x-audit-session"] || "").trim() || null;
+  return { username, role, session_id };
+}
+
+async function logAction(reqOrUser, eventOrOptions, pageArg = null, targetIdArg = null, detailsArg = null) {
+  let req = typeof reqOrUser === "object" && reqOrUser !== null ? reqOrUser : null;
+  let event = "";
+  let page = pageArg;
+  let details = detailsArg;
+
+  if (typeof eventOrOptions === "object" && eventOrOptions !== null) {
+    event = eventOrOptions.event || "";
+    page = eventOrOptions.page || pageArg;
+    details = eventOrOptions.details || detailsArg;
+  } else if (typeof eventOrOptions === "string") {
+    event = eventOrOptions;
+    if (targetIdArg !== null && targetIdArg !== undefined) {
+      details = { target_id: targetIdArg, ...(detailsArg || {}) };
+    }
+  }
+
+  const actor = getActorFromReq(req);
+  await writeAuditLog({
+    session_id: actor.session_id,
+    username: actor.username,
+    role: actor.role,
+    event,
+    page: page || (req && req.originalUrl) || null,
+    details,
+    ip_address: getClientIp(req),
+    user_agent: req?.headers?.["user-agent"] || "",
+  });
 }
 
 function newSessionId() {
