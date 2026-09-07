@@ -317,6 +317,68 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       setIsSyncingSR(false);
     }
   };
+  
+  // 1-Click Key Image / Diagnostic Snapshot Handler
+  const handleAttachKeyImage = async () => {
+    let capturedDataUrl = null;
+
+    try {
+      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
+      if (iframeEl) {
+        const iframeWin = iframeEl.contentWindow;
+        const iframeDoc = iframeEl.contentDocument || (iframeWin && iframeWin.document);
+        if (iframeDoc) {
+          const canvases = Array.from(iframeDoc.querySelectorAll("canvas"));
+          if (canvases.length > 0) {
+            const targetCanvas = canvases.reduce((acc, c) => (c.width * c.height > acc.width * acc.height ? c : acc), canvases[0]);
+            if (targetCanvas && targetCanvas.width > 0 && targetCanvas.height > 0) {
+              capturedDataUrl = targetCanvas.toDataURL("image/jpeg", 0.95);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Canvas extraction exception:", e);
+    }
+
+    if (capturedDataUrl) {
+      setAttachedSnapshots(prev => [...prev, {
+        id: `snap_canvas_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        instance_id: `canvas_${Date.now()}`,
+        preview_url: capturedDataUrl,
+        caption: `Viewport Key Image #${attachedSnapshots.length + 1}`
+      }]);
+      return;
+    }
+
+    try {
+      const { data: snapRes } = await api.get(`/api/pacs/snapshots/${encodeURIComponent(studyUID)}`);
+      if (snapRes?.success && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
+        const pSnap = snapRes.data[0];
+        setAttachedSnapshots(prev => [...prev, {
+          id: `snap_pacs_${Date.now()}`,
+          instance_id: pSnap.instance_id,
+          preview_url: pSnap.preview_url,
+          caption: pSnap.caption || `PACS Key Diagnostic Image`
+        }]);
+      } else {
+        setAttachedSnapshots(prev => [...prev, {
+          id: `snap_single_${Date.now()}`,
+          instance_id: `single_${Date.now()}`,
+          preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
+          caption: `Diagnostic Key Image #${prev.length + 1}`
+        }]);
+      }
+    } catch (err) {
+      console.error("Direct PACS snapshot capture error:", err);
+      setAttachedSnapshots(prev => [...prev, {
+        id: `snap_single_${Date.now()}`,
+        instance_id: `single_${Date.now()}`,
+        preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
+        caption: `Diagnostic Key Image #${prev.length + 1}`
+      }]);
+    }
+  };
 
   // AI Impression Generator Assistant
   const generateAIImpression = async () => {
@@ -680,15 +742,37 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
         {/* ATTACHED KEY DIAGNOSTIC IMAGES CARD */}
         <div className="rs-section-card">
-          <div className="rs-section-header">
+          <div className="rs-section-header" style={{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               📸 Attached Key Diagnostic Images ({attachedSnapshots.length})
             </span>
+            {!isReadOnly && (
+              <button
+                type="button"
+                onClick={handleAttachKeyImage}
+                style={{
+                  background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)"
+                }}
+              >
+                📸 Capture Key Image / Snapshot
+              </button>
+            )}
           </div>
 
           {attachedSnapshots.length === 0 ? (
             <div style={{ padding: "16px 12px", textAlign: "center", color: "#64748b", fontSize: 12, border: "1px dashed #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
-              No key images attached yet. Click <b>"⚡ Flash Split Workstation"</b> to capture key diagnostic images for this report.
+              No key images attached yet. Click <b>"📸 Capture Key Image / Snapshot"</b> to attach key diagnostic images for this report.
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>

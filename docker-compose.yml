@@ -64,6 +64,8 @@ services:
     container_name: ipacx-frontend
     ports:
       - "3010:80"
+    volumes:
+      - ./build:/usr/share/nginx/html
     depends_on:
       - backend
     networks:
