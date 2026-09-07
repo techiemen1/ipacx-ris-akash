@@ -269,36 +269,71 @@ export default function MainLayout({ children }) {
           )}
         </nav>
 
-        {/* USER PROFILE & DEDICATED LOGOUT FOOTER */}
-        <div className="ris-user-card">
-          <div className="ris-user-profile" onClick={() => !collapsed && setShowUserInfo(!showUserInfo)}>
-            <div className="user-avatar">{getInitials(username)}</div>
-            {!collapsed && (
-              <div className="user-info-text">
-                <span className="user-name">{username}</span>
-                <span className="user-role"><ShieldCheck size={11} /> {role}</span>
+        {/* USER PROFILE & STYLISH CUTE LOGOUT FOOTER */}
+        <div className="ris-user-card" style={{ padding: '10px 12px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', marginTop: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {/* STYLISH CUTE LOGOUT ICON BUTTON BEFORE USER NAME */}
+              <button
+                onClick={handleLogout}
+                title="Sign Out of iPACX RIS"
+                style={{
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
+                  transition: 'transform 0.15s ease',
+                  flexShrink: 0
+                }}
+              >
+                <LogOut size={16} />
+              </button>
+
+              <div className="user-avatar" style={{ background: '#3b82f6', color: '#fff', fontWeight: 'bold', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
+                {getInitials(username)}
               </div>
+
+              {!collapsed && (
+                <div className="user-info-text" style={{ overflow: 'hidden' }}>
+                  <span className="user-name" style={{ color: '#f8fafc', fontWeight: '700', fontSize: '13px', display: 'block', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                    {username}
+                  </span>
+                  <span className="user-role" style={{ color: '#38bdf8', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '3px', fontWeight: '600' }}>
+                    <ShieldCheck size={10} /> {role}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {!collapsed && (
+              <button
+                onClick={handleLogout}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                title="Sign Out"
+              >
+                <LogOut size={12} /> Exit
+              </button>
             )}
           </div>
-
-          {!collapsed && showUserInfo && (
-            <div className="ris-user-dropdown">
-              <div className="dropdown-row">
-                <span className="dropdown-label">System Role:</span>
-                <span className="dropdown-val">{role}</span>
-              </div>
-            </div>
-          )}
-
-          {/* DEDICATED ALWAYS-VISIBLE 1-CLICK LOGOUT BUTTON */}
-          <button 
-            onClick={handleLogout} 
-            className={`ris-logout-btn-direct ${collapsed ? "collapsed" : ""}`}
-            title="Sign Out of iPACX RIS"
-          >
-            <LogOut size={16} />
-            {!collapsed && <span>Log Out</span>}
-          </button>
         </div>
       </aside>
 

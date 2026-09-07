@@ -122,6 +122,9 @@ app.use("/api/public/interoperability", interoperabilityRoutes);
 const shareTokensRoutes = require("./routes/shareTokens");
 app.use("/api/public/share", shareTokensRoutes);
 
+const clinicsRoutes = require("./routes/clinics");
+app.use("/api/public/clinics", clinicsRoutes);
+
 const requireAuth = require("./middleware/auth");
 const { checkRole } = require("./middleware/rbac");
 app.use("/api", requireAuth);
@@ -144,7 +147,6 @@ app.use("/api/mwl-targets", mwlTargetsRoutes);
 const mwlSettingsRoutes = require("./routes/mwlSettings");
 app.use("/api/mwl-settings", checkRole("ADMIN"), mwlSettingsRoutes);
 
-const clinicsRoutes = require("./routes/clinics");
 app.use("/api/clinics", clinicsRoutes);
 
 const reportsRoutes = require("./routes/reports");

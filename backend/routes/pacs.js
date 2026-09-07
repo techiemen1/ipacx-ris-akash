@@ -197,49 +197,56 @@ router.get("/study/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
 
+    let orthancData = null;
+    let modality = "CR";
+    let bodyPart = "";
+
     const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
       Level: "Study",
       Query: { StudyInstanceUID: studyUID }
     }, orthancAuthConfig()).catch(() => ({ data: [] }));
 
-    let orthancData = null;
-    let modality = "CR";
-    let bodyPart = "";
-
     if (findRes.data && findRes.data.length > 0) {
       const orthancId = findRes.data[0];
-      const { data } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, orthancAuthConfig());
+      const { data } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, orthancAuthConfig()).catch(() => ({ data: null }));
       orthancData = data;
-
-      if (Array.isArray(data.Series) && data.Series.length > 0) {
-        try {
-          const seriesRes = await axios.get(`${ORTHANC_URL}series/${data.Series[0]}`, orthancAuthConfig());
-          if (seriesRes.data?.MainDicomTags) {
-            modality = seriesRes.data.MainDicomTags.Modality || modality;
-            bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined || bodyPart;
-          }
-        } catch (e) {}
+    } else {
+      const directRes = await axios.get(`${ORTHANC_URL}studies/${studyUID}`, orthancAuthConfig()).catch(() => ({ data: null }));
+      if (directRes?.data && directRes?.data?.ID) {
+        orthancData = directRes.data;
       }
     }
 
-    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1", [studyUID]).catch(() => ({ rows: [] }));
+    if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
+      try {
+        const seriesRes = await axios.get(`${ORTHANC_URL}series/${orthancData.Series[0]}`, orthancAuthConfig());
+        if (seriesRes.data?.MainDicomTags) {
+          modality = seriesRes.data.MainDicomTags.Modality || modality;
+          bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined || bodyPart;
+        }
+      } catch (e) {}
+    }
+
+    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1 OR id::text = $2", [studyUID, studyUID]).catch(() => ({ rows: [] }));
     const dbRow = dbRes.rows[0] || {};
 
+    const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "";
+    const cleanName = String(rawName).replace(/\^/g, " ").replace(/\s+/g, " ").trim();
     const rawMod = modality || dbRow.modality || dbRow.Modality || "CR";
     const normMod = String(rawMod).toUpperCase().trim();
 
     const result = {
-      PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || "N/A",
-      PatientName: orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "N/A",
+      PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || dbRow.id || "ID-1001",
+      PatientName: cleanName || dbRow.patient_name || "Patient",
       PatientSex: orthancData?.PatientMainDicomTags?.PatientSex || dbRow.patient_sex || "O",
-      PatientAge: extractAgeFromName(orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name),
-      AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "N/A",
+      PatientAge: extractAgeFromName(rawName) || dbRow.patient_age || "N/A",
+      AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "ACC-1001",
       StudyDescription: orthancData?.MainDicomTags?.StudyDescription || dbRow.study_description || "",
       StudyDate: orthancData?.MainDicomTags?.StudyDate || dbRow.study_date || "",
       StudyTime: orthancData?.MainDicomTags?.StudyTime || dbRow.study_time || "",
       Modality: normMod,
-      StudyInstanceUID: studyUID,
-      ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "",
+      StudyInstanceUID: orthancData?.MainDicomTags?.StudyInstanceUID || studyUID,
+      ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "Self / Desk",
       BodyPartExamined: bodyPart || dbRow.body_part || "",
     };
 
