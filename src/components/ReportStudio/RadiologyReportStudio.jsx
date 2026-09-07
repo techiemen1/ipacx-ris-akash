@@ -33,13 +33,40 @@ import "./ReportStudio.css";
 export default function RadiologyReportStudio({ studyUIDOverride }) {
   const [searchParams] = useSearchParams();
   const routeParams = useParams();
-  const studyUID =
+  const initialStudyUID =
     studyUIDOverride ||
     searchParams.get("study_uid") ||
     searchParams.get("study") ||
     searchParams.get("studyUID") ||
     routeParams?.studyUID;
   const navigate = useNavigate();
+
+  const [activeStudyUID, setActiveStudyUID] = useState(initialStudyUID || "");
+  const [pacsStudiesList, setPacsStudiesList] = useState([]);
+
+  // Fetch list of PACS studies for auto-fallback & study switching
+  useEffect(() => {
+    api.get("/api/pacs/studies")
+      .then(res => {
+        const list = Array.isArray(res.data) ? res.data : (res.data?.studies || []);
+        if (list.length > 0) {
+          setPacsStudiesList(list);
+          if (!activeStudyUID) {
+            const firstUid = list[0].StudyInstanceUID || list[0].study_uid || list[0].id;
+            if (firstUid) setActiveStudyUID(firstUid);
+          }
+        }
+      })
+      .catch(e => console.warn("PACS studies fetch notice:", e.message));
+  }, []);
+
+  useEffect(() => {
+    if (initialStudyUID && initialStudyUID !== activeStudyUID) {
+      setActiveStudyUID(initialStudyUID);
+    }
+  }, [initialStudyUID]);
+
+  const studyUID = activeStudyUID;
 
   // View Mode: "studio" | "split" | "viewer" (Default to clean Studio Only)
   const [viewMode, setViewMode] = useState("studio"); // "studio" | "split" | "viewer"
@@ -861,12 +888,48 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             <ChevronLeft size={20} />
           </button>
           <div className="rs-title-box">
-            <h1>
-              {study.PatientName || "Patient Report"}
-              <span className="rs-badge-id">ID: {study.PatientID || "-"}</span>
-              <span className="rs-badge-status">{reportStatus}</span>
-            </h1>
-            <p className="rs-subtitle">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {study.PatientName || "Patient Report"}
+                <span className="rs-badge-id">ID: {study.PatientID || "-"}</span>
+                <span className="rs-badge-status">{reportStatus}</span>
+              </h1>
+
+              {pacsStudiesList.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active PACS Patient:</span>
+                  <select
+                    value={activeStudyUID}
+                    onChange={(e) => setActiveStudyUID(e.target.value)}
+                    style={{
+                      background: '#1e293b',
+                      color: '#38bdf8',
+                      border: '1px solid #3b82f6',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                    }}
+                  >
+                    {pacsStudiesList.map((s, idx) => {
+                      const sUid = s.StudyInstanceUID || s.study_uid || s.id;
+                      const sName = (s.PatientName || s.patient_name || "Patient").replace(/\^/g, " ");
+                      const sAcc = s.AccessionNumber || s.accession_number || `ACC-${idx + 1}`;
+                      const sMod = s.Modality || s.modality || "CR";
+                      return (
+                        <option key={sUid || idx} value={sUid}>
+                          {sName} ({sMod} • Acc: {sAcc})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+            </div>
+            <p className="rs-subtitle" style={{ marginTop: '2px' }}>
               {study.Modality} • {study.BodyPartExamined || "General"} • Acc: {study.AccessionNumber || "-"}
             </p>
           </div>
