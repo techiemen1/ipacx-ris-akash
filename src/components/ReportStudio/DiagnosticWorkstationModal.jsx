@@ -169,7 +169,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   };
 
   // 1-CLICK PIXEL-PERFECT EXACT SCREEN CANVAS SNAPSHOTTER
-  const handleAttachTargetSlice = () => {
+  const handleAttachTargetSlice = async () => {
     let capturedDataUrl = null;
 
     try {
@@ -204,27 +204,55 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       return;
     }
 
-    // Secondary Fallback if canvas is still initializing
-    if (!studySeriesList || studySeriesList.length === 0) {
-      alert("Please wait for DICOM series to load...");
-      return;
+    // Secondary Fallback if series is loaded
+    if (studySeriesList && studySeriesList.length > 0) {
+      const seriesObj = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || studySeriesList[0];
+      if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
+        const sliceNum = parseInt(targetSliceNumber, 10);
+        const boundedIndex = isNaN(sliceNum) ? 0 : Math.min(Math.max(0, sliceNum - 1), seriesObj.instances.length - 1);
+        const targetInst = seriesObj.instances[boundedIndex];
+
+        const snapObj = {
+          id: `snap_${targetInst.instance_id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          instance_id: targetInst.instance_id,
+          preview_url: `/api/pacs/instance-preview/${targetInst.instance_id}`,
+          caption: `${seriesObj.series_description || `Series ${seriesObj.series_number}`} (Slice ${boundedIndex + 1}/${seriesObj.total_slices})`
+        };
+
+        setAttachedSnapshots(prev => [...prev, snapObj]);
+        setTargetSliceNumber(prev => String((parseInt(prev, 10) || 1) + 1));
+        return;
+      }
     }
-    const seriesObj = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || studySeriesList[0];
-    if (!seriesObj || !seriesObj.instances || seriesObj.instances.length === 0) return;
 
-    const sliceNum = parseInt(targetSliceNumber, 10);
-    const boundedIndex = isNaN(sliceNum) ? 0 : Math.min(Math.max(0, sliceNum - 1), seriesObj.instances.length - 1);
-    const targetInst = seriesObj.instances[boundedIndex];
-
-    const snapObj = {
-      id: `snap_${targetInst.instance_id}_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      instance_id: targetInst.instance_id,
-      preview_url: `/api/pacs/instance-preview/${targetInst.instance_id}`,
-      caption: `${seriesObj.series_description || `Series ${seriesObj.series_number}`} (Slice ${boundedIndex + 1}/${seriesObj.total_slices})`
-    };
-
-    setAttachedSnapshots(prev => [...prev, snapObj]);
-    setTargetSliceNumber(prev => String((parseInt(prev, 10) || 1) + 1));
+    // PACS Backend Direct Snapshot Fallback (no blocking alert!)
+    try {
+      const { data: snapRes } = await api.get(`/api/pacs/snapshots/${encodeURIComponent(studyUID)}`);
+      if (snapRes?.success && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
+        const pSnap = snapRes.data[0];
+        setAttachedSnapshots(prev => [...prev, {
+          id: `snap_pacs_${Date.now()}`,
+          instance_id: pSnap.instance_id,
+          preview_url: pSnap.preview_url,
+          caption: pSnap.caption || `PACS Key Diagnostic Image`
+        }]);
+      } else {
+        setAttachedSnapshots(prev => [...prev, {
+          id: `snap_single_${Date.now()}`,
+          instance_id: `single_${Date.now()}`,
+          preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
+          caption: `Diagnostic Key Image #${prev.length + 1}`
+        }]);
+      }
+    } catch (err) {
+      console.error("Direct PACS snapshot capture error:", err);
+      setAttachedSnapshots(prev => [...prev, {
+        id: `snap_single_${Date.now()}`,
+        instance_id: `single_${Date.now()}`,
+        preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
+        caption: `Diagnostic Key Image #${prev.length + 1}`
+      }]);
+    }
   };
 
   const removeSnapshot = (idToRemove) => {
