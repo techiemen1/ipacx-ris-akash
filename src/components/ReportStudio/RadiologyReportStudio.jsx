@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useParams } from "react-router-dom";
 import DOMPurify from "dompurify";
 import api from "../../api/axios";
 import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
+import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
 import ShareReportModal from "../ShareReportModal";
 import {
@@ -691,20 +692,54 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </div>
 
           {!isReadOnly && (
-            <div className="rs-wysiwyg-toolbar">
+            <div className="rs-wysiwyg-toolbar" style={{ flexWrap: 'wrap', gap: 4 }}>
               <button type="button" onClick={() => execCmd("bold")} className="rs-tool-btn" title="Bold"><Bold size={14} /></button>
               <button type="button" onClick={() => execCmd("italic")} className="rs-tool-btn" title="Italic"><Italic size={14} /></button>
               <button type="button" onClick={() => execCmd("underline")} className="rs-tool-btn" title="Underline"><Underline size={14} /></button>
               <button type="button" onClick={() => execCmd("insertUnorderedList")} className="rs-tool-btn" title="Bullet List"><List size={14} /></button>
               <button type="button" onClick={() => execCmd("insertOrderedList")} className="rs-tool-btn" title="Numbered List"><ListOrdered size={14} /></button>
               <button type="button" onClick={() => execCmd("removeFormat")} className="rs-tool-btn" title="Clear Formatting"><RotateCcw size={14} /></button>
+              
+              <div style={{ height: 18, width: 1, background: '#cbd5e1', margin: '0 6px' }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#475569', alignSelf: 'center' }}>Dot Macros:</span>
+              {[".normal", ".chest", ".stroke", ".ctpa", ".birads1", ".fetal", ".dvt"].map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    const text = CLINICAL_MACROS[m] || "";
+                    updateFindings(findingsHtml + text);
+                  }}
+                  style={{
+                    background: '#f1f5f9',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 5,
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {m}
+                </button>
+              ))}
             </div>
           )}
 
           <div
             ref={findingsRef}
             contentEditable={!isReadOnly}
-            onInput={() => setFindingsHtml(findingsRef.current.innerHTML)}
+            onInput={() => {
+              if (findingsRef.current) {
+                const raw = findingsRef.current.innerHTML;
+                const expanded = expandClinicalMacros(raw);
+                if (expanded !== raw) {
+                  findingsRef.current.innerHTML = expanded;
+                }
+                setFindingsHtml(findingsRef.current.innerHTML);
+              }
+            }}
             className="rs-rich-editor"
           />
         </div>

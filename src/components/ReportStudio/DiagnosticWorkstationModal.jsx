@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import DOMPurify from "dompurify";
 import api from "../../api/axios";
 import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
+import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import {
   Sparkles,
   Zap,
@@ -671,19 +672,53 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <span style={{ fontSize: 10, color: '#64748b' }}>WYSIWYG Formatted</span>
         </div>
 
-        <div className="rs-wysiwyg-toolbar">
+        <div className="rs-wysiwyg-toolbar" style={{ flexWrap: 'wrap', gap: 4 }}>
           <button type="button" onClick={() => execCmd("bold")} className="rs-tool-btn" title="Bold"><Bold size={13} /></button>
           <button type="button" onClick={() => execCmd("italic")} className="rs-tool-btn" title="Italic"><Italic size={13} /></button>
           <button type="button" onClick={() => execCmd("underline")} className="rs-tool-btn" title="Underline"><Underline size={13} /></button>
           <button type="button" onClick={() => execCmd("insertUnorderedList")} className="rs-tool-btn" title="Bullet List"><List size={13} /></button>
           <button type="button" onClick={() => execCmd("insertOrderedList")} className="rs-tool-btn" title="Numbered List"><ListOrdered size={13} /></button>
           <button type="button" onClick={() => execCmd("removeFormat")} className="rs-tool-btn" title="Clear Formatting"><RotateCcw size={13} /></button>
+          
+          <div style={{ height: 16, width: 1, background: '#cbd5e1', margin: '0 4px' }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', alignSelf: 'center' }}>Dot Macros:</span>
+          {[".normal", ".chest", ".stroke", ".ctpa", ".birads1", ".fetal", ".dvt"].map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                const text = CLINICAL_MACROS[m] || "";
+                updateFindings(findingsHtml + text);
+              }}
+              style={{
+                background: '#f1f5f9',
+                color: '#0f172a',
+                border: '1px solid #cbd5e1',
+                borderRadius: 4,
+                padding: '2px 6px',
+                fontSize: 10,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              {m}
+            </button>
+          ))}
         </div>
 
         <div
           ref={findingsRef}
           contentEditable
-          onInput={() => setFindingsHtml(findingsRef.current.innerHTML)}
+          onInput={() => {
+            if (findingsRef.current) {
+              const raw = findingsRef.current.innerHTML;
+              const expanded = expandClinicalMacros(raw);
+              if (expanded !== raw) {
+                findingsRef.current.innerHTML = expanded;
+              }
+              setFindingsHtml(findingsRef.current.innerHTML);
+            }
+          }}
           className="rs-rich-editor"
           style={{ minHeight: 180 }}
         />
