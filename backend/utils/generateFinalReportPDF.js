@@ -180,33 +180,51 @@ module.exports = async function generateFinalReportPDF(
       });
 
       /* -----------------------------
-         KEY IMAGES
+         KEY DIAGNOSTIC IMAGES & SNAPSHOTS
       ----------------------------- */
-      if (images?.length > 0) {
-        if (currentY > pageHeight - 150) {
+      const keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
+        ? report.report_content.snapshots
+        : (Array.isArray(images) ? images : []);
+
+      if (keyImages.length > 0) {
+        if (currentY > pageHeight - 160) {
           doc.addPage();
           currentY = 40;
         }
-        doc.font("Helvetica-Bold").fontSize(11).text("Key Images:", 40, currentY);
-        currentY += 15;
+        doc.font("Helvetica-Bold").fontSize(11).text("Key Diagnostic Images / Annotations:", 40, currentY);
+        currentY += 18;
 
         let xPos = 40;
-        images.forEach((img, i) => {
-          const imgPath = path.join(__dirname, "..", img.image_path);
-          if (fs.existsSync(imgPath)) {
-            if (i > 0 && i % 4 === 0) {
+        keyImages.forEach((img, i) => {
+          let rawPath = typeof img === "string" ? img : (img.preview_url || img.image_path || img.url || "");
+          let captionText = typeof img === "object" ? (img.caption || `Key Image ${i + 1}`) : `Key Image ${i + 1}`;
+          
+          if (rawPath && rawPath.startsWith("/")) {
+            rawPath = path.join(__dirname, "..", rawPath);
+          }
+
+          if (fs.existsSync(rawPath)) {
+            if (xPos + 110 > pageWidth - 40) {
               xPos = 40;
-              currentY += 95;
+              currentY += 115;
             }
-            if (currentY > pageHeight - 150) {
+            if (currentY > pageHeight - 160) {
               doc.addPage();
               currentY = 40;
+              xPos = 40;
             }
-            doc.image(imgPath, xPos, currentY, { width: 90, height: 80 });
-            xPos += 100;
+
+            try {
+              doc.image(rawPath, xPos, currentY, { width: 100, height: 85 });
+              doc.font("Helvetica").fontSize(8).text(captionText, xPos, currentY + 88, { width: 100, align: "center" });
+            } catch (e) {
+              console.warn("PDF Image draw notice:", e.message);
+            }
+
+            xPos += 115;
           }
         });
-        currentY += 90;
+        currentY += 115;
       }
 
       /* -----------------------------

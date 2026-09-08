@@ -7,8 +7,8 @@ const multer = require("multer");
 const AdmZip = require("adm-zip");
 const pool = require("../db");
 const { logAction } = require("../utils/auditLogger");
-const asyncHandler = require("../middleware/asyncHandler");
 const PacsService = require("../services/pacsService");
+const pacsGateway = require("../services/pacsGateway");
 
 const pacsService = new PacsService(pool);
 
@@ -182,6 +182,42 @@ router.get("/logs", asyncHandler(async (req, res) => {
 }));
 
 /* ======================================================
+   C-ECHO / PACS CONNECTIVITY CHECK
+====================================================== */
+router.get("/c-echo", asyncHandler(async (req, res) => {
+  const host = process.env.ORTHANC_HOST || "localhost";
+  const port = parseInt(process.env.ORTHANC_DICOM_PORT || "4242", 10);
+  const start = Date.now();
+
+  const socket = new net.Socket();
+  socket.setTimeout(3000);
+
+  socket.on("connect", () => {
+    socket.destroy();
+    res.json({
+      success: true,
+      status: "SUCCESS",
+      aeTitle: process.env.ORTHANC_AET || "ORTHANC",
+      host,
+      port,
+      latencyMs: Date.now() - start,
+    });
+  });
+
+  socket.on("timeout", () => {
+    socket.destroy();
+    res.status(504).json({ success: false, status: "TIMEOUT", error: "DICOM C-ECHO timed out" });
+  });
+
+  socket.on("error", (err) => {
+    socket.destroy();
+    res.status(500).json({ success: false, status: "FAILED", error: err.message });
+  });
+
+  socket.connect(port, host);
+}));
+
+/* ======================================================
    GET STUDIES (ACTIVE PACS)
 ====================================================== */
 router.get("/studies", asyncHandler(async (req, res) => {
@@ -191,69 +227,47 @@ router.get("/studies", asyncHandler(async (req, res) => {
 }));
 
 /* ======================================================
-   GET INDIVIDUAL STUDY DETAIL (TRUE DICOM MODALITY & BODY PART)
+   GET INDIVIDUAL STUDY DETAIL (UNIVERSAL PACS GATEWAY)
 ====================================================== */
 router.get("/study/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-
-    let orthancData = null;
-    let modality = "CR";
-    let bodyPart = "";
-
-    const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-      Level: "Study",
-      Query: { StudyInstanceUID: studyUID }
-    }, orthancAuthConfig()).catch(() => ({ data: [] }));
-
-    if (findRes.data && findRes.data.length > 0) {
-      const orthancId = findRes.data[0];
-      const { data } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, orthancAuthConfig()).catch(() => ({ data: null }));
-      orthancData = data;
-    } else {
-      const directRes = await axios.get(`${ORTHANC_URL}studies/${studyUID}`, orthancAuthConfig()).catch(() => ({ data: null }));
-      if (directRes?.data && directRes?.data?.ID) {
-        orthancData = directRes.data;
-      }
-    }
-
-    if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
-      try {
-        const seriesRes = await axios.get(`${ORTHANC_URL}series/${orthancData.Series[0]}`, orthancAuthConfig());
-        if (seriesRes.data?.MainDicomTags) {
-          modality = seriesRes.data.MainDicomTags.Modality || modality;
-          bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined || bodyPart;
-        }
-      } catch (e) {}
-    }
-
-    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1 OR id::text = $2", [studyUID, studyUID]).catch(() => ({ rows: [] }));
-    const dbRow = dbRes.rows[0] || {};
-
-    const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "";
-    const cleanName = String(rawName).replace(/\^/g, " ").replace(/\s+/g, " ").trim();
-    const rawMod = modality || dbRow.modality || dbRow.Modality || "CR";
-    const normMod = String(rawMod).toUpperCase().trim();
+    const dicomTags = await pacsGateway.getFullDicomTags(studyUID);
 
     const result = {
-      PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || dbRow.id || "ID-1001",
-      PatientName: cleanName || dbRow.patient_name || "Patient",
-      PatientSex: orthancData?.PatientMainDicomTags?.PatientSex || dbRow.patient_sex || "O",
-      PatientAge: extractAgeFromName(rawName) || dbRow.patient_age || "N/A",
-      AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "ACC-1001",
-      StudyDescription: orthancData?.MainDicomTags?.StudyDescription || dbRow.study_description || "",
-      StudyDate: orthancData?.MainDicomTags?.StudyDate || dbRow.study_date || "",
-      StudyTime: orthancData?.MainDicomTags?.StudyTime || dbRow.study_time || "",
-      Modality: normMod,
-      StudyInstanceUID: orthancData?.MainDicomTags?.StudyInstanceUID || studyUID,
-      ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "Self / Desk",
-      BodyPartExamined: bodyPart || dbRow.body_part || "",
+      PatientID: dicomTags.patient.PatientID,
+      PatientName: dicomTags.patient.PatientName,
+      PatientSex: dicomTags.patient.PatientSex,
+      PatientAge: dicomTags.patient.PatientAge,
+      AccessionNumber: dicomTags.study.AccessionNumber,
+      StudyDescription: dicomTags.study.StudyDescription,
+      StudyDate: dicomTags.study.StudyDate,
+      StudyTime: dicomTags.study.StudyTime,
+      Modality: dicomTags.study.Modality,
+      StudyInstanceUID: dicomTags.study.StudyInstanceUID,
+      ReferringPhysicianName: dicomTags.study.ReferringPhysicianName,
+      BodyPartExamined: dicomTags.study.BodyPartExamined,
+      fullDicomTags: dicomTags
     };
 
     res.json(result);
   } catch (err) {
     console.error("Fetch study detail failed:", err.message);
     res.status(500).json({ error: "Failed to fetch study details" });
+  }
+});
+
+/* ======================================================
+   GET FULL STANDARDIZED DICOM TAGS DICTIONARY
+====================================================== */
+router.get("/dicom-tags/:studyUID", async (req, res) => {
+  try {
+    const { studyUID } = req.params;
+    const dicomTags = await pacsGateway.getFullDicomTags(studyUID);
+    res.json({ success: true, data: dicomTags });
+  } catch (err) {
+    console.error("Fetch DICOM tags failed:", err.message);
+    res.status(500).json({ error: "Failed to fetch DICOM tags" });
   }
 });
 

@@ -78,11 +78,26 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .catch(e => console.warn("PACS studies fetch notice:", e.message));
   }, []);
 
-  useEffect(() => {
-    if (initialStudyUID && initialStudyUID !== activeStudyUID) {
-      setActiveStudyUID(initialStudyUID);
+  // DICOM Tag Inspector State
+  const [showDicomTagsModal, setShowDicomTagsModal] = useState(false);
+  const [loadingDicomTags, setLoadingDicomTags] = useState(false);
+  const [dicomTagData, setDicomTagData] = useState(null);
+
+  const handleOpenDicomTags = async () => {
+    if (!studyUID) return;
+    setShowDicomTagsModal(true);
+    setLoadingDicomTags(true);
+    try {
+      const res = await api.get(`/api/pacs/dicom-tags/${encodeURIComponent(studyUID)}`);
+      if (res.data?.success && res.data?.data) {
+        setDicomTagData(res.data.data);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch DICOM tags dictionary:", err.message);
+    } finally {
+      setLoadingDicomTags(false);
     }
-  }, [initialStudyUID]);
+  };
 
   const studyUID = activeStudyUID;
 
@@ -902,6 +917,27 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                       <X size={13} />
                     </button>
                   )}
+                  <div style={{ padding: '4px 6px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                    <input
+                      type="text"
+                      value={snap.caption || ''}
+                      onChange={(e) => {
+                        const newCap = e.target.value;
+                        setAttachedSnapshots(prev => prev.map((item, i) => i === idx ? { ...item, caption: newCap } : item));
+                      }}
+                      placeholder={`Key Image #${idx + 1}`}
+                      disabled={isReadOnly}
+                      style={{
+                        width: '100%',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        padding: '2px 4px',
+                        color: '#1e293b',
+                        fontWeight: '600'
+                      }}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1002,6 +1038,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
           <button onClick={() => openStudyViewer(studyUID)} className="rs-btn rs-btn-primary">
             <Eye size={16} /> Open OHIF Viewer
+          </button>
+
+          <button onClick={handleOpenDicomTags} className="rs-btn rs-btn-outline" style={{ borderColor: '#38bdf8', color: '#38bdf8' }}>
+            <FileText size={16} /> DICOM Tag Inspector
           </button>
 
           <button onClick={() => setShowPrintModal(true)} className="rs-btn rs-btn-outline">
@@ -1224,6 +1264,89 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                 <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg No: KMC-84920</div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL STANDARDIZED DICOM TAG INSPECTOR MODAL */}
+      {showDicomTagsModal && (
+        <div className="rs-modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.85)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 20 }}>
+          <div className="rs-modal" style={{ width: '100%', maxWidth: 850, background: '#0f172a', color: '#f8fafc', borderRadius: 16, padding: 24, border: '1px solid #334155', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: 16, marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #0284c7 100%)', color: '#fff', padding: 10, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 'bold', color: '#f8fafc' }}>
+                    Full DICOM Metadata Tag Inspector
+                  </h2>
+                  <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#94a3b8' }}>
+                    Universal PACS Standardized DICOM Attributes & Equipment Dictionary
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowDicomTagsModal(false)} style={{ background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', borderRadius: 8, padding: 6, cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {loadingDicomTags ? (
+              <div style={{ padding: '50px 20px', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>
+                <RefreshCw className="animate-spin text-indigo-400 inline-block mb-3" size={28} /><br />
+                Fetching Universal PACS DICOM Tags...
+              </div>
+            ) : (
+              <div style={{ maxHeight: '65vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 6 }}>
+                {/* PATIENT MODULE */}
+                <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#38bdf8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    👤 Patient DICOM Module (Group 0010)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+                    <div><strong style={{ color: '#94a3b8' }}>Patient Name (0010,0010):</strong> <span style={{ color: '#f8fafc', fontWeight: '600' }}>{dicomTagData?.patient?.PatientName}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Patient ID (0010,0020):</strong> <span style={{ color: '#f8fafc', fontWeight: '600' }}>{dicomTagData?.patient?.PatientID}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Birth Date (0010,0030):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.patient?.PatientBirthDate}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Patient Sex (0010,0040):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.patient?.PatientSex}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Patient Age (0010,1010):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.patient?.PatientAge}</span></div>
+                  </div>
+                </div>
+
+                {/* STUDY MODULE */}
+                <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#c084fc', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    🏥 General Study Module (Group 0008 / 0020)
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+                    <div><strong style={{ color: '#94a3b8' }}>Accession No (0008,0050):</strong> <span style={{ color: '#f8fafc', fontWeight: '600' }}>{dicomTagData?.study?.AccessionNumber}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Modality (0008,0060):</strong> <span style={{ color: '#f8fafc', fontWeight: '600' }}>{dicomTagData?.study?.Modality}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Study Date (0008,0020):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.study?.StudyDate}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Study Time (0008,0030):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.study?.StudyTime}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Body Part (0018,0015):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.study?.BodyPartExamined}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Ref. Physician (0008,0090):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.study?.ReferringPhysicianName}</span></div>
+                    <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: '#94a3b8' }}>Study Description (0008,1030):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.study?.StudyDescription}</span></div>
+                    <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: '#94a3b8' }}>StudyInstanceUID (0020,000D):</strong> <code style={{ color: '#38bdf8', fontSize: '11px', background: '#0f172a', padding: '2px 6px', borderRadius: 4 }}>{dicomTagData?.study?.StudyInstanceUID}</code></div>
+                  </div>
+                </div>
+
+                {/* EQUIPMENT & ACQUISITION MODULE */}
+                <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, border: '1px solid #334155' }}>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#34d399', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    🔬 Equipment & Technical Acquisition Parameters
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+                    <div><strong style={{ color: '#94a3b8' }}>Institution Name (0008,0080):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.equipment?.InstitutionName}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Station Name (0008,1010):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.equipment?.StationName}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Manufacturer (0008,0070):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.equipment?.Manufacturer}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Model Name (0008,1090):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.equipment?.ManufacturerModelName}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Slice Thickness (0018,0050):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.acquisition?.SliceThickness}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>KVP / Exposure:</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.acquisition?.KVP} KVP / {dicomTagData?.acquisition?.Exposure} mAs</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Window Center / Width:</strong> <span style={{ color: '#f8fafc' }}>C: {dicomTagData?.acquisition?.WindowCenter} / W: {dicomTagData?.acquisition?.WindowWidth}</span></div>
+                    <div><strong style={{ color: '#94a3b8' }}>Pixel Spacing (0028,0030):</strong> <span style={{ color: '#f8fafc' }}>{dicomTagData?.acquisition?.PixelSpacing}</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

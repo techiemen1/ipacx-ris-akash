@@ -269,34 +269,11 @@ export default function MainLayout({ children }) {
           )}
         </nav>
 
-        {/* USER PROFILE & STYLISH CUTE LOGOUT FOOTER */}
+        {/* USER PROFILE & SINGLE SLEEK SIGN OUT FOOTER */}
         <div className="ris-user-card" style={{ padding: '10px 12px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', marginTop: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {/* STYLISH CUTE LOGOUT ICON BUTTON BEFORE USER NAME */}
-              <button
-                onClick={handleLogout}
-                title="Sign Out of iPACX RIS"
-                style={{
-                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
-                  transition: 'transform 0.15s ease',
-                  flexShrink: 0
-                }}
-              >
-                <LogOut size={16} />
-              </button>
-
-              <div className="user-avatar" style={{ background: '#3b82f6', color: '#fff', fontWeight: 'bold', width: '32px', height: '32px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <div className="user-avatar" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: '#fff', fontWeight: 'bold', width: '34px', height: '34px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', flexShrink: 0, boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)' }}>
                 {getInitials(username)}
               </div>
 
@@ -312,27 +289,29 @@ export default function MainLayout({ children }) {
               )}
             </div>
 
-            {!collapsed && (
-              <button
-                onClick={handleLogout}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.12)',
-                  color: '#f87171',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '6px',
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-                title="Sign Out"
-              >
-                <LogOut size={12} /> Exit
-              </button>
-            )}
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: collapsed ? '8px' : '6px 10px',
+                fontSize: '11px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.35)',
+                transition: 'transform 0.15s ease',
+                flexShrink: 0
+              }}
+              title="Sign Out of iPACX RIS"
+            >
+              <LogOut size={14} />
+              {!collapsed && <span>Sign Out</span>}
+            </button>
           </div>
         </div>
       </aside>

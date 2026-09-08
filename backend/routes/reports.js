@@ -31,6 +31,43 @@ if (!fs.existsSync(reportImagesDir)) {
   fs.mkdirSync(reportImagesDir, { recursive: true });
 }
 
+function saveSnapshotToDisk(snapshotObj) {
+  if (!snapshotObj) return null;
+  const rawUrl = typeof snapshotObj === "string" ? snapshotObj : (snapshotObj.preview_url || snapshotObj.url || "");
+  const caption = typeof snapshotObj === "object" ? (snapshotObj.caption || "Key Diagnostic Image") : "Key Diagnostic Image";
+  
+  if (!rawUrl) return null;
+
+  if (rawUrl.startsWith("data:image/")) {
+    try {
+      const matches = rawUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+        const base64Data = matches[2];
+        const filename = `snap_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`;
+        const filePath = path.join(reportImagesDir, filename);
+
+        if (!fs.existsSync(reportImagesDir)) {
+          fs.mkdirSync(reportImagesDir, { recursive: true });
+        }
+
+        fs.writeFileSync(filePath, Buffer.from(base64Data, "base64"));
+        return {
+          preview_url: `/uploads/report_images/${filename}`,
+          caption: caption
+        };
+      }
+    } catch (err) {
+      console.error("Failed saving base64 snapshot to disk:", err.message);
+    }
+  }
+
+  return {
+    preview_url: rawUrl,
+    caption: caption
+  };
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, reportImagesDir);
@@ -330,11 +367,25 @@ const saveReportHandler = async (req, res) => {
 
     const history = req.body.history ?? req.body.report_content?.history ?? "";
     const findings = req.body.findings ?? req.body.report_content?.findings ?? "";
-    const conclusion = req.body.conclusion ?? req.body.report_content?.conclusion ?? "";
-    const reportTitle = req.body.reportTitle ?? req.body.report_content?.title ?? "RADIOLOGY REPORT";
     const snapshots = req.body.snapshots ?? req.body.report_content?.snapshots ?? [];
 
-    const reportContent = { history, findings, conclusion, title: reportTitle, snapshots };
+    const processedSnapshots = [];
+    if (Array.isArray(snapshots)) {
+      for (const s of snapshots) {
+        const processed = saveSnapshotToDisk(s);
+        if (processed && processed.preview_url) {
+          processedSnapshots.push(processed);
+        }
+      }
+    }
+
+    const reportContent = { 
+      history, 
+      findings, 
+      conclusion, 
+      title: reportTitle, 
+      snapshots: processedSnapshots 
+    };
     let reportId;
 
     // =========================
@@ -564,16 +615,14 @@ const saveReportHandler = async (req, res) => {
     // =========================
     // IMAGES & SNAPSHOTS (replace for that row)
     // =========================
-    const snapshotUrls = Array.isArray(snapshots) ? snapshots.map(s => typeof s === "string" ? s : (s.preview_url || s.url)).filter(Boolean) : [];
-    const allImagePaths = Array.isArray(image_paths) && image_paths.length > 0 ? image_paths : snapshotUrls;
-
-    if (allImagePaths.length > 0) {
+    if (processedSnapshots.length > 0) {
       await pool.query(`DELETE FROM report_images WHERE report_id=$1`, [reportId]);
-      for (let i = 0; i < allImagePaths.length; i++) {
+      for (let i = 0; i < processedSnapshots.length; i++) {
+        const snap = processedSnapshots[i];
         await pool.query(
-          `INSERT INTO report_images (report_id, image_path, sort_order)
-           VALUES ($1,$2,$3)`,
-          [reportId, allImagePaths[i], i + 1]
+          `INSERT INTO report_images (report_id, image_path, caption, sort_order)
+           VALUES ($1, $2, $3, $4)`,
+          [reportId, snap.preview_url, snap.caption || "Key Diagnostic Image", i + 1]
         );
       }
     }
@@ -661,9 +710,9 @@ report.addendum_reason = addendumRes.rows.length
       }
     }
 
-    // 3️⃣ Fetch report images
+    // 3️⃣ Fetch report images with captions
     const imagesRes = await pool.query(
-      `SELECT image_path, image_type, sort_order
+      `SELECT image_path, caption, image_type, sort_order
        FROM report_images
        WHERE report_id = $1
        ORDER BY sort_order`,
@@ -675,13 +724,24 @@ report.addendum_reason = addendumRes.rows.length
       try { content = JSON.parse(content); } catch { content = {}; }
     }
 
+    const loadedSnapshots = imagesRes.rows.map((img, i) => ({
+      id: `snap_${img.sort_order || i}`,
+      instance_id: `img_${i}`,
+      preview_url: img.image_path,
+      caption: img.caption || `Key Diagnostic Image ${i + 1}`
+    }));
+
+    const finalSnapshots = (Array.isArray(content.snapshots) && content.snapshots.length > 0)
+      ? content.snapshots
+      : loadedSnapshots;
+
     // 4️⃣ Return everything explicitly
     res.json({
       id: report.id,
       study_uid: report.study_uid,
       status: report.status,
       report_content: content,
-      snapshots: content.snapshots || [],
+      snapshots: finalSnapshots,
       history: content.history || "",
       findings: content.findings || "",
       conclusion: content.conclusion || "",
