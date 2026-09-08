@@ -31,6 +31,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: ipacx-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PORT=3015
       - POSTGRES_HOST=db
@@ -39,7 +41,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-lekhana}
       - POSTGRES_DB=ris
       - JWT_SECRET=${JWT_SECRET:-bhEs3RR+q74v+rK3w/3dWWTpiBpEXZ++KT7wrxMWjyUSsETbpJvORaEoAGpA+ejq}
-      - ORTHANC_URL=${EXTERNAL_ORTHANC_URL:-http://localhost:8042/}
+      - ORTHANC_URL=${EXTERNAL_ORTHANC_URL:-http://host.docker.internal:8042/}
       - ORTHANC_USER=${ORTHANC_USER:-orthanc}
       - ORTHANC_PASS=${ORTHANC_PASS:-orthanc}
       - MWL_SERVICE_HOST=mwl-service

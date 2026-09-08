@@ -16,12 +16,62 @@ const pacsService = new PacsService(pool);
 /* ======================================================
    ORTHANC CONFIG
 ====================================================== */
-const ORTHANC_URL = (process.env.ORTHANC_URL || "http://localhost:8042/").replace(/\/?$/, "/");
+let cachedWorkingOrthancUrl = null;
+
+async function getOrthancUrl() {
+  if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
+  const candidates = [
+    process.env.ORTHANC_URL,
+    "http://host.docker.internal:8042/",
+    "http://172.17.0.1:8042/",
+    "http://172.21.0.1:8042/",
+    "http://localhost:8042/"
+  ].filter(Boolean);
+
+  for (const rawUrl of candidates) {
+    const url = rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
+    try {
+      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 1500 });
+      cachedWorkingOrthancUrl = url;
+      return url;
+    } catch (e) {}
+  }
+  return (process.env.ORTHANC_URL || "http://host.docker.internal:8042/").replace(/\/?$/, "/");
+}
+
 const ORTHANC_USER = process.env.ORTHANC_USER || "orthanc";
 const ORTHANC_PASS = process.env.ORTHANC_PASS || "orthanc";
 
 function orthancAuthConfig() {
   return { auth: { username: ORTHANC_USER || "orthanc", password: ORTHANC_PASS || "orthanc" } };
+}
+
+async function findOrthancStudy(studyUID) {
+  const orthancUrl = await getOrthancUrl();
+  if (!studyUID) return null;
+
+  try {
+    const f1 = await axios.post(`${orthancUrl}tools/find`, {
+      Level: "Study",
+      Query: { StudyInstanceUID: studyUID }
+    }, { ...orthancAuthConfig(), timeout: 4000 });
+    if (f1.data && f1.data.length > 0) return f1.data[0];
+  } catch (e) {}
+
+  try {
+    const f2 = await axios.post(`${orthancUrl}tools/find`, {
+      Level: "Study",
+      Query: { AccessionNumber: studyUID }
+    }, { ...orthancAuthConfig(), timeout: 4000 });
+    if (f2.data && f2.data.length > 0) return f2.data[0];
+  } catch (e) {}
+
+  try {
+    const s = await axios.get(`${orthancUrl}studies/${studyUID}`, { ...orthancAuthConfig(), timeout: 4000 });
+    if (s.data && s.data.ID) return s.data.ID;
+  } catch (e) {}
+
+  return null;
 }
 
 function extractAgeFromName(name) {

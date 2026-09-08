@@ -1,7 +1,6 @@
 const axios = require("axios");
 const pool = require("../db");
 
-const ORTHANC_URL = process.env.ORTHANC_URL || "http://localhost:8042/";
 const ORTHANC_USER = process.env.ORTHANC_USER || "orthanc";
 const ORTHANC_PASS = process.env.ORTHANC_PASS || "orthanc";
 
@@ -17,6 +16,35 @@ const orthancAuthConfig = () => {
   return {};
 };
 
+let cachedWorkingOrthancUrl = null;
+
+async function getOrthancUrl() {
+  if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
+
+  const candidates = [
+    process.env.ORTHANC_URL,
+    "http://host.docker.internal:8042/",
+    "http://172.17.0.1:8042/",
+    "http://172.21.0.1:8042/",
+    "http://localhost:8042/"
+  ].filter(Boolean);
+
+  for (const rawUrl of candidates) {
+    const url = rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
+    try {
+      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 1500 });
+      cachedWorkingOrthancUrl = url;
+      console.log(`[PACS Gateway] Connected to live Orthanc instance at ${url}`);
+      return url;
+    } catch (e) {
+      // try next candidate
+    }
+  }
+
+  const fallback = (process.env.ORTHANC_URL || "http://host.docker.internal:8042/").replace(/\/?$/, "/");
+  return fallback;
+}
+
 /**
  * Universal Multi-PACS DICOM Tag Gateway
  * Supports Orthanc, DICOMWeb (QIDO-RS / WADO-RS), C-FIND adapters, and local database fallback.
@@ -29,8 +57,8 @@ class PacsGateway {
     if (rawAge && String(rawAge).trim() !== "" && rawAge !== "N/A") return String(rawAge).trim();
     if (!patientName) return "N/A";
     const str = String(patientName);
-    const match = str.match(/(\d{1,3})\s*(Y|M|D|YRS|YEARS)/i) || str.match(/\^(\d{1,3})Y/i);
-    if (match) return `${match[1]}${match[2].charAt(0).toUpperCase()}`;
+    const match = str.match(/(\d{1,3})\s*(Y|M|D|YRS|YEARS)/i) || str.match(/\^(\d{1,3})Y/i) || str.match(/\s(\d{1,3})Y/i);
+    if (match) return `${match[1]}${match[2] ? match[2].charAt(0).toUpperCase() : 'Y'}`;
     return "N/A";
   }
 
@@ -38,7 +66,7 @@ class PacsGateway {
    * Normalize Patient Name (removes ^ DICOM caret separators)
    */
   formatPatientName(name) {
-    if (!name) return "Patient";
+    if (!name) return "";
     return String(name).replace(/\^/g, " ").replace(/\s+/g, " ").trim();
   }
 
@@ -52,32 +80,42 @@ class PacsGateway {
     let modality = "CR";
     let bodyPart = "General";
 
+    const orthancUrl = await getOrthancUrl();
+
     try {
-      // 1. Query PACS via DICOM C-FIND / Orthanc tools/find
-      const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
+      // 1. Query PACS via DICOM C-FIND / Orthanc tools/find with StudyInstanceUID
+      let findRes = await axios.post(`${orthancUrl}tools/find`, {
         Level: "Study",
         Query: { StudyInstanceUID: studyUID }
       }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
 
+      // If not matched by StudyInstanceUID, try AccessionNumber or PatientID
+      if (!findRes.data || findRes.data.length === 0) {
+        findRes = await axios.post(`${orthancUrl}tools/find`, {
+          Level: "Study",
+          Query: { AccessionNumber: studyUID }
+        }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+      }
+
       if (findRes.data && findRes.data.length > 0) {
         const orthancId = findRes.data[0];
-        const { data: sData } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+        const { data: sData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
         orthancData = sData;
       } else {
         // Direct Orthanc ID lookup
-        const { data: dData } = await axios.get(`${ORTHANC_URL}studies/${studyUID}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+        const { data: dData } = await axios.get(`${orthancUrl}studies/${studyUID}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
         if (dData && dData.ID) orthancData = dData;
       }
 
       // 2. Fetch Series and Instance DICOM Tags
       if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
         const firstSeriesId = orthancData.Series[0];
-        const { data: serRes } = await axios.get(`${ORTHANC_URL}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+        const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
         seriesData = serRes;
 
         if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
           const firstInstId = seriesData.Instances[0];
-          const { data: instRes } = await axios.get(`${ORTHANC_URL}instances/${firstInstId}/content/tags`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+          const { data: instRes } = await axios.get(`${orthancUrl}instances/${firstInstId}/content/tags`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
           instanceData = instRes;
         }
       }
@@ -86,7 +124,7 @@ class PacsGateway {
     }
 
     // 3. Query local database fallback
-    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1 OR id::text = $2", [studyUID, studyUID]).catch(() => ({ rows: [] }));
+    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1 OR id::text = $2 OR accession_number = $3", [studyUID, studyUID, studyUID]).catch(() => ({ rows: [] }));
     const dbRow = dbRes.rows[0] || {};
 
     const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "";
