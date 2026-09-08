@@ -254,18 +254,18 @@ router.get("/study/:studyUID", async (req, res) => {
     const dicomTags = await pacsGateway.getFullDicomTags(studyUID);
 
     const result = {
-      PatientID: dicomTags.patient.PatientID,
-      PatientName: dicomTags.patient.PatientName,
-      PatientSex: dicomTags.patient.PatientSex,
-      PatientAge: dicomTags.patient.PatientAge,
-      AccessionNumber: dicomTags.study.AccessionNumber,
-      StudyDescription: dicomTags.study.StudyDescription,
-      StudyDate: dicomTags.study.StudyDate,
-      StudyTime: dicomTags.study.StudyTime,
-      Modality: dicomTags.study.Modality,
-      StudyInstanceUID: dicomTags.study.StudyInstanceUID,
-      ReferringPhysicianName: dicomTags.study.ReferringPhysicianName,
-      BodyPartExamined: dicomTags.study.BodyPartExamined,
+      PatientID: dicomTags?.patient?.PatientID || "N/A",
+      PatientName: dicomTags?.patient?.PatientName || "N/A",
+      PatientSex: dicomTags?.patient?.PatientSex || "O",
+      PatientAge: dicomTags?.patient?.PatientAge || "N/A",
+      AccessionNumber: dicomTags?.study?.AccessionNumber || "N/A",
+      StudyDescription: dicomTags?.study?.StudyDescription || "",
+      StudyDate: dicomTags?.study?.StudyDate || "",
+      StudyTime: dicomTags?.study?.StudyTime || "",
+      Modality: dicomTags?.study?.Modality || "CR",
+      StudyInstanceUID: studyUID,
+      ReferringPhysicianName: dicomTags?.study?.ReferringPhysicianName || "",
+      BodyPartExamined: dicomTags?.study?.BodyPartExamined || "",
       fullDicomTags: dicomTags
     };
 
@@ -274,7 +274,7 @@ router.get("/study/:studyUID", async (req, res) => {
     console.error("Fetch study detail failed:", err.message);
     res.status(500).json({ error: "Failed to fetch study details" });
   }
-}));
+});
 
 router.get("/dicom-tags/:studyUID", async (req, res) => {
   try {
@@ -285,7 +285,7 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
     console.error("Fetch DICOM tags failed:", err.message);
     res.status(500).json({ error: "Failed to fetch DICOM tags" });
   }
-}));
+});
 
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   const { instanceId } = req.params;
