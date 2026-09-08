@@ -5,7 +5,7 @@ const logger = require("../utils/logger");
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  PORT: z.string().default("5000"),
+  PORT: z.string().default("3015"),
   POSTGRES_HOST: z.string().default("localhost"),
   POSTGRES_PORT: z.string().default("5432"),
   POSTGRES_USER: z.string().default("postgres"),

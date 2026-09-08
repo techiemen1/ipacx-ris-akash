@@ -32,6 +32,7 @@ services:
       dockerfile: Dockerfile
     container_name: ipacx-backend
     environment:
+      - PORT=3015
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_USER=postgres
@@ -45,7 +46,7 @@ services:
       - MWL_SCP_PORT=11118
       - REDIS_URL=redis://redis:6379
     ports:
-      - "3015:5000"
+      - "3015:3015"
     depends_on:
       - db
       - redis
