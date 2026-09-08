@@ -445,7 +445,6 @@ export default function ReportingPage() {
                         <tr key={item.study_uid || idx} className={`rp-row-modality mod-row-${item.modality.toLowerCase()}`}>
                           <td>
                             <div className="rp-patient-cell">
-                              <div className={`rp-avatar mod-avatar-${item.modality.toLowerCase()}`}>{getInitials(item.patient_name)}</div>
                               <span className="rp-patient-name">{item.patient_name}</span>
                             </div>
                           </td>

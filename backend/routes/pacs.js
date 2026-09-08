@@ -14,7 +14,7 @@ const asyncHandler = require("../middleware/asyncHandler");
 const pacsService = new PacsService(pool);
 
 /* ======================================================
-   ORTHANC CONFIG
+   ORTHANC CONFIG & DYNAMIC DISCOVERY
 ====================================================== */
 let cachedWorkingOrthancUrl = null;
 
@@ -87,33 +87,34 @@ function extractAgeFromName(name) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 1024 * 1024 * 1024, // 1GB max file size
-    fieldSize: 1024 * 1024 * 1024, // 1GB max field size
-    files: 2000 // Up to 2000 files in a single folder upload
+    fileSize: 1024 * 1024 * 1024,
+    fieldSize: 1024 * 1024 * 1024,
+    files: 2000
   }
 });
 
 /* ======================================================
-   UPLOAD LOCAL DICOM FILES / ZIP ARCHIVES / FOLDERS (1GB payload)
+   UPLOAD LOCAL DICOM FILES / ZIP ARCHIVES
 ====================================================== */
 router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
   console.log(`[PACS Upload] Processing upload request with ${req.files ? req.files.length : 0} files...`);
 
   if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ success: false, message: "No DICOM files or ZIP archives received in upload payload" });
+    return res.status(400).json({ success: false, message: "No DICOM files or ZIP archives received" });
   }
 
   const cacheService = require("../services/cacheService");
+  const orthancUrl = await getOrthancUrl();
   const uploadedResults = [];
 
   const processSingleBuffer = async (filename, buffer) => {
     if (!buffer || buffer.length === 0) return;
     try {
-      const orthancRes = await axios.post(`${ORTHANC_URL}instances`, buffer, {
+      const orthancRes = await axios.post(`${orthancUrl}instances`, buffer, {
         headers: { "Content-Type": "application/dicom" },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
-        timeout: 600000, // 10 minutes timeout per file
+        timeout: 600000,
         ...orthancAuthConfig(),
       });
       uploadedResults.push({ filename, status: "Success", id: orthancRes.data?.ID });
@@ -129,7 +130,6 @@ router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
                   file.mimetype === "application/x-zip-compressed";
 
     if (isZip) {
-      console.log(`[PACS Upload] Extracting ZIP archive: ${file.originalname}`);
       try {
         const zip = new AdmZip(file.buffer);
         const zipEntries = zip.getEntries();
@@ -142,8 +142,7 @@ router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
           }
         }
       } catch (zipErr) {
-        console.error(`[PACS Upload] ZIP extraction error for ${file.originalname}:`, zipErr.message);
-        uploadedResults.push({ filename: file.originalname, status: "Failed", error: `ZIP extraction error: ${zipErr.message}` });
+        uploadedResults.push({ filename: file.originalname, status: "Failed", error: zipErr.message });
       }
     } else {
       await processSingleBuffer(file.originalname, file.buffer);
@@ -151,9 +150,7 @@ router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
   }
 
   await cacheService.del("pacs:*");
-
   const successCount = uploadedResults.filter(r => r.status === "Success").length;
-  console.log(`[PACS Upload] Ingestion complete. ${successCount}/${uploadedResults.length} instances ingested to Orthanc.`);
 
   res.json({
     success: true,
@@ -162,9 +159,6 @@ router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
   });
 }));
 
-/* ======================================================
-   GET ALL PACS
-====================================================== */
 router.get("/", asyncHandler(async (req, res) => {
   const pacs = await pacsService.list();
   const sanitized = (pacs || []).map((item) => ({
@@ -174,21 +168,10 @@ router.get("/", asyncHandler(async (req, res) => {
   res.json(sanitized);
 }));
 
-/* ======================================================
-   ADD / UPDATE PACS
-====================================================== */
 router.post("/", asyncHandler(async (req, res) => {
   const { id, pacs_name, pacs_type, ae_title, ip_address, port, username, password } = req.body;
-
   const saved = await pacsService.save({
-    id,
-    pacs_name,
-    pacs_type,
-    ae_title,
-    ip_address,
-    port,
-    username,
-    password,
+    id, pacs_name, pacs_type, ae_title, ip_address, port, username, password
   });
 
   await logAction(req, {
@@ -200,9 +183,6 @@ router.post("/", asyncHandler(async (req, res) => {
   res.json(saved);
 }));
 
-/* ======================================================
-   DELETE PACS
-====================================================== */
 router.delete("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
   await pacsService.delete(id);
@@ -214,9 +194,6 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   res.json({ success: true, message: "PACS configuration removed" });
 }));
 
-/* ======================================================
-   GET ACTIVE PACS LOGS / METRICS
-====================================================== */
 router.get("/logs", asyncHandler(async (req, res) => {
   const activePacs = await pacsService.repository.findActive();
   res.json({
@@ -232,9 +209,6 @@ router.get("/logs", asyncHandler(async (req, res) => {
   });
 }));
 
-/* ======================================================
-   C-ECHO / PACS CONNECTIVITY CHECK
-====================================================== */
 router.get("/c-echo", asyncHandler(async (req, res) => {
   const host = process.env.ORTHANC_HOST || "localhost";
   const port = parseInt(process.env.ORTHANC_DICOM_PORT || "4242", 10);
@@ -268,18 +242,12 @@ router.get("/c-echo", asyncHandler(async (req, res) => {
   socket.connect(port, host);
 }));
 
-/* ======================================================
-   GET STUDIES (ACTIVE PACS)
-====================================================== */
 router.get("/studies", asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
   const studies = await pacsService.listActiveStudies({ startDate, endDate });
   res.json(studies);
 }));
 
-/* ======================================================
-   GET INDIVIDUAL STUDY DETAIL (UNIVERSAL PACS GATEWAY)
-====================================================== */
 router.get("/study/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
@@ -306,11 +274,8 @@ router.get("/study/:studyUID", async (req, res) => {
     console.error("Fetch study detail failed:", err.message);
     res.status(500).json({ error: "Failed to fetch study details" });
   }
-});
+}));
 
-/* ======================================================
-   GET FULL STANDARDIZED DICOM TAGS DICTIONARY
-====================================================== */
 router.get("/dicom-tags/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
@@ -320,15 +285,13 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
     console.error("Fetch DICOM tags failed:", err.message);
     res.status(500).json({ error: "Failed to fetch DICOM tags" });
   }
-});
+}));
 
-/* ======================================================
-   PROXY INSTANCE PREVIEW IMAGE (SAFE AUTHENTICATED PREVIEW)
-====================================================== */
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   const { instanceId } = req.params;
+  const orthancUrl = await getOrthancUrl();
   try {
-    const previewStream = await axios.get(`${ORTHANC_URL}instances/${instanceId}/preview`, {
+    const previewStream = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
       responseType: "stream",
       ...orthancAuthConfig(),
     });
@@ -341,31 +304,24 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   }
 }));
 
-/* ======================================================
-   PACS KEY IMAGES (TARGET SINGLE KEY IMAGE CAPTURE)
-====================================================== */
 router.get("/snapshots/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-    const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-      Level: "Study",
-      Query: { StudyInstanceUID: studyUID }
-    }, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: [] }));
+    const orthancUrl = await getOrthancUrl();
+    const orthancId = await findOrthancStudy(studyUID);
 
-    if (!findRes.data || !findRes.data.length) {
+    if (!orthancId) {
       return res.json({ success: true, data: [] });
     }
 
-    const orthancId = findRes.data[0];
-    const { data: studyData } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
+    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
 
     if (!studyData || !Array.isArray(studyData.Series) || studyData.Series.length === 0) {
       return res.json({ success: true, data: [] });
     }
 
-    // Pick first series and its middle instance for fast 1-click capture
     const firstSeriesId = studyData.Series[0];
-    const { data: seriesData } = await axios.get(`${ORTHANC_URL}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
+    const { data: seriesData } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
 
     const snapshots = [];
     if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
@@ -387,23 +343,17 @@ router.get("/snapshots/:studyUID", async (req, res) => {
   }
 });
 
-/* ======================================================
-   PACS DICOM MEASUREMENTS & STRUCTURED TAGS ROUTE
-====================================================== */
 router.get("/measurements/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-    const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-      Level: "Study",
-      Query: { StudyInstanceUID: studyUID }
-    }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+    const orthancUrl = await getOrthancUrl();
+    const orthancId = await findOrthancStudy(studyUID);
 
-    if (!findRes || !findRes.data || !findRes.data.length) {
+    if (!orthancId) {
       return res.json({ success: true, data: [], measurements: {}, metadata: {} });
     }
 
-    const orthancId = findRes.data[0];
-    const instancesRes = await axios.get(`${ORTHANC_URL}studies/${orthancId}/instances`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+    const instancesRes = await axios.get(`${orthancUrl}studies/${orthancId}/instances`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
     const instances = instancesRes.data || [];
 
     let measurements = {};
@@ -412,7 +362,7 @@ router.get("/measurements/:studyUID", async (req, res) => {
     if (instances.length > 0) {
       const firstInst = instances[0];
       const instId = typeof firstInst === "string" ? firstInst : firstInst.ID;
-      const tagsRes = await axios.get(`${ORTHANC_URL}instances/${instId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: {} }));
+      const tagsRes = await axios.get(`${orthancUrl}instances/${instId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: {} }));
       const tags = tagsRes.data || {};
 
       metadata.protocol = tags["ProtocolName"] || "Diagnostic Study";
@@ -456,30 +406,24 @@ router.get("/measurements/:studyUID", async (req, res) => {
   }
 });
 
-/* ======================================================
-   PACS DICOM STUDY SERIES & FULL ORDERED SLICES ROUTE
-====================================================== */
 router.get("/study-series-instances/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-    const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-      Level: "Study",
-      Query: { StudyInstanceUID: studyUID }
-    }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+    const orthancUrl = await getOrthancUrl();
+    const orthancId = await findOrthancStudy(studyUID);
 
-    if (!findRes.data || !findRes.data.length) {
+    if (!orthancId) {
       return res.json({ success: true, series: [] });
     }
 
-    const orthancId = findRes.data[0];
-    const { data: studyData } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
 
     if (!studyData || !Array.isArray(studyData.Series)) {
       return res.json({ success: true, series: [] });
     }
 
     const seriesPromises = studyData.Series.map((seriesId, idx) =>
-      axios.get(`${ORTHANC_URL}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 4000 })
+      axios.get(`${orthancUrl}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 4000 })
         .then(r => ({ ...r.data, idx }))
         .catch(() => null)
     );
@@ -522,24 +466,16 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
   }
 });
 
-/* ======================================================
-   EXPORT STUDY: DICOM ARCHIVE (.zip / .dcm)
-====================================================== */
 router.get("/export/dicom/:studyUID", asyncHandler(async (req, res) => {
   const { studyUID } = req.params;
-  console.log(`[PACS Export] Requesting DICOM archive for StudyUID: ${studyUID}`);
+  const orthancUrl = await getOrthancUrl();
+  const orthancId = await findOrthancStudy(studyUID);
 
-  const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-    Level: "Study",
-    Query: { StudyInstanceUID: studyUID }
-  }, orthancAuthConfig()).catch(() => ({ data: [] }));
-
-  if (!findRes.data || !findRes.data.length) {
+  if (!orthancId) {
     return res.status(404).json({ success: false, message: "Study not found in PACS storage" });
   }
 
-  const orthancId = findRes.data[0];
-  const archiveUrl = `${ORTHANC_URL}studies/${orthancId}/archive`;
+  const archiveUrl = `${orthancUrl}studies/${orthancId}/archive`;
 
   try {
     const archiveStream = await axios.get(archiveUrl, {
@@ -558,36 +494,26 @@ router.get("/export/dicom/:studyUID", asyncHandler(async (req, res) => {
   }
 }));
 
-/* ======================================================
-   EXPORT STUDY: JPEG / PNG IMAGES PACKAGE (.zip)
-====================================================== */
 router.get("/export/images/:format/:studyUID", asyncHandler(async (req, res) => {
-  const { format, studyUID } = req.params; // format: 'jpeg' | 'png'
+  const { format, studyUID } = req.params;
   const isPng = String(format).toLowerCase() === "png";
   const ext = isPng ? "png" : "jpg";
   const contentType = isPng ? "image/png" : "image/jpeg";
+  const orthancUrl = await getOrthancUrl();
+  const orthancId = await findOrthancStudy(studyUID);
 
-  console.log(`[PACS Export] Requesting ${format.toUpperCase()} image bundle for StudyUID: ${studyUID}`);
-
-  const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-    Level: "Study",
-    Query: { StudyInstanceUID: studyUID }
-  }, orthancAuthConfig()).catch(() => ({ data: [] }));
-
-  if (!findRes.data || !findRes.data.length) {
+  if (!orthancId) {
     return res.status(404).json({ success: false, message: "Study not found in PACS storage" });
   }
 
-  const orthancId = findRes.data[0];
-  const { data: studyData } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, orthancAuthConfig());
-
+  const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, orthancAuthConfig());
   const zip = new AdmZip();
   let imageCount = 0;
 
   if (Array.isArray(studyData.Series)) {
     for (let sIdx = 0; sIdx < studyData.Series.length; sIdx++) {
       const seriesId = studyData.Series[sIdx];
-      const { data: seriesData } = await axios.get(`${ORTHANC_URL}series/${seriesId}`, orthancAuthConfig());
+      const { data: seriesData } = await axios.get(`${orthancUrl}series/${seriesId}`, orthancAuthConfig());
       const seriesDesc = (seriesData.MainDicomTags?.SeriesDescription || `Series_${sIdx + 1}`)
         .replace(/[^a-zA-Z0-9_-]/g, "_");
 
@@ -595,7 +521,7 @@ router.get("/export/images/:format/:studyUID", asyncHandler(async (req, res) => 
         for (let iIdx = 0; iIdx < seriesData.Instances.length; iIdx++) {
           const instanceId = seriesData.Instances[iIdx];
           try {
-            const previewRes = await axios.get(`${ORTHANC_URL}instances/${instanceId}/preview`, {
+            const previewRes = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
               responseType: "arraybuffer",
               headers: { Accept: contentType },
               ...orthancAuthConfig(),
@@ -626,30 +552,23 @@ router.get("/export/images/:format/:studyUID", asyncHandler(async (req, res) => 
   res.send(zipBuffer);
 }));
 
-/* ======================================================
-   EXPORT SINGLE KEY IMAGE PREVIEW (.jpg)
-====================================================== */
 router.get("/export/single/:studyUID", asyncHandler(async (req, res) => {
   const { studyUID } = req.params;
+  const orthancUrl = await getOrthancUrl();
+  const orthancId = await findOrthancStudy(studyUID);
 
-  const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
-    Level: "Study",
-    Query: { StudyInstanceUID: studyUID }
-  }, orthancAuthConfig()).catch(() => ({ data: [] }));
-
-  if (!findRes.data || !findRes.data.length) {
+  if (!orthancId) {
     return res.status(404).json({ success: false, message: "Study not found in PACS storage" });
   }
 
-  const orthancId = findRes.data[0];
-  const { data: studyData } = await axios.get(`${ORTHANC_URL}studies/${orthancId}`, orthancAuthConfig());
+  const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, orthancAuthConfig());
 
   if (Array.isArray(studyData.Series) && studyData.Series.length > 0) {
     const seriesId = studyData.Series[0];
-    const { data: seriesData } = await axios.get(`${ORTHANC_URL}series/${seriesId}`, orthancAuthConfig());
+    const { data: seriesData } = await axios.get(`${orthancUrl}series/${seriesId}`, orthancAuthConfig());
     if (Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
       const instanceId = seriesData.Instances[0];
-      const previewStream = await axios.get(`${ORTHANC_URL}instances/${instanceId}/preview`, {
+      const previewStream = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
         responseType: "stream",
         ...orthancAuthConfig(),
       });

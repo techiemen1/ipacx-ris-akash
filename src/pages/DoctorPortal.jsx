@@ -251,7 +251,6 @@ export default function DoctorPortal() {
                       <tr key={s.report_id || s.study_uid}>
                         <td>
                           <div className="dp-patient-cell">
-                            <div className="dp-avatar">{getInitials(s.patient_name)}</div>
                             <span className="dp-patient-name">{s.patient_name || "Patient"}</span>
                           </div>
                         </td>

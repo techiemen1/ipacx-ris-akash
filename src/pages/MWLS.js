@@ -395,7 +395,6 @@ export default function MWLS() {
                   </div>
                   <div className="mwl-card-details">
                     <div className="mwl-patient-row">
-                      <div className="mwl-avatar">{getInitials(m.patient_name)}</div>
                       <span className="mwl-card-name">{m.patient_name || "Patient"}</span>
                     </div>
                     <div className="mwl-card-meta">

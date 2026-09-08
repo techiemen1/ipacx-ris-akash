@@ -727,7 +727,6 @@ export default function PACSpage() {
                           <tr key={uid || idx} className={`pacs-row-modality mod-row-${mod.toLowerCase()}`}>
                             <td>
                               <div className="patient-cell">
-                                <div className={`avatar-circle mod-avatar-${mod.toLowerCase()}`}>{getInitials(pName)}</div>
                                 <div className="patient-details">
                                   <span className="patient-name">{pName}</span>
                                   <span className="patient-sub">{s.PatientSex || "O"} • {s.PatientAge || "N/A"}</span>

@@ -273,8 +273,8 @@ export default function MainLayout({ children }) {
         <div className="ris-user-card" style={{ padding: '10px 12px', background: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', marginTop: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-              <div className="user-avatar" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: '#fff', fontWeight: 'bold', width: '34px', height: '34px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', flexShrink: 0, boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)' }}>
-                {getInitials(username)}
+              <div className="user-avatar" style={{ background: '#1e293b', color: '#38bdf8', width: '34px', height: '34px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <UserCheck size={18} />
               </div>
 
               {!collapsed && (
