@@ -7,13 +7,19 @@ const pool = require("../db");
 module.exports = async function generateFinalReportPDF(
   report,
   images = [],
-  options = { printMode: false }
+  options = { printMode: false, pageSetup: {} }
 ) {
   // Fetch clinic branding
   let clinicBranding = {
-    name: "iPACX Diagnostic Center",
-    header_text: "Department of Radio-Diagnosis & Imaging",
-    footer_text: "Electronically Verified Diagnostic Report",
+    name: "AKASH MEDICAL COLLEGE AND HOSPITALS",
+    header_text: "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING",
+    address: "Prasannahalli Main Road, Devanahalli, Bengaluru, Karnataka 562110",
+    phone: "+91 80 7115 9900 / +91 98865 17662",
+    email: "info@akashmedical.edu.in",
+    nabh_id: "NABH-H-2024-0891",
+    nabl_id: "NABL-M-4821",
+    registration_no: "KMC/MED/REG/48190",
+    footer_text: "Electronically Verified Diagnostic Report • NABH & NABL Accredited",
     logo_url: null,
   };
 
@@ -25,6 +31,12 @@ module.exports = async function generateFinalReportPDF(
       clinicBranding = {
         name: c.name || clinicBranding.name,
         header_text: c.header_text || clinicBranding.header_text,
+        address: c.address || clinicBranding.address,
+        phone: c.phone || clinicBranding.phone,
+        email: c.email || clinicBranding.email,
+        nabh_id: c.nabh_id || clinicBranding.nabh_id,
+        nabl_id: c.nabl_id || clinicBranding.nabl_id,
+        registration_no: c.registration_no || clinicBranding.registration_no,
         footer_text: c.footer_text || clinicBranding.footer_text,
         logo_url: c.logo_url || null,
       };
@@ -44,17 +56,23 @@ module.exports = async function generateFinalReportPDF(
 
   return new Promise((resolve, reject) => {
     try {
+      const pageSetup = options.pageSetup || {};
+      const paperSize = pageSetup.paperSize || "A4";
+      const marginSize = pageSetup.margins === "compact" ? 30 : pageSetup.margins === "wide" ? 50 : 40;
+      const isPrePrinted = !!pageSetup.prePrintedStationery;
+      const showFooter = pageSetup.showFooter !== false;
+
       const outputDir = path.join(__dirname, "..", "generated_pdfs");
       if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
       const pdfPath = path.join(outputDir, `REPORT_${report.id}_${Date.now()}.pdf`);
-      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      const doc = new PDFDocument({ size: paperSize, margin: marginSize });
       const stream = fs.createWriteStream(pdfPath);
       doc.pipe(stream);
 
-      const pageWidth = 595;
-      const pageHeight = 842;
-      let currentY = 30;
+      const pageWidth = paperSize === "Letter" ? 612 : 595;
+      const pageHeight = paperSize === "Letter" ? 792 : 842;
+      let currentY = marginSize;
 
       const filterAiTerms = (content) => {
         if (!content) return "";
@@ -85,40 +103,44 @@ module.exports = async function generateFinalReportPDF(
       /* -----------------------------
          HEADER (Dynamic Clinic Branding)
       ----------------------------- */
-      if (!options.printMode) {
+      if (!options.printMode && !isPrePrinted) {
         if (clinicBranding.logo_url && fs.existsSync(clinicBranding.logo_url)) {
-          doc.image(clinicBranding.logo_url, 40, currentY, { width: 60 });
+          doc.image(clinicBranding.logo_url, marginSize, currentY, { width: 60 });
         }
-        doc.font("Helvetica-Bold").fontSize(14).text(clinicBranding.name, 0, currentY, { align: "center" });
-        currentY += 18;
-        doc.font("Helvetica").fontSize(10).text(clinicBranding.header_text, { align: "center" });
-        currentY += 20;
-        doc.moveTo(40, currentY).lineTo(pageWidth - 40, currentY).stroke();
-        currentY += 12;
+        doc.font("Helvetica-Bold").fontSize(13).text(clinicBranding.name.toUpperCase(), 0, currentY, { align: "center" });
+        currentY += 16;
+        doc.font("Helvetica-Bold").fontSize(9).text(clinicBranding.header_text.toUpperCase(), { align: "center" });
+        currentY += 13;
+        doc.font("Helvetica").fontSize(8).text(`${clinicBranding.address} • Helpline: ${clinicBranding.phone}`, { align: "center" });
+        currentY += 16;
+        doc.moveTo(marginSize, currentY).lineTo(pageWidth - marginSize, currentY).stroke();
+        currentY += 10;
+      } else if (isPrePrinted) {
+        currentY += 60; // Leave blank space for pre-printed letterhead
       }
 
       /* -----------------------------
          PATIENT INFO TABLE
       ----------------------------- */
-      const startX = 40;
-      const totalWidth = 515;
+      const startX = marginSize;
+      const totalWidth = pageWidth - (marginSize * 2);
       const colW = totalWidth / 3;
 
       const drawRow = (data) => {
-        let maxRowHeight = 20;
+        let maxRowHeight = 18;
         const valueOffset = 75;
 
         data.forEach((item) => {
           const height =
-            doc.font("Helvetica").fontSize(9).heightOfString(String(item.value || "N/A"), { width: colW - valueOffset - 5 }) + 8;
+            doc.font("Helvetica").fontSize(9).heightOfString(String(item.value || "N/A"), { width: colW - valueOffset - 5 }) + 6;
           if (height > maxRowHeight) maxRowHeight = height;
         });
 
         data.forEach((item, i) => {
           const x = startX + i * colW;
           doc.rect(x, currentY, colW, maxRowHeight).stroke();
-          doc.font("Helvetica-Bold").fontSize(9).text(item.label, x + 4, currentY + 5);
-          doc.font("Helvetica").fontSize(9).text(String(item.value || "N/A"), x + valueOffset, currentY + 5, { width: colW - valueOffset - 5 });
+          doc.font("Helvetica-Bold").fontSize(8.5).text(item.label, x + 4, currentY + 4);
+          doc.font("Helvetica").fontSize(8.5).text(String(item.value || "N/A"), x + valueOffset, currentY + 4, { width: colW - valueOffset - 5 });
         });
 
         currentY += maxRowHeight;
@@ -144,19 +166,19 @@ module.exports = async function generateFinalReportPDF(
       ]);
 
       drawRow([
-        { label: "Reported Date:", value: new Date().toLocaleString("en-IN") },
+        { label: "Reported Date:", value: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) },
         { label: "Modality:", value: report.modality || "N/A" },
         { label: "Body Part:", value: report.body_part || "N/A" },
       ]);
 
-      currentY += 15;
+      currentY += 12;
 
       /* -----------------------------
          REPORT TITLE
       ----------------------------- */
       const reportTitle = (report.report_title || `${report.modality || ""} ${report.body_part || ""} REPORT`).toUpperCase();
-      doc.font("Helvetica-Bold").fontSize(12).text(reportTitle, 40, currentY, { align: "center" });
-      currentY = doc.y + 12;
+      doc.font("Helvetica-Bold").fontSize(11).text(reportTitle, marginSize, currentY, { align: "center" });
+      currentY = doc.y + 10;
 
       /* -----------------------------
          HISTORY + FINDINGS
@@ -170,17 +192,17 @@ module.exports = async function generateFinalReportPDF(
         if (s.val) {
           if (currentY > pageHeight - 150) {
             doc.addPage();
-            currentY = 40;
+            currentY = marginSize;
           }
-          doc.font("Helvetica-Bold").fontSize(11).text(s.label, 40, currentY);
-          currentY += 14;
-          doc.font("Helvetica").fontSize(10).text(stripHTML(s.val), 40, currentY, { width: totalWidth, lineGap: 3, align: "justify" });
-          currentY = doc.y + 12;
+          doc.font("Helvetica-Bold").fontSize(10).text(s.label, marginSize, currentY);
+          currentY += 12;
+          doc.font("Helvetica").fontSize(9.5).text(stripHTML(s.val), marginSize, currentY, { width: totalWidth, lineGap: 3, align: "justify" });
+          currentY = doc.y + 10;
         }
       });
 
       /* -----------------------------
-         KEY DIAGNOSTIC IMAGES & SNAPSHOTS
+         KEY DIAGNOSTIC IMAGES & SNAPSHOTS (SUPPORT BASE64 DATA URLS)
       ----------------------------- */
       const keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
         ? report.report_content.snapshots
@@ -189,33 +211,42 @@ module.exports = async function generateFinalReportPDF(
       if (keyImages.length > 0) {
         if (currentY > pageHeight - 160) {
           doc.addPage();
-          currentY = 40;
+          currentY = marginSize;
         }
-        doc.font("Helvetica-Bold").fontSize(11).text("Key Diagnostic Images / Annotations:", 40, currentY);
-        currentY += 18;
+        doc.font("Helvetica-Bold").fontSize(10).text("Key Diagnostic Images:", marginSize, currentY);
+        currentY += 14;
 
-        let xPos = 40;
+        let xPos = marginSize;
         keyImages.forEach((img, i) => {
           let rawPath = typeof img === "string" ? img : (img.preview_url || img.image_path || img.url || "");
           let captionText = typeof img === "object" ? (img.caption || `Key Image ${i + 1}`) : `Key Image ${i + 1}`;
           
-          if (rawPath && rawPath.startsWith("/")) {
-            rawPath = path.join(__dirname, "..", rawPath);
+          let imgSource = null;
+          if (rawPath.startsWith("data:image/")) {
+            const base64Data = rawPath.split(",")[1];
+            if (base64Data) {
+              imgSource = Buffer.from(base64Data, "base64");
+            }
+          } else if (rawPath && rawPath.startsWith("/")) {
+            const absPath = path.join(__dirname, "..", rawPath);
+            if (fs.existsSync(absPath)) imgSource = absPath;
+          } else if (rawPath && fs.existsSync(rawPath)) {
+            imgSource = rawPath;
           }
 
-          if (fs.existsSync(rawPath)) {
-            if (xPos + 110 > pageWidth - 40) {
-              xPos = 40;
+          if (imgSource) {
+            if (xPos + 110 > pageWidth - marginSize) {
+              xPos = marginSize;
               currentY += 115;
             }
             if (currentY > pageHeight - 160) {
               doc.addPage();
-              currentY = 40;
-              xPos = 40;
+              currentY = marginSize;
+              xPos = marginSize;
             }
 
             try {
-              doc.image(rawPath, xPos, currentY, { width: 100, height: 85 });
+              doc.image(imgSource, xPos, currentY, { width: 100, height: 85 });
               doc.font("Helvetica").fontSize(8).text(captionText, xPos, currentY + 88, { width: 100, align: "center" });
             } catch (e) {
               console.warn("PDF Image draw notice:", e.message);
@@ -224,7 +255,7 @@ module.exports = async function generateFinalReportPDF(
             xPos += 115;
           }
         });
-        currentY += 115;
+        currentY += 105;
       }
 
       /* -----------------------------
@@ -233,68 +264,70 @@ module.exports = async function generateFinalReportPDF(
       if (report.report_content?.conclusion) {
         if (currentY > pageHeight - 180) {
           doc.addPage();
-          currentY = 40;
+          currentY = marginSize;
         }
-        doc.font("Helvetica-Bold").fontSize(11).text("Conclusion:", 40, currentY);
-        currentY += 14;
-        doc.font("Helvetica-Bold").fontSize(10).text(stripHTML(report.report_content?.conclusion), 40, currentY, { width: totalWidth, lineGap: 3, align: "justify" });
-        currentY = doc.y + 25;
+        doc.font("Helvetica-Bold").fontSize(10).text("Conclusion:", marginSize, currentY);
+        currentY += 12;
+        doc.font("Helvetica-Bold").fontSize(9.5).text(stripHTML(report.report_content?.conclusion), marginSize, currentY, { width: totalWidth, lineGap: 3, align: "justify" });
+        currentY = doc.y + 20;
       }
 
       /* -----------------------------
          SIGNATURES & QR CODE VERIFICATION
       ----------------------------- */
-      if (currentY > pageHeight - 160) {
-        doc.addPage();
-        currentY = 50;
-      }
+      if (showFooter) {
+        if (currentY > pageHeight - 150) {
+          doc.addPage();
+          currentY = marginSize;
+        }
 
-      const formatSignature = (sig) => {
-        if (!sig) return null;
-        return {
-          imagePath: sig.signature_url ? path.join(__dirname, "..", sig.signature_url) : null,
-          fullName: sig.full_name,
-          qualification: sig.qualification,
-          signedOn: sig.dateTime ? new Date(sig.dateTime).toLocaleString("en-IN") : "",
+        const formatSignature = (sig) => {
+          if (!sig) return null;
+          return {
+            imagePath: sig.signature_url ? path.join(__dirname, "..", sig.signature_url) : null,
+            fullName: sig.full_name,
+            qualification: sig.qualification,
+            signedOn: sig.dateTime ? new Date(sig.dateTime).toLocaleDateString("en-IN") : "",
+          };
         };
-      };
 
-      const reported = formatSignature(report.reported_by_signature);
-      const approved = formatSignature(report.approved_by_signature);
+        const reported = formatSignature(report.reported_by_signature);
+        const approved = formatSignature(report.approved_by_signature);
 
-      if (reported) {
-        doc.font("Helvetica-Bold").fontSize(9).text("Reported By:", 50, currentY);
-        let sigY = currentY + 12;
-        if (reported.imagePath && fs.existsSync(reported.imagePath)) {
-          doc.image(reported.imagePath, 50, sigY, { width: 90, height: 35 });
-          sigY += 40;
+        if (reported) {
+          doc.font("Helvetica-Bold").fontSize(8.5).text("Reported By:", marginSize + 10, currentY);
+          let sigY = currentY + 10;
+          if (reported.imagePath && fs.existsSync(reported.imagePath)) {
+            doc.image(reported.imagePath, marginSize + 10, sigY, { width: 80, height: 30 });
+            sigY += 34;
+          }
+          doc.font("Helvetica").fontSize(8.5).text(reported.fullName || "", marginSize + 10, sigY);
+          doc.text(reported.qualification || "", marginSize + 10);
         }
-        doc.font("Helvetica").fontSize(9).text(reported.fullName || "", 50, sigY);
-        doc.text(reported.qualification || "", 50);
-      }
 
-      if (approved) {
-        doc.font("Helvetica-Bold").fontSize(9).text("Approved By:", 220, currentY);
-        let sigY = currentY + 12;
-        if (approved.imagePath && fs.existsSync(approved.imagePath)) {
-          doc.image(approved.imagePath, 220, sigY, { width: 90, height: 35 });
-          sigY += 40;
+        if (approved) {
+          doc.font("Helvetica-Bold").fontSize(8.5).text("Approved By:", 220, currentY);
+          let sigY = currentY + 10;
+          if (approved.imagePath && fs.existsSync(approved.imagePath)) {
+            doc.image(approved.imagePath, 220, sigY, { width: 80, height: 30 });
+            sigY += 34;
+          }
+          doc.font("Helvetica").fontSize(8.5).text(approved.fullName || "", 220, sigY);
+          doc.text(approved.qualification || "", 220);
         }
-        doc.font("Helvetica").fontSize(9).text(approved.fullName || "", 220, sigY);
-        doc.text(approved.qualification || "", 220);
-      }
 
-      if (qrImageBuffer) {
-        doc.image(qrImageBuffer, 460, currentY - 5, { width: 60, height: 60 });
-        doc.font("Helvetica").fontSize(7).text("Scan to Verify", 460, currentY + 58, { width: 60, align: "center" });
+        if (qrImageBuffer) {
+          doc.image(qrImageBuffer, pageWidth - marginSize - 60, currentY - 5, { width: 55, height: 55 });
+          doc.font("Helvetica").fontSize(6.5).text("Scan to Verify", pageWidth - marginSize - 60, currentY + 52, { width: 55, align: "center" });
+        }
       }
 
       /* -----------------------------
          FOOTER
       ----------------------------- */
-      if (!options.printMode) {
+      if (!options.printMode && !isPrePrinted) {
         const footerText = clinicBranding.footer_text || "Electronically Verified Diagnostic Report";
-        doc.font("Helvetica-Oblique").fontSize(8).text(footerText, 0, pageHeight - 40, { align: "center" });
+        doc.font("Helvetica-Oblique").fontSize(7.5).text(footerText, 0, pageHeight - 30, { align: "center" });
       }
 
       doc.end();

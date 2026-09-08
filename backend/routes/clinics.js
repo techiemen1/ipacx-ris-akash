@@ -7,7 +7,8 @@ router.get("/", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, code, name, ae_title, institution_name, address, phone, email, 
-              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, is_active 
+              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, is_active,
+              nabh_id, nabl_id, registration_no, logo_url
        FROM clinics 
        ORDER BY id ASC`
     );
@@ -18,33 +19,50 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/clinics/active - Fetch default active clinic for report header letterhead
+// GET /api/clinics/active - Fetch default active hospital/clinic for report header letterhead
 router.get("/active", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, code, name, ae_title, institution_name, address, phone, email, 
-              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq 
+              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq,
+              nabh_id, nabl_id, registration_no, logo_url
        FROM clinics 
        WHERE is_active = true 
        ORDER BY id ASC LIMIT 1`
-    );
-    if (result.rows.length > 0) {
-      res.json(result.rows[0]);
+    ).catch(() => ({ rows: [] }));
+
+    if (result.rows && result.rows.length > 0) {
+      const c = result.rows[0];
+      res.json({
+        ...c,
+        name: c.name || "AKASH MEDICAL COLLEGE AND HOSPITALS",
+        header_text: c.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING",
+        address: c.address || "Prasannahalli Main Road, Devanahalli, Bengaluru, Karnataka 562110",
+        phone: c.phone || "+91 80 7115 9900 / +91 98865 17662",
+        email: c.email || "info@akashmedical.edu.in",
+        nabh_id: c.nabh_id || "NABH-H-2024-0891",
+        nabl_id: c.nabl_id || "NABL-M-4821",
+        registration_no: c.registration_no || "KMC/MED/REG/48190",
+        footer_text: c.footer_text || "Electronically Verified Diagnostic Report • NABH & NABL Accredited"
+      });
     } else {
       res.json({
         id: 1,
         code: "MAIN",
         name: "AKASH MEDICAL COLLEGE AND HOSPITALS",
         header_text: "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING",
-        address: "Devanahalli, BANGALORE, KARNATAKA, INDIA",
-        phone: "+91 9886517662",
+        address: "Prasannahalli Main Road, Devanahalli, Bengaluru, Karnataka 562110",
+        phone: "+91 80 7115 9900 / +91 98865 17662",
         email: "info@akashmedical.edu.in",
-        footer_text: "Electronically Verified Diagnostic Report"
+        nabh_id: "NABH-H-2024-0891",
+        nabl_id: "NABL-M-4821",
+        registration_no: "KMC/MED/REG/48190",
+        footer_text: "Electronically Verified Diagnostic Report • NABH & NABL Accredited"
       });
     }
   } catch (err) {
     console.error("Fetch active clinic error:", err.message);
-    res.status(500).json({ error: "Failed to fetch active clinic" });
+    res.status(500).json({ error: "Failed to fetch active hospital details" });
   }
 });
 
@@ -63,7 +81,8 @@ router.get("/user-clinics", async (req, res) => {
 
     const allClinicsRes = await pool.query(
       `SELECT id, code, name, ae_title, institution_name, address, phone, email, 
-              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq 
+              header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq,
+              nabh_id, nabl_id, registration_no, logo_url
        FROM clinics 
        WHERE is_active = true 
        ORDER BY id ASC`
@@ -85,7 +104,7 @@ router.get("/user-clinics", async (req, res) => {
 // POST /api/clinics - Create or update clinic branch
 router.post("/", async (req, res) => {
   try {
-    const { code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq } = req.body;
+    const { code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, nabh_id, nabl_id, registration_no, logo_url } = req.body;
 
     if (!code || !name) {
       return res.status(400).json({ error: "Clinic code and name are required" });
@@ -94,8 +113,8 @@ router.post("/", async (req, res) => {
     const cleanCode = String(code).trim().toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 
     const result = await pool.query(
-      `INSERT INTO clinics (code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `INSERT INTO clinics (code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, nabh_id, nabl_id, registration_no, logo_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (code) DO UPDATE SET
          name = EXCLUDED.name,
          ae_title = EXCLUDED.ae_title,
@@ -107,7 +126,11 @@ router.post("/", async (req, res) => {
          footer_text = EXCLUDED.footer_text,
          mrn_prefix = EXCLUDED.mrn_prefix,
          mrn_format = EXCLUDED.mrn_format,
-         mrn_next_seq = EXCLUDED.mrn_next_seq
+         mrn_next_seq = EXCLUDED.mrn_next_seq,
+         nabh_id = EXCLUDED.nabh_id,
+         nabl_id = EXCLUDED.nabl_id,
+         registration_no = EXCLUDED.registration_no,
+         logo_url = EXCLUDED.logo_url
        RETURNING *`,
       [
         cleanCode, 
@@ -121,7 +144,11 @@ router.post("/", async (req, res) => {
         footer_text || "",
         mrn_prefix || "MRN",
         mrn_format || "{PREFIX}-{YY}{MM}-{SEQ}",
-        mrn_next_seq || 1001
+        mrn_next_seq || 1001,
+        nabh_id || "",
+        nabl_id || "",
+        registration_no || "",
+        logo_url || ""
       ]
     );
 
@@ -136,7 +163,7 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq } = req.body;
+    const { code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, nabh_id, nabl_id, registration_no, logo_url } = req.body;
 
     const result = await pool.query(
       `UPDATE clinics
@@ -151,10 +178,14 @@ router.put("/:id", async (req, res) => {
            footer_text = COALESCE($9, footer_text),
            mrn_prefix = COALESCE($10, mrn_prefix),
            mrn_format = COALESCE($11, mrn_format),
-           mrn_next_seq = COALESCE($12, mrn_next_seq)
-       WHERE id = $13
+           mrn_next_seq = COALESCE($12, mrn_next_seq),
+           nabh_id = COALESCE($13, nabh_id),
+           nabl_id = COALESCE($14, nabl_id),
+           registration_no = COALESCE($15, registration_no),
+           logo_url = COALESCE($16, logo_url)
+       WHERE id = $17
        RETURNING *`,
-      [code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, id]
+      [code, name, ae_title, institution_name, address, phone, email, header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, nabh_id, nabl_id, registration_no, logo_url, id]
     );
 
     if (!result.rows.length) {

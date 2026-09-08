@@ -24,7 +24,8 @@ import {
   Radio,
   Tag,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Database
 } from "lucide-react";
 import "./MainLayout.css";
 import { getClickLabel, logAuditEvent } from "../utils/auditClient";
@@ -244,11 +245,13 @@ export default function MainLayout({ children }) {
               {showAdminMenu && (
                 <div className={`ris-admin-submenu ${collapsed ? "collapsed" : ""}`}>
                   {[
+                    { name: "Hospital Master Profile", path: "/admin/hospitals", icon: <Building2 size={14} /> },
                     { name: "User Management", path: "/admin/user-management", icon: <UserCheck size={14} /> },
                     { name: "Template Studio", path: "/admin/templates", icon: <FileCode size={14} /> },
                     { name: "MWLS & PACS Gateway", path: "/admin/mwls-management", icon: <Radio size={14} /> },
                     { name: "Audit Logs", path: "/admin/audit-logs", icon: <ShieldCheck size={14} /> },
                     { name: "Price Management", path: "/admin/prices", icon: <Tag size={14} /> },
+                    { name: "Backup & Recovery", path: "/admin/backups", icon: <Database size={14} /> },
                   ].map((sub) => {
                     const isSubActive = location.pathname === sub.path;
                     return (

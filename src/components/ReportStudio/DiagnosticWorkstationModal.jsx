@@ -81,6 +81,25 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     footer_text: "Electronically Verified Diagnostic Report"
   });
 
+  const [pageSetup, setPageSetup] = useState({
+    paperSize: "A4",
+    margins: "normal",
+    fontSize: "normal",
+    prePrintedStationery: false,
+    showFooter: true,
+    imageGrid: 3
+  });
+
+  useEffect(() => {
+    api.get("/api/clinics/active")
+      .then(res => {
+        if (res.data && res.data.name) {
+          setClinicBranding(res.data);
+        }
+      })
+      .catch(e => console.warn("Active clinic branding fetch notice:", e.message));
+  }, []);
+
 
 
   // Key Images / Snapshots State
@@ -1002,7 +1021,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             fontFamily: 'serif',
             color: '#000000'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid #e2e8f0' }} className="no-print">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #e2e8f0' }} className="no-print">
               <span style={{ fontFamily: 'sans-serif', fontWeight: 800, fontSize: 14, color: '#4338ca' }}>
                 🖨️ Official Radiology Printable Document
               </span>
@@ -1016,25 +1035,71 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px double #000', paddingBottom: 16, marginBottom: 20 }}>
-              <div>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 'bold', color: '#1e1b4b', fontFamily: 'sans-serif', textTransform: 'uppercase' }}>
-                  {clinicBranding.name || "AKASH MEDICAL COLLEGE AND HOSPITALS"}
-                </h1>
-                <p style={{ margin: '4px 0 0 0', fontSize: 13, fontWeight: '600', color: '#4338ca', fontFamily: 'sans-serif' }}>
-                  {clinicBranding.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"}
-                </p>
-                {(clinicBranding.address || clinicBranding.phone) && (
-                  <p style={{ margin: '3px 0 0 0', fontSize: 11, color: '#475569', fontFamily: 'sans-serif' }}>
-                    {clinicBranding.address} {clinicBranding.phone ? `• Helpline: ${clinicBranding.phone}` : ''}
-                  </p>
-                )}
+            {/* UNIVERSAL STANDARD PAGE SETUP BAR */}
+            <div className="no-print" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 12, fontFamily: 'sans-serif' }}>
+              <div style={{ fontWeight: 'bold', color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Settings size={15} className="text-indigo-600" />
+                <span>Page Setup:</span>
               </div>
-              <div style={{ textAlign: 'right', fontFamily: 'sans-serif', fontSize: 11, color: '#64748b' }}>
-                <div style={{ fontWeight: 'bold', color: '#047857', fontSize: 12 }}>NABH & NABL ACCREDITED</div>
-                <div>24x7 Diagnostic Helpline</div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#64748b' }}>Paper:</span>
+                <select value={pageSetup.paperSize} onChange={e => setPageSetup({...pageSetup, paperSize: e.target.value})} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600 }}>
+                  <option value="A4">A4 Standard</option>
+                  <option value="Letter">US Letter</option>
+                </select>
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#64748b' }}>Margins:</span>
+                <select value={pageSetup.margins} onChange={e => setPageSetup({...pageSetup, margins: e.target.value})} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600 }}>
+                  <option value="compact">Compact (30pt)</option>
+                  <option value="normal">Normal (40pt)</option>
+                  <option value="wide">Wide (50pt)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#64748b' }}>Font Size:</span>
+                <select value={pageSetup.fontSize} onChange={e => setPageSetup({...pageSetup, fontSize: e.target.value})} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600 }}>
+                  <option value="compact">Small (11px)</option>
+                  <option value="normal">Normal (13px)</option>
+                  <option value="large">Large (15px)</option>
+                </select>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600, color: '#334155', marginLeft: 'auto' }}>
+                <input type="checkbox" checked={pageSetup.prePrintedStationery} onChange={e => setPageSetup({...pageSetup, prePrintedStationery: e.target.checked})} />
+                <span>Pre-printed Stationery (Hide Header)</span>
+              </label>
             </div>
+
+            {!pageSetup.prePrintedStationery ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px double #000', paddingBottom: 16, marginBottom: 20 }}>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: 22, fontWeight: 'bold', color: '#1e1b4b', fontFamily: 'sans-serif', textTransform: 'uppercase' }}>
+                    {clinicBranding.name || "AKASH MEDICAL COLLEGE AND HOSPITALS"}
+                  </h1>
+                  <p style={{ margin: '4px 0 0 0', fontSize: 13, fontWeight: '600', color: '#4338ca', fontFamily: 'sans-serif' }}>
+                    {clinicBranding.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"}
+                  </p>
+                  {(clinicBranding.address || clinicBranding.phone) && (
+                    <p style={{ margin: '3px 0 0 0', fontSize: 11, color: '#475569', fontFamily: 'sans-serif' }}>
+                      {clinicBranding.address} {clinicBranding.phone ? `• Helpline: ${clinicBranding.phone}` : ''}
+                    </p>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right', fontFamily: 'sans-serif', fontSize: 11, color: '#64748b' }}>
+                  <div style={{ fontWeight: 'bold', color: '#047857', fontSize: 12 }}>
+                    {clinicBranding.nabh_id ? `NABH (${clinicBranding.nabh_id})` : 'NABH & NABL ACCREDITED'}
+                  </div>
+                  <div>{clinicBranding.nabl_id ? `NABL (${clinicBranding.nabl_id})` : '24x7 Diagnostic Helpline'}</div>
+                  {clinicBranding.registration_no && <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg: {clinicBranding.registration_no}</div>}
+                </div>
+              </div>
+            ) : (
+              <div style={{ height: 75 }} />
+            )}
 
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 20, border: '1px solid #000', fontFamily: 'sans-serif' }}>
               <tbody>

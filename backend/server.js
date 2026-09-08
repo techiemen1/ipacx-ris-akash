@@ -179,6 +179,9 @@ app.use("/api/billing", billingRoutes);
 const analyticsRoutes = require("./routes/analytics");
 app.use("/api/analytics", analyticsRoutes);
 
+const backupRoutes = require("./routes/backup");
+app.use("/api/backup", checkRole("ADMIN"), backupRoutes);
+
 const dicomDataRoutes = require("./routes/dicomData");
 app.use("/api/dicom-data", dicomDataRoutes);
 

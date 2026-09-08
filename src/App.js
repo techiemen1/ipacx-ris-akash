@@ -21,6 +21,7 @@ const Billing = lazy(() => import("./pages/Billing"));
 const PriceManagement = lazy(() => import("./pages/adminsettings/PriceManagement"));
 const ClinicManagement = lazy(() => import("./pages/adminsettings/ClinicManagement"));
 const HospitalManagement = lazy(() => import("./pages/adminsettings/HospitalManagement"));
+const BackupManagement = lazy(() => import("./pages/adminsettings/BackupManagement"));
 const DoctorPortal = lazy(() => import("./pages/DoctorPortal"));
 
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -200,6 +201,14 @@ function App() {
                   element={
                     <ProtectedRoute roles={["ADMIN"]}>
                       <HospitalManagement />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/backups"
+                  element={
+                    <ProtectedRoute roles={["ADMIN"]}>
+                      <BackupManagement />
                     </ProtectedRoute>
                   }
                 />
