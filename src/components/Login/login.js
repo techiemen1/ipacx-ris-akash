@@ -53,7 +53,7 @@ function Login() {
       if (err.response?.data?.message) {
         alert(err.response.data.message);
       } else {
-        alert("Server connection failed. Ensure backend server is running on port 5000.");
+        alert("Server connection failed. Ensure backend service is running.");
       }
       console.error(err);
     } finally {
