@@ -9,6 +9,7 @@ const pool = require("../db");
 const { logAction } = require("../utils/auditLogger");
 const PacsService = require("../services/pacsService");
 const pacsGateway = require("../services/pacsGateway");
+const asyncHandler = require("../middleware/asyncHandler");
 
 const pacsService = new PacsService(pool);
 
