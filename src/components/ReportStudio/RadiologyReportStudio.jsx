@@ -1020,67 +1020,79 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </div>
         </div>
 
-        {/* ULTRA-COMPACT SINGLE-ROW TEMPLATE SELECTOR BAR */}
-        <div style={{ background: "#ffffff", borderRadius: 10, border: "1px solid #cbd5e1", padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              Modality:
-            </span>
+        {/* INLINE TINY TEMPLATE SELECTOR STRIP */}
+        <div style={{
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+          borderRadius: 10,
+          padding: '6px 14px',
+          marginBottom: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12,
+          color: '#ffffff',
+          boxShadow: '0 2px 8px rgba(30, 27, 75, 0.2)'
+        }}>
+          {/* MODALITY PILLS */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Modality:</span>
             {[
               { id: "CT", label: "CT" },
               { id: "MRI", label: "MRI" },
               { id: "USG", label: "USG" },
-              { id: "CR", label: "X-Ray" },
+              { id: "CR", label: "XRAY" },
               { id: "ECHO", label: "ECHO" }
-            ].map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setSelectedModality(m.id)}
-                style={{
-                  padding: "3px 9px",
-                  borderRadius: 6,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  border: "1px solid",
-                  borderColor: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#4338ca" : "#cbd5e1",
-                  background: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#4338ca" : "#f8fafc",
-                  color: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#ffffff" : "#475569",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease"
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
+            ].map((m) => {
+              const isSelected = selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR");
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setSelectedModality(m.id === "CR" ? "XRAY" : m.id)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: isSelected ? '#6366f1' : 'rgba(255, 255, 255, 0.1)',
+                    color: isSelected ? '#ffffff' : '#cbd5e1',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10, background: "#e0e7ff", color: "#3730a3", padding: "2px 8px", borderRadius: 10, fontWeight: 800 }}>
-              Auto-Matched
-            </span>
+          {/* COMPACT INLINE TEMPLATE DROPDOWN */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#c7d2fe', whiteSpace: 'nowrap' }}>⚡ Load Structured Template:</span>
             <select
               onChange={(e) => {
-                const list = RADIOLOGY_TEMPLATES[selectedModality] || RADIOLOGY_TEMPLATES.CR || [];
+                const list = RADIOLOGY_TEMPLATES[selectedModality] || RADIOLOGY_TEMPLATES.CR || RADIOLOGY_TEMPLATES.XRAY || [];
                 const tpl = list.find((t) => t.id === e.target.value);
                 if (tpl) applyTemplate(tpl);
               }}
               defaultValue=""
               style={{
-                padding: "4px 10px",
+                padding: '4px 10px',
                 borderRadius: 6,
-                border: "1px solid #cbd5e1",
-                fontSize: 12,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: '#0f172a',
+                color: '#ffffff',
+                fontSize: 11,
                 fontWeight: 700,
-                color: "#0f172a",
-                background: "#f8fafc",
-                outline: "none",
-                cursor: "pointer",
-                maxWidth: 280
+                cursor: 'pointer',
+                maxWidth: 320,
+                outline: 'none'
               }}
             >
-              <option value="" disabled>Select Radiology Template...</option>
-              {((RADIOLOGY_TEMPLATES[selectedModality] || (selectedModality === "XRAY" ? RADIOLOGY_TEMPLATES.CR : [])) || []).map((tpl) => (
+              <option value="" disabled>Select {selectedModality} Template...</option>
+              {((RADIOLOGY_TEMPLATES[selectedModality] || (selectedModality === "XRAY" ? RADIOLOGY_TEMPLATES.CR || RADIOLOGY_TEMPLATES.XRAY : [])) || []).map((tpl) => (
                 <option key={tpl.id} value={tpl.id}>
                   {tpl.name} ({tpl.body_part})
                 </option>
