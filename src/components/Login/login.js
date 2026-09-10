@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../api/axios";
@@ -17,14 +17,45 @@ import {
 import "./login.css";
 
 function Login() {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState("ADMIN");
   const [loading, setLoading] = useState(false);
+  const [hospitalInfo, setHospitalInfo] = useState({
+    name: "AKASH MEDICAL COLLEGE AND HOSPITALS",
+    header_text: "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING",
+    logo_url: "",
+    address: "",
+    phone: ""
+  });
 
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchHospitalInfo = async () => {
+      try {
+        const res = await api.get("/api/public/hospital-info");
+        if (isMounted && res.data?.success && res.data?.hospital) {
+          setHospitalInfo({
+            name: res.data.hospital.name || "AKASH MEDICAL COLLEGE AND HOSPITALS",
+            header_text: res.data.hospital.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING",
+            logo_url: res.data.hospital.logo_url || "",
+            address: res.data.hospital.address || "",
+            phone: res.data.hospital.phone || ""
+          });
+        }
+      } catch (err) {
+        console.warn("Using default hospital info branding:", err);
+      }
+    };
+
+    fetchHospitalInfo();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -44,10 +75,10 @@ function Login() {
         return;
       }
 
-      // Save user context
+      // Save user context (auto-selects assigned role/workspace)
       login(res.data.user, res.data.token);
 
-      // Navigate to dashboard
+      // Navigate directly to RIS dashboard
       navigate("/dashboard");
     } catch (err) {
       if (err.response?.data?.message) {
@@ -61,12 +92,6 @@ function Login() {
     }
   };
 
-  const applyPreset = (userVal, passVal, roleVal) => {
-    setUsername(userVal);
-    setPassword(passVal);
-    setSelectedRole(roleVal);
-  };
-
   return (
     <div className="login-container-pro">
       {/* BACKGROUND DECORATIVE GLOWS */}
@@ -74,7 +99,7 @@ function Login() {
       <div className="glow-orb orb-2"></div>
 
       <div className="login-card-pro">
-        {/* LEFT PANEL - BRANDING & RADIOLOGY HERO */}
+        {/* LEFT PANEL - DYNAMIC HOSPITAL BRANDING & RADIOLOGY HERO */}
         <div className="login-left-pro">
           <div className="system-badge">
             <span className="pulse-dot"></span>
@@ -83,10 +108,17 @@ function Login() {
 
           <div className="brand-heading">
             <div className="brand-logo-wrapper">
-              <Stethoscope size={32} color="#6366f1" />
+              {hospitalInfo.logo_url ? (
+                <img src={hospitalInfo.logo_url} alt="Hospital Logo" className="hospital-brand-logo-img" />
+              ) : (
+                <Stethoscope size={32} color="#6366f1" />
+              )}
             </div>
-            <h1>iPacx Radiology</h1>
-            <p className="brand-sub">Enterprise Diagnostic Imaging & RIS Command Platform</p>
+            <h1>{hospitalInfo.name}</h1>
+            <p className="brand-sub">{hospitalInfo.header_text}</p>
+            {hospitalInfo.address && (
+              <p className="hospital-meta-address">📍 {hospitalInfo.address} {hospitalInfo.phone ? `| 📞 ${hospitalInfo.phone}` : ""}</p>
+            )}
           </div>
 
           <div className="feature-bullets">
@@ -101,7 +133,7 @@ function Login() {
               <div className="bullet-icon"><Sparkles size={16} /></div>
               <div>
                 <strong>AI Dictation & SR Auto-Fill</strong>
-                <span>10+ structured templates per modality</span>
+                <span>Professional medical voice dictation studio</span>
               </div>
             </div>
             <div className="bullet-item">
@@ -119,31 +151,11 @@ function Login() {
           </div>
         </div>
 
-        {/* RIGHT PANEL - LOGIN FORM */}
+        {/* RIGHT PANEL - CLEAN DIRECT LOGIN FORM */}
         <div className="login-right-pro">
           <div className="form-header-pro">
             <h2>Portal Sign In</h2>
-            <p>Access your diagnostic worklist, DICOM viewer, and billing studio</p>
-          </div>
-
-          {/* ROLE SELECTOR CHIPS */}
-          <div className="role-chips-label">Select Workspace Role</div>
-          <div className="role-chips-grid">
-            {[
-              { role: "ADMIN", label: "Admin", user: "admin", pass: "admin123" },
-              { role: "RADIOLOGIST", label: "Radiologist", user: "radiologist", pass: "rad123" },
-              { role: "TECHNOLOGIST", label: "Technologist", user: "tech", pass: "tech123" },
-              { role: "RECEPTION", label: "Desk / Billing", user: "reception", pass: "desk123" },
-            ].map((item) => (
-              <button
-                key={item.role}
-                type="button"
-                className={`role-chip ${selectedRole === item.role ? "active" : ""}`}
-                onClick={() => applyPreset(item.user, item.pass, item.role)}
-              >
-                {item.label}
-              </button>
-            ))}
+            <p>Enter your credentials to access your auto-assigned RIS workspace</p>
           </div>
 
           <form onSubmit={handleLogin} className="login-form-pro">
@@ -156,6 +168,7 @@ function Login() {
                   placeholder="Enter your username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
                   required
                 />
               </div>
@@ -173,12 +186,14 @@ function Login() {
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   required
                 />
                 <button
                   type="button"
                   className="eye-toggle"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label="Toggle password visibility"
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
@@ -186,21 +201,13 @@ function Login() {
             </div>
 
             <button type="submit" className="login-submit-btn" disabled={loading}>
-              {loading ? "Authenticating Session..." : "Access RIS Workspace"}
+              {loading ? "Authenticating Session..." : "Sign In to RIS"}
               {!loading && <ChevronRight size={18} />}
             </button>
           </form>
 
-          {/* DEMO ONE-CLICK LOGIN FOOTER */}
-          <div className="demo-login-box">
-            <span>Quick Demo Launch:</span>
-            <button
-              type="button"
-              className="demo-pill"
-              onClick={() => applyPreset("admin", "admin123", "ADMIN")}
-            >
-              Fill Admin Credentials
-            </button>
+          <div className="auto-role-notice">
+            <span>🔒 Role & Department automatically configured on sign in</span>
           </div>
         </div>
       </div>
@@ -209,3 +216,4 @@ function Login() {
 }
 
 export default Login;
+

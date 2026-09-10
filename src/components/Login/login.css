@@ -343,31 +343,29 @@
   transform: none;
 }
 
-/* Demo box footer */
-.demo-login-box {
+/* Dynamic Hospital Logo & Meta Address */
+.hospital-brand-logo-img {
+  max-width: 48px;
+  max-height: 48px;
+  object-fit: contain;
+}
+
+.hospital-meta-address {
+  font-size: 12px;
+  color: #a5b4fc;
+  margin-top: 8px;
+  opacity: 0.9;
+}
+
+/* Auto Role Config Notice Footer */
+.auto-role-notice {
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid #e2e8f0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  text-align: center;
   font-size: 12px;
   color: #64748b;
-}
-
-.demo-pill {
-  padding: 6px 12px;
-  background: #e0e7ff;
-  color: #3730a3;
-  border: 1px solid #c7d2fe;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.demo-pill:hover {
-  background: #c7d2fe;
+  font-weight: 500;
 }
 
 @media (max-width: 900px) {
@@ -380,7 +378,5 @@
   .login-right-pro {
     padding: 30px;
   }
-  .role-chips-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
+

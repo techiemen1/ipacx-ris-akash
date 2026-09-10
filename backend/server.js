@@ -270,6 +270,35 @@ app.use("/api/compliance", complianceRoutes);
 const privacyRoutes = require("./routes/privacy");
 app.use("/api/privacy", privacyRoutes);
 
+// Unauthenticated public route for Login screen hospital branding
+app.get("/api/public/hospital-info", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT name, header_text, logo_url, address, phone, email FROM clinics WHERE is_active = true ORDER BY id ASC LIMIT 1`
+    ).catch(() => ({ rows: [] }));
+
+    if (result.rows && result.rows.length > 0) {
+      return res.json({ success: true, hospital: result.rows[0] });
+    }
+
+    res.json({
+      success: true,
+      hospital: {
+        name: "AKASH MEDICAL COLLEGE AND HOSPITALS",
+        header_text: "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"
+      }
+    });
+  } catch (err) {
+    res.json({
+      success: true,
+      hospital: {
+        name: "AKASH MEDICAL COLLEGE AND HOSPITALS",
+        header_text: "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"
+      }
+    });
+  }
+});
+
 const tenantAuth = require("./middleware/tenantAuth");
 app.use("/api", tenantAuth);
 
