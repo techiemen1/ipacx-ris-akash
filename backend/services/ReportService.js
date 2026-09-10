@@ -591,6 +591,10 @@ class ReportService {
 
     return processedSnapshots;
   }
+
+  async getPatientPriorStudies(patientId, currentStudyUid) {
+    return await reportRepository.findPatientPriorStudies(patientId, currentStudyUid);
+  }
 }
 
 module.exports = new ReportService();

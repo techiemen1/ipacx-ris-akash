@@ -148,6 +148,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const findingsRef = useRef(null);
   const conclusionRef = useRef(null);
 
+  // Prior Studies Auto-Comparison State
+  const [priorStudies, setPriorStudies] = useState([]);
+  const [selectedPrior, setSelectedPrior] = useState(null);
+
+  useEffect(() => {
+    if (study.PatientID) {
+      api.get(`/api/reports/priors/${encodeURIComponent(study.PatientID)}?currentUid=${encodeURIComponent(studyUID || "")}`)
+        .then((res) => {
+          if (res.data?.success && Array.isArray(res.data.priors)) {
+            setPriorStudies(res.data.priors);
+          }
+        })
+        .catch((err) => console.warn("Fetch priors notice:", err));
+    }
+  }, [study.PatientID, studyUID]);
+
   const viewerUrl = getViewerUrl(studyUID);
 
   // Sync innerHTML safely when initial loading finishes
@@ -847,6 +863,53 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
       {/* RIGHT COLUMN: REPORT EDITOR CANVAS */}
       <div className="rs-editor-canvas">
+        {/* PRIOR STUDIES HISTORICAL COMPARISON BAR */}
+        {priorStudies.length > 0 && (
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6 }}>
+                🕒 Patient Imaging History ({priorStudies.length} Prior Study Records Found)
+              </span>
+              <span style={{ fontSize: 10, background: '#e0f2fe', color: '#0284c7', padding: '2px 8px', borderRadius: 10, fontWeight: 700 }}>
+                Side-by-Side Comparison Enabled
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {priorStudies.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSelectedPrior(selectedPrior?.id === p.id ? null : p)}
+                  style={{
+                    background: selectedPrior?.id === p.id ? '#0284c7' : '#ffffff',
+                    color: selectedPrior?.id === p.id ? '#ffffff' : '#0f172a',
+                    border: '1px solid #93c5fd',
+                    borderRadius: 8,
+                    padding: '6px 12px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  📅 {p.created_at ? new Date(p.created_at).toLocaleDateString('en-IN') : 'Prior'} - {p.modality} ({p.body_part || 'Exam'})
+                </button>
+              ))}
+            </div>
+
+            {selectedPrior && (
+              <div style={{ marginTop: 12, background: '#ffffff', padding: 12, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 12 }}>
+                <div style={{ fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>
+                  Prior Report ({new Date(selectedPrior.created_at).toLocaleDateString()}) - {selectedPrior.report_title || selectedPrior.modality}
+                </div>
+                <div style={{ color: '#334155', fontSize: 11, lineHeight: 1.5, maxHeight: 120, overflowY: 'auto', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
+                  <strong>Prior Findings/Conclusion:</strong> {selectedPrior.report_content?.conclusion || selectedPrior.report_content?.findings || "Prior report recorded."}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* NON-DOCTOR READ-ONLY ACCESS NOTIFICATION */}
         {!canEditReport && (
           <div style={{

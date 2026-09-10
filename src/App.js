@@ -30,6 +30,7 @@ const _AddNewReportPage = lazy(() => import("./pages/AddNewReportPage"));
 const ReportedBy = lazy(() => import("./pages/adminsettings/ReportedBy"));
 const AuditLogs = lazy(() => import("./pages/adminsettings/AuditLogs"));
 const MobileLiteViewer = lazy(() => import("./pages/MobileLiteViewer"));
+const ReportVerification = lazy(() => import("./pages/ReportVerification"));
 
 
 // Context
@@ -169,7 +170,11 @@ function App() {
                 />
                 <Route
                   path="/secure-report-sheet"
-                  element={<ReportPanelPage />}
+                  element={<ReportVerification />}
+                />
+                <Route
+                  path="/verify-report"
+                  element={<ReportVerification />}
                 />
                 <Route
                   path="/add-new-report"

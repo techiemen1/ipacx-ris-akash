@@ -453,6 +453,17 @@ class ReportRepository {
       scope.clinicId,
       scope.userId,
     ]);
+  async findPatientPriorStudies(patientId, currentStudyUid) {
+    if (!patientId) return [];
+    const result = await pool.query(
+      `SELECT r.id, r.study_uid, r.patient_id, r.patient_name, r.modality, r.body_part, r.accession_number, r.status, r.report_title, r.report_content, r.created_at, r.updated_at
+       FROM reports r
+       WHERE r.patient_id = $1 AND r.study_uid <> $2
+       ORDER BY r.created_at DESC
+       LIMIT 10`,
+      [patientId, currentStudyUid || ""]
+    );
+    return result.rows;
   }
 }
 

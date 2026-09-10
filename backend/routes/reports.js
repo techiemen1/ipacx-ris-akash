@@ -307,4 +307,15 @@ router.post("/api/v1/reports/:id/key-images", async (req, res) => {
   }
 });
 
+// GET PRIOR STUDIES FOR PATIENT
+router.get("/api/reports/priors/:patientId", async (req, res) => {
+  try {
+    const priors = await reportService.getPatientPriorStudies(req.params.patientId, req.query.currentUid);
+    res.json({ success: true, priors });
+  } catch (err) {
+    console.error("Fetch prior studies error:", err);
+    res.status(500).json({ success: false, error: "Failed to fetch prior studies" });
+  }
+});
+
 module.exports = router;

@@ -137,17 +137,21 @@ export default function ReportingPage() {
       const pName = rawPName || "Patient";
       const rawTs = parseDicomDateTime(s.StudyDate || s.study_date || existingReport?.created_at, s.StudyTime || s.study_time);
 
+      const studyDesc = s.StudyDescription || "General Examination";
+      const isSTAT = /STAT|EMERGENCY|TRAUMA|ACUTE|STROKE|HEMORRHAGE|BLEED|RED/i.test(`${studyDesc} ${pName} ${existingReport?.report_title || ''}`);
+
       worklist.push({
         study_uid: uid,
         patient_name: pName,
         patient_id: String(s.PatientID || s.patient_id || existingReport?.patient_id || "-").replace(/undefined|null/gi, "-"),
         accession_number: String(s.AccessionNumber || s.accession_number || existingReport?.accession_number || "-").replace(/undefined|null/gi, "-"),
         modality: parseModality(s) || parseModality(existingReport) || "CR",
-        study_description: s.StudyDescription || "General Examination",
+        study_description: studyDesc,
         study_date: s.StudyDate || s.study_date || existingReport?.created_at?.split("T")[0] || "-",
         study_time: s.StudyTime || s.study_time || "",
         raw_timestamp: rawTs,
         status: existingReport?.status || "Unreported",
+        isSTAT: isSTAT,
         report_content: existingReport?.report_content,
         report_id: existingReport?.id
       });
@@ -188,7 +192,7 @@ export default function ReportingPage() {
         item.accession_number.toLowerCase().includes(searchText.toLowerCase());
 
       const matchModality = !filterModality || item.modality === filterModality;
-      const matchStatus = !filterStatus || item.status === filterStatus;
+      const matchStatus = !filterStatus ? true : filterStatus === "STAT" ? item.isSTAT : item.status === filterStatus;
 
       let matchDate = true;
       const recordTs = item.raw_timestamp || parseDicomDateTime(item.study_date, item.study_time);
@@ -243,7 +247,8 @@ export default function ReportingPage() {
     const unreported = mergedWorklist.filter(w => w.status === "Unreported").length;
     const draft = mergedWorklist.filter(w => w.status === "Draft").length;
     const final = mergedWorklist.filter(w => w.status === "Final").length;
-    return { total, unreported, draft, final };
+    const statCount = mergedWorklist.filter(w => w.isSTAT).length;
+    return { total, unreported, draft, final, statCount };
   }, [mergedWorklist]);
 
   return (
@@ -330,6 +335,7 @@ export default function ReportingPage() {
               className="rp-select"
             >
               <option value="">All Statuses</option>
+              <option value="STAT">🚨 STAT Emergency ({stats.statCount})</option>
               <option value="Unreported">Unreported</option>
               <option value="Draft">Draft</option>
               <option value="Final">Final</option>
@@ -433,8 +439,13 @@ export default function ReportingPage() {
                       pagedWorklist.map((item, idx) => (
                         <tr key={item.study_uid || idx} className={`rp-row-modality mod-row-${item.modality.toLowerCase()}`}>
                           <td>
-                            <div className="rp-patient-cell">
+                            <div className="rp-patient-cell" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span className="rp-patient-name">{item.patient_name}</span>
+                              {item.isSTAT && (
+                                <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '2px 6px', borderRadius: 6, fontSize: 10, fontWeight: 900 }} title="Emergency STAT Priority Scan">
+                                  🚨 STAT
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td><span className="rp-code">{item.patient_id}</span></td>

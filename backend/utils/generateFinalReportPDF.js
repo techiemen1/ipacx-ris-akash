@@ -48,7 +48,8 @@ module.exports = async function generateFinalReportPDF(
   // Generate QR Code data URL buffer
   let qrImageBuffer = null;
   try {
-    const verificationUrl = `http://localhost:3000/secure-report-sheet?uid=${encodeURIComponent(report.study_uid || "")}`;
+    const domain = process.env.PUBLIC_DOMAIN || "http://localhost:3010";
+    const verificationUrl = `${domain}/verify-report?uid=${encodeURIComponent(report.study_uid || "")}`;
     qrImageBuffer = await QRCode.toBuffer(verificationUrl, { margin: 1, width: 80 });
   } catch (err) {
     console.warn("QR code generation failed:", err.message);
