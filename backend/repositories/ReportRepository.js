@@ -453,6 +453,8 @@ class ReportRepository {
       scope.clinicId,
       scope.userId,
     ]);
+  }
+
   async findPatientPriorStudies(patientId, currentStudyUid) {
     if (!patientId) return [];
     const result = await pool.query(
