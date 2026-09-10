@@ -986,58 +986,77 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </div>
         )}
 
-        {/* PATIENT & DEMOGRAPHY BANNER */}
-        <div className="rs-patient-banner">
-          <div className="rs-patient-field">
-            <span className="label">Patient Name</span>
-            <span className="value">{study.PatientName || "-"}</span>
+        {/* COMPACT EXECUTIVE DEMOGRAPHY & REPORT HEADER CARD */}
+        <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #cbd5e1', padding: '12px 16px', marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          {/* TOP ROW: 4-COLUMN COMPACT DEMOGRAPHICS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, paddingBottom: 10, borderBottom: '1px solid #e2e8f0' }}>
+            <div>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Patient Name</span>
+              <strong style={{ fontSize: 14, color: '#0f172a' }}>{study.PatientName || "-"}</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Age / Gender</span>
+              <strong style={{ fontSize: 13, color: '#0f172a' }}>{study.PatientAge || "-"} / {study.PatientSex || "-"}</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Accession No</span>
+              <strong style={{ fontSize: 13, color: '#4338ca', fontFamily: 'monospace' }}>{study.AccessionNumber || "-"}</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Referring Doctor</span>
+              <strong style={{ fontSize: 13, color: '#0f172a' }}>{study.ReferringPhysicianName || "Self / Desk"}</strong>
+            </div>
           </div>
-          <div className="rs-patient-field">
-            <span className="label">Age / Gender</span>
-            <span className="value">{study.PatientAge || "-"} / {study.PatientSex || "-"}</span>
-          </div>
-          <div className="rs-patient-field">
-            <span className="label">Accession No</span>
-            <span className="value">{study.AccessionNumber || "-"}</span>
-          </div>
-          <div className="rs-patient-field">
-            <span className="label">Referring Doctor</span>
-            <span className="value">{study.ReferringPhysicianName || "Self / Desk"}</span>
-          </div>
-        </div>
 
-        {/* REPORT TITLE EDIT */}
-        <div className="rs-section-card">
-          <div className="rs-section-title">Report Heading Title</div>
-          <input
-            type="text"
-            disabled={isReadOnly}
-            value={reportTitle}
-            onChange={(e) => setReportTitle(e.target.value)}
-            className="rs-input-heading"
-          />
-        </div>
+          {/* BOTTOM ROW: REPORT TITLE & CLINICAL HISTORY INLINE */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 12, paddingTop: 10, alignItems: 'center' }}>
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>
+                Report Heading Title
+              </label>
+              <input
+                type="text"
+                disabled={isReadOnly}
+                value={reportTitle}
+                onChange={(e) => setReportTitle(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: '#1e1b4b',
+                  background: '#f8fafc',
+                  textTransform: 'uppercase',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
 
-        {/* CLINICAL HISTORY */}
-        <div className="rs-section-card">
-          <div className="rs-section-title">Clinical History / Indication</div>
-          <textarea
-            rows={2}
-            disabled={isReadOnly}
-            value={history}
-            onChange={(e) => setHistory(e.target.value)}
-            placeholder="e.g. 45Y Male presented with acute lower abdominal pain..."
-            style={{
-              width: '100%',
-              padding: 12,
-              borderRadius: 12,
-              border: '1px solid #cbd5e1',
-              fontSize: 13,
-              fontFamily: 'inherit',
-              outline: 'none',
-              boxSizing: 'border-box'
-            }}
-          />
+            <div>
+              <label style={{ fontSize: 10, fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>
+                Clinical History / Indication
+              </label>
+              <input
+                type="text"
+                disabled={isReadOnly}
+                value={history}
+                onChange={(e) => setHistory(e.target.value)}
+                placeholder="e.g. 45Y Male presented with acute lower abdominal pain..."
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                  fontSize: 12,
+                  color: '#0f172a',
+                  background: '#ffffff',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
         </div>
 
         {/* MEDICAL VOICE DICTATION CONTROL BAR */}

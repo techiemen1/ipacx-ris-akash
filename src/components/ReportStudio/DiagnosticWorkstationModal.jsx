@@ -741,92 +741,151 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   }
 
   const renderFormContent = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 1180, margin: '0 auto', width: '100%' }}>
       {!canEditReport && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '10px 14px', borderRadius: 10, color: '#991b1b', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>🔒 READ-ONLY MODE: Logged in as {userRole || "TECHNICIAN"} ({loggedUser.full_name || loggedUser.username}). Diagnostic report drafting, editing, and sign-off are restricted to Radiologists & Physicians.</span>
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '8px 12px', borderRadius: 8, color: '#991b1b', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>🔒 READ-ONLY MODE: Logged in as {userRole || "TECHNICIAN"} ({loggedUser.full_name || loggedUser.username}). Diagnostic report drafting & editing restricted to Radiologists & Physicians.</span>
         </div>
       )}
-      {/* PATIENT & DEMOGRAPHY BANNER */}
-      <div className="rs-patient-banner" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-        <div className="rs-patient-field">
-          <span className="label">Patient Name</span>
-          <span className="value">{study.PatientName || "-"}</span>
+
+      {/* COMPACT EXECUTIVE DEMOGRAPHY & REPORT HEADER CARD */}
+      <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #cbd5e1', padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        {/* TOP ROW: 4-COLUMN COMPACT DEMOGRAPHICS */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, paddingBottom: 10, borderBottom: '1px solid #e2e8f0' }}>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Patient Name</span>
+            <strong style={{ fontSize: 14, color: '#0f172a' }}>{study.PatientName || "-"}</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Age / Gender</span>
+            <strong style={{ fontSize: 13, color: '#0f172a' }}>{study.PatientAge || "-"} / {study.PatientSex || "-"}</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Accession No</span>
+            <strong style={{ fontSize: 13, color: '#4338ca', fontFamily: 'monospace' }}>{study.AccessionNumber || "-"}</strong>
+          </div>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', display: 'block' }}>Referring Doctor</span>
+            <strong style={{ fontSize: 13, color: '#0f172a' }}>{study.ReferringPhysicianName || "Self / Desk"}</strong>
+          </div>
         </div>
-        <div className="rs-patient-field">
-          <span className="label">Age / Gender</span>
-          <span className="value">{study.PatientAge || "-"} / {study.PatientSex || "-"}</span>
-        </div>
-        <div className="rs-patient-field">
-          <span className="label">Accession No</span>
-          <span className="value">{study.AccessionNumber || "-"}</span>
-        </div>
-        <div className="rs-patient-field">
-          <span className="label">Referring Doctor</span>
-          <span className="value">{study.ReferringPhysicianName || "Self / Desk"}</span>
+
+        {/* BOTTOM ROW: REPORT TITLE & CLINICAL HISTORY INLINE */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 12, paddingTop: 10, alignItems: 'center' }}>
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>
+              Report Heading Title
+            </label>
+            <input
+              type="text"
+              value={reportTitle}
+              onChange={(e) => setReportTitle(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1.5px solid #cbd5e1',
+                fontSize: 13,
+                fontWeight: 800,
+                color: '#1e1b4b',
+                background: '#f8fafc',
+                textTransform: 'uppercase',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 800, color: '#475569', textTransform: 'uppercase', display: 'block', marginBottom: 3 }}>
+              Clinical History / Indication
+            </label>
+            <input
+              type="text"
+              value={history}
+              onChange={(e) => setHistory(e.target.value)}
+              placeholder="e.g. 45Y Male presented with acute lower abdominal pain..."
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid #cbd5e1',
+                fontSize: 12,
+                color: '#0f172a',
+                background: '#ffffff',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* STRUCTURED TEMPLATE MODALITY SELECTOR */}
-      <div className="rs-section-card" style={{ padding: 14 }}>
-        <div className="rs-sidebar-title" style={{ marginBottom: 8 }}>
-          <span>Structured Radiology Templates</span>
-          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: 10, fontSize: 10 }}>Auto-Matched</span>
-        </div>
-
-        <div className="rs-modality-chips" style={{ marginBottom: 8 }}>
+      {/* INLINE TINY TEMPLATE SELECTOR STRIP */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+        borderRadius: 10,
+        padding: '6px 14px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        color: '#ffffff',
+        boxShadow: '0 2px 8px rgba(30, 27, 75, 0.2)'
+      }}>
+        {/* MODALITY PILLS */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Modality:</span>
           {["CT", "MRI", "USG", "XRAY", "ECHO"].map(m => (
             <button
               key={m}
+              type="button"
               onClick={() => setSelectedModality(m)}
-              className={`rs-chip ${selectedModality === m ? "active" : ""}`}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 800,
+                border: 'none',
+                cursor: 'pointer',
+                background: selectedModality === m ? '#6366f1' : 'rgba(255, 255, 255, 0.1)',
+                color: selectedModality === m ? '#ffffff' : '#cbd5e1',
+                transition: 'all 0.15s ease'
+              }}
             >
               {m}
             </button>
           ))}
         </div>
 
-        <div className="rs-template-list" style={{ maxHeight: 180 }}>
-          {(RADIOLOGY_TEMPLATES[selectedModality] || []).map((tpl) => (
-            <div key={tpl.id} onClick={() => applyTemplate(tpl)} className="rs-template-item" style={{ padding: '8px 10px' }}>
-              <div className="rs-template-name" style={{ fontSize: 12 }}>{tpl.name}</div>
-              <div className="rs-template-bodypart" style={{ fontSize: 10 }}>Body Part: {tpl.body_part}</div>
-            </div>
-          ))}
+        {/* COMPACT INLINE TEMPLATE DROPDOWN */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#c7d2fe', whiteSpace: 'nowrap' }}>⚡ Load Structured Template:</span>
+          <select
+            onChange={(e) => {
+              const tpl = (RADIOLOGY_TEMPLATES[selectedModality] || []).find(t => t.id === e.target.value);
+              if (tpl) applyTemplate(tpl);
+            }}
+            defaultValue=""
+            style={{
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: '#0f172a',
+              color: '#ffffff',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              maxWidth: 320,
+              outline: 'none'
+            }}
+          >
+            <option value="" disabled>Select {selectedModality} Template...</option>
+            {(RADIOLOGY_TEMPLATES[selectedModality] || []).map((tpl) => (
+              <option key={tpl.id} value={tpl.id}>
+                {tpl.name} ({tpl.body_part})
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
-
-      {/* REPORT TITLE EDIT */}
-      <div className="rs-section-card" style={{ padding: 14 }}>
-        <div className="rs-section-title">Report Heading Title</div>
-        <input
-          type="text"
-          value={reportTitle}
-          onChange={(e) => setReportTitle(e.target.value)}
-          className="rs-input-heading"
-          style={{ fontSize: 16 }}
-        />
-      </div>
-
-      {/* CLINICAL HISTORY */}
-      <div className="rs-section-card" style={{ padding: 14 }}>
-        <div className="rs-section-title">Clinical History / Indication</div>
-        <textarea
-          rows={2}
-          value={history}
-          onChange={(e) => setHistory(e.target.value)}
-          placeholder="e.g. 45Y Male presented with acute lower abdominal pain..."
-          style={{
-            width: '100%',
-            padding: 10,
-            borderRadius: 10,
-            border: '1px solid #cbd5e1',
-            fontSize: 12,
-            fontFamily: 'inherit',
-            outline: 'none',
-            boxSizing: 'border-box'
-          }}
-        />
       </div>
 
       {/* MEDICAL VOICE DICTATION CONTROL BAR */}
@@ -1199,7 +1258,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         )}
 
         {viewMode === "studio" && (
-          <div className="dws-right-studio" style={{ width: '100%', maxWidth: 900, margin: '0 auto' }}>
+          <div className="dws-right-studio" style={{ width: '100%', maxWidth: 1240, margin: '0 auto', background: '#f1f5f9', padding: '20px 24px' }}>
             {renderFormContent()}
           </div>
         )}
