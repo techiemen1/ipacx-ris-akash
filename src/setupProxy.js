@@ -16,7 +16,16 @@ module.exports = function (app) {
     }
   });
 
+  const ohifStandaloneTarget = process.env.REACT_APP_OHIF_VIEWER_URL || "http://localhost:3000";
+  const ohifStandaloneProxy = createProxyMiddleware({
+    target: ohifStandaloneTarget,
+    changeOrigin: true,
+    ws: true
+  });
+
   // Proxy OHIF Viewer static app & DICOMweb / WADO DICOM image streaming endpoints
+  app.use("/viewer", ohifStandaloneProxy);
+  app.use("/ohif-viewer", orthancProxy);
   app.use("/ohif", orthancProxy);
   app.use("/dicom-web", orthancProxy);
   app.use("/wado", orthancProxy);

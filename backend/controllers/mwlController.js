@@ -1,13 +1,11 @@
 const pool = require("../db");
 
 async function ensureMwlDatetimeColumn() {
-  await pool.query(
-    "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduling_datetime timestamp"
-  );
+  return;
 }
 
 async function ensureMwlStatusColumn() {
-  await pool.query("ALTER TABLE mwl ADD COLUMN IF NOT EXISTS status text DEFAULT 'NEW'");
+  return;
 }
 
 function toDicomDate(value) {

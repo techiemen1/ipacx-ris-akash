@@ -317,13 +317,23 @@ CREATE TABLE IF NOT EXISTS reports (
     report_content JSONB NOT NULL,
     reported_by TEXT,
     reported_by_signature TEXT,
-    approved_by TEXT,
-    approved_by_signature TEXT,
-    clinic_id INTEGER,
-    hospital_id INTEGER,
+    clinic_id INTEGER DEFAULT 1,
+    hospital_id INTEGER DEFAULT 1,
     status TEXT DEFAULT 'Draft',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id INTEGER DEFAULT 1;
+ALTER TABLE studies ADD COLUMN IF NOT EXISTS clinic_id INTEGER DEFAULT 1;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS clinic_id INTEGER DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS user_clinics (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    clinic_id INTEGER REFERENCES clinics(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(user_id, clinic_id)
 );
 
 CREATE TABLE IF NOT EXISTS report_images (

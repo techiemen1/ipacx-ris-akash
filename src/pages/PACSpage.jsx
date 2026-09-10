@@ -9,7 +9,6 @@ import { openStudyViewer } from "../utils/viewerUtils";
 import DiagnosticWorkstationModal from "../components/ReportStudio/DiagnosticWorkstationModal";
 import {
   Server,
-  Search,
   Eye,
   FileText,
   RefreshCw,
@@ -64,17 +63,6 @@ function formatDisplayDateTime(dateStr, timeStr) {
   });
 }
 
-function getInitials(name) {
-  if (!name || typeof name !== "string") return "PT";
-  const clean = name.replace(/undefined|null|none/gi, "").trim();
-  if (!clean) return "PT";
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return clean.slice(0, 2).toUpperCase();
-}
-
 function parseModality(study) {
   const raw = study?.Modality || study?.modality || study?.ModalitiesInStudy || study?.modality_in_study || "";
   const str = String(raw).toUpperCase().replace(/UNDEFINED|NULL/g, "").trim();
@@ -123,7 +111,7 @@ export default function PACSpage() {
 
   const [exportMenuOpenUid, setExportMenuOpenUid] = useState(null);
   const [exportingUid, setExportingUid] = useState(null);
-  const [exportType, setExportType] = useState(null);
+  const [_exportType, setExportType] = useState(null);
 
   // Close export dropdown when clicking outside
   useEffect(() => {

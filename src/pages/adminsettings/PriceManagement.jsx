@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import MainLayout from "../../layout/MainLayout";
 import api from "../../api/axios";
 import { toast } from "react-hot-toast";
-import { Plus, Trash2, Edit2, Check, X, IndianRupee, Tag, Activity } from "lucide-react";
+import { Plus, Trash2, Check, X, IndianRupee, Tag, Activity } from "lucide-react";
 import "./AdminManagement.css";
 
 export default function PriceManagement() {

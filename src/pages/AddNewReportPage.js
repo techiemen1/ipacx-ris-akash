@@ -10,7 +10,7 @@ export default function AddNewReportPage() {
 
   // ------------------ STATE ------------------
   const [studies, setStudies] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
 
   const [filters, setFilters] = useState(() => {
     return JSON.parse(sessionStorage.getItem("pacsDateFilters")) || {

@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import "./PatientRegistration.css";
-import dayjs from "dayjs";
+import { format } from "date-fns";
 import { toast } from "react-hot-toast";
 import api from "../api/axios";
 
 import {
-  User, Phone, Calendar, Activity, FileText,
-  CreditCard, CheckCircle, ShieldCheck, Stethoscope,
+  User, Activity, FileText,
+  CreditCard, ShieldCheck, Stethoscope,
   Camera, Fingerprint, Printer, X, PlusCircle, Check
 } from "lucide-react";
 
@@ -27,10 +27,10 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Lookup State
-  const [lookupField, setLookupField] = useState("");
-  const [lookupQuery, setLookupQuery] = useState("");
-  const [lookupMatches, setLookupMatches] = useState([]);
-  const [lookupLoading, setLookupLoading] = useState(false);
+  const [_lookupField, _setLookupField] = useState("");
+  const [_lookupQuery, _setLookupQuery] = useState("");
+  const [_lookupMatches, _setLookupMatches] = useState([]);
+  const [_lookupLoading, _setLookupLoading] = useState(false);
 
   // Webcam Camera State
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -129,7 +129,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
   });
 
   // Helpers
-  const toBool = (v, fallback = false) => {
+  const _toBool = (v, fallback = false) => {
     if (typeof v === "boolean") return v;
     if (typeof v === "string") {
       const s = v.trim().toLowerCase();
@@ -168,7 +168,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
       firstName: pick(source.first_name, fullName.split(" ")[0], prev.firstName),
       lastName: pick(source.last_name, fullName.split(" ").slice(1).join(" "), prev.lastName),
       gender: pick(source.gender, prev.gender),
-      dob: source.dob ? dayjs(source.dob).format("YYYY-MM-DD") : prev.dob,
+      dob: source.dob ? format(new Date(source.dob), "yyyy-MM-dd") : prev.dob,
       age: pick(source.age, prev.age),
       relationship_type: pick(source.relationship_type, prev.relationship_type),
       relationship_name: pick(source.relationship_name, prev.relationship_name),

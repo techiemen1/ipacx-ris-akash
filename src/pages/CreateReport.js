@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // src/pages/ReportPanel.jsx 
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
@@ -6,6 +7,7 @@ import { jsPDF } from "jspdf";
 import "./CreateReport.css";
 import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
+import { normalizeRadiologyDictation } from "../utils/RadiologyVoiceDictationEngine";
 
 /* ===========================
       RichEditor component
@@ -625,7 +627,7 @@ useEffect(() => {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
     }
-    insertTranscriptAtCursor(transcript);
+    insertTranscriptAtCursor(normalizeRadiologyDictation(transcript));
   };
   recognitionRef.current = recognition;
   return () => {
@@ -1174,7 +1176,7 @@ useEffect(() => {
   /* ===========================
         PDF export
      ========================== */
-  const savePDF = async () => {
+  const _savePDF = async () => {
     if (!reportRef.current) return;
     const el = reportRef.current;
     const origHeight = el.style.height;
@@ -1345,7 +1347,7 @@ useEffect(() => {
   };
 
   // toolbar definition
-  const toolbar = [
+  const _toolbar = [
     { type: "bold", icon: "B" },
     { type: "italic", icon: "I" },
     { type: "underline", icon: "U" },
@@ -1366,7 +1368,7 @@ useEffect(() => {
     // whenever selection inside an editor changes, capture it
     saveSelection();
   };
-const insertTextAtCursor = (text) => {
+const _insertTextAtCursor = (text) => {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0) return;
 

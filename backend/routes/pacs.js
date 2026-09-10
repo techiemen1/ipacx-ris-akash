@@ -39,11 +39,19 @@ async function getOrthancUrl() {
   return (process.env.ORTHANC_URL || "http://host.docker.internal:8042/").replace(/\/?$/, "/");
 }
 
-const ORTHANC_USER = process.env.ORTHANC_USER || "orthanc";
-const ORTHANC_PASS = process.env.ORTHANC_PASS || "orthanc";
+const ORTHANC_USER = process.env.ORTHANC_USER;
+const ORTHANC_PASS = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS;
+
+if (!ORTHANC_USER || !String(ORTHANC_USER).trim()) {
+  throw new Error("FATAL CONFIGURATION ERROR: ORTHANC_USER environment variable is missing or empty.");
+}
+
+if (!ORTHANC_PASS || !String(ORTHANC_PASS).trim()) {
+  throw new Error("FATAL CONFIGURATION ERROR: ORTHANC_PASSWORD / ORTHANC_PASS environment variable is missing or empty.");
+}
 
 function orthancAuthConfig() {
-  return { auth: { username: ORTHANC_USER || "orthanc", password: ORTHANC_PASS || "orthanc" } };
+  return { auth: { username: String(ORTHANC_USER).trim(), password: String(ORTHANC_PASS) } };
 }
 
 async function findOrthancStudy(studyUID) {
@@ -320,20 +328,23 @@ router.get("/snapshots/:studyUID", async (req, res) => {
       return res.json({ success: true, data: [] });
     }
 
-    const firstSeriesId = studyData.Series[0];
-    const { data: seriesData } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
-
     const snapshots = [];
-    if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
-      const midIndex = Math.floor(seriesData.Instances.length / 2);
-      const instanceId = seriesData.Instances[midIndex] || seriesData.Instances[0];
-      const seriesDesc = seriesData.MainDicomTags?.SeriesDescription || "Key Diagnostic Frame";
+    for (const seriesId of studyData.Series) {
+      const { data: seriesData } = await axios.get(`${orthancUrl}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
+      if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
+        const midIndex = Math.floor(seriesData.Instances.length / 2);
+        const instanceId = seriesData.Instances[midIndex] || seriesData.Instances[0];
+        const seriesDesc = seriesData.MainDicomTags?.SeriesDescription || `Series ${seriesData.MainDicomTags?.SeriesNumber || snapshots.length + 1}`;
+        const total = seriesData.Instances.length;
 
-      snapshots.push({
-        instance_id: instanceId,
-        preview_url: `/api/pacs/instance-preview/${instanceId}`,
-        caption: `${seriesDesc}`
-      });
+        const sliceCaption = total > 1 ? `${seriesDesc} | Slice ${midIndex + 1}/${total}` : `${seriesDesc}`;
+
+        snapshots.push({
+          instance_id: instanceId,
+          preview_url: `/api/pacs/instance-preview/${instanceId}`,
+          caption: sliceCaption
+        });
+      }
     }
 
     res.json({ success: true, data: snapshots });
@@ -424,7 +435,44 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
 
     const seriesPromises = studyData.Series.map((seriesId, idx) =>
       axios.get(`${orthancUrl}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 4000 })
-        .then(r => ({ ...r.data, idx }))
+        .then(async r => {
+          if (!r.data) return null;
+          let instList = [];
+          try {
+            const { data: orderedData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...orthancAuthConfig(), timeout: 4000 });
+            if (orderedData && Array.isArray(orderedData.Slices) && orderedData.Slices.length > 0) {
+              instList = orderedData.Slices.map(sItem => {
+                let rawId = Array.isArray(sItem) ? sItem[0] : (typeof sItem === 'string' ? sItem : sItem.ID || sItem.Instance);
+                if (typeof rawId === 'string' && rawId.includes('/')) {
+                  const parts = rawId.split('/').filter(Boolean);
+                  const idx = parts.indexOf('instances');
+                  rawId = (idx !== -1 && parts[idx + 1]) ? parts[idx + 1] : parts[parts.length - 1];
+                }
+                return { ID: rawId };
+              });
+            }
+          } catch (e) {
+            // ordered-slices fallback
+          }
+
+          if (instList.length === 0) {
+            try {
+              const { data: fullInstList } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...orthancAuthConfig(), timeout: 4000 });
+              if (Array.isArray(fullInstList)) {
+                instList = fullInstList;
+                instList.sort((a, b) => {
+                  const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+                  const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+                  return numA - numB;
+                });
+              }
+            } catch (e) {
+              instList = (r.data.Instances || []).map(id => ({ ID: id }));
+            }
+          }
+
+          return { ...r.data, idx, sortedInstances: instList };
+        })
         .catch(() => null)
     );
 
@@ -432,19 +480,33 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
     const seriesList = [];
 
     for (const sData of seriesResults) {
-      if (sData && Array.isArray(sData.Instances)) {
+      if (sData && Array.isArray(sData.sortedInstances)) {
         const seriesDesc = sData.MainDicomTags?.SeriesDescription || `Series ${sData.idx + 1}`;
         const seriesNum = sData.MainDicomTags?.SeriesNumber || (sData.idx + 1);
 
-        const instances = sData.Instances.map((instId, sliceIdx) => ({
-          instance_id: instId,
-          slice_number: sliceIdx + 1,
-          preview_url: `/api/pacs/instance-preview/${instId}`,
-          caption: `${seriesDesc} (Slice ${sliceIdx + 1}/${sData.Instances.length})`
-        }));
+        const instances = sData.sortedInstances.map((instObj, sliceIdx) => {
+          let instId = typeof instObj === 'string' ? instObj : instObj.ID;
+          if (typeof instId === 'string' && instId.includes('/')) {
+            const parts = instId.split('/').filter(Boolean);
+            const idx = parts.indexOf('instances');
+            instId = (idx !== -1 && parts[idx + 1]) ? parts[idx + 1] : parts[parts.length - 1];
+          }
+          const dicomSliceNum = parseInt(instObj.MainDicomTags?.InstanceNumber, 10) || (sliceIdx + 1);
+          return {
+            instance_id: instId,
+            slice_number: dicomSliceNum,
+            slice_index: sliceIdx + 1,
+            preview_url: `/api/pacs/instance-preview/${instId}`,
+            caption: `${seriesDesc} | Slice ${sliceIdx + 1}/${sData.sortedInstances.length}`
+          };
+        });
+
+        const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID;
 
         seriesList.push({
           series_id: sData.ID,
+          orthanc_series_id: sData.ID,
+          series_instance_uid: dicomSeriesUid,
           series_description: seriesDesc,
           series_number: seriesNum,
           total_slices: instances.length,

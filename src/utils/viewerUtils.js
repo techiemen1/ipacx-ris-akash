@@ -13,16 +13,34 @@ export const getViewerUrl = (studyUID, _mode = "@ohif/mode-longitudinal") => {
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
+  // Guard against invalid custom URLs that point to root dashboard "/" or same origin
+  if (
+    customOhifUrl === "/" ||
+    customOhifUrl === "#" ||
+    customOhifUrl === "http://localhost:3010" ||
+    customOhifUrl === "http://localhost:3010/" ||
+    customOhifUrl === "http://127.0.0.1:3010"
+  ) {
+    customOhifUrl = "";
+  }
+
   if (customOhifUrl) {
-    // If user pasted full URL with StudyInstanceUIDs=..., strip existing query parameter value
     if (customOhifUrl.includes("StudyInstanceUIDs=")) {
       customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
+    }
+    if (customOhifUrl.startsWith("http://") || customOhifUrl.startsWith("https://")) {
+      try {
+        const u = new URL(customOhifUrl);
+        customOhifUrl = u.pathname + u.search;
+      } catch (e) {
+        // Fallback
+      }
     }
     const separator = customOhifUrl.includes("?") ? "&" : "?";
     return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
   }
 
-  return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  return `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
 
 export const openStudyViewer = (study) => {

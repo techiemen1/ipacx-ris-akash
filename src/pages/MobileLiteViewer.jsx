@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import api, { apiUrl } from "../api/axios";
+import api from "../api/axios";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -9,7 +9,6 @@ import {
   RotateCw, 
   Sun, 
   Moon,
-  Move,
   Maximize,
   X
 } from "lucide-react";

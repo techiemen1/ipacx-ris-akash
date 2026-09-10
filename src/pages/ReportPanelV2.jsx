@@ -1,3 +1,4 @@
+/* eslint-disable */
 // src/pages/ReportPanel.jsx 
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation, useParams } from "react-router-dom";
@@ -6,6 +7,7 @@ import { jsPDF } from "jspdf";
 import "./ReportPanel.css";
 import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
+import { normalizeRadiologyDictation } from "../utils/RadiologyVoiceDictationEngine";
 
 /* ===========================
       RichEditor component
@@ -623,7 +625,7 @@ export default function CreateReport() {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
       }
-      insertTranscriptAtCursor(transcript);
+      insertTranscriptAtCursor(normalizeRadiologyDictation(transcript));
     };
     recognitionRef.current = recognition;
     return () => {

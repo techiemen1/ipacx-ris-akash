@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import MainLayout from "../../layout/MainLayout";
 import api from "../../api/axios";
-import { ShieldCheck, Download, RefreshCw, FileText, CheckCircle2, XCircle, LogOut, Activity, ExternalLink, Calendar, Filter } from "lucide-react";
+import { ShieldCheck, Download, FileText, CheckCircle2, XCircle, LogOut, ExternalLink, Calendar, Filter } from "lucide-react";
 import "./AuditLogs.css";
 
 const AUDIT_FILTER_CACHE_KEY = "audit_log_filters";

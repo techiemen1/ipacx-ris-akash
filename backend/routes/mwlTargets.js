@@ -48,27 +48,6 @@ async function ensureMwlTargetsTable() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  // Extra safety alter columns
-  const columns = [
-    ["manual_host", "VARCHAR(128)"],
-    ["manual_port", "INTEGER"],
-    ["manual_ae_title", "VARCHAR(64)"],
-    ["manual_type", "VARCHAR(32)"],
-    ["manual_protocol", "VARCHAR(16)"],
-    ["manual_calling_ae", "VARCHAR(64)"],
-    ["manual_called_ae", "VARCHAR(64)"],
-    ["viewer_protocol", "VARCHAR(32)"],
-    ["viewer_base_url", "VARCHAR(256)"],
-    ["orthanc_modality_name", "VARCHAR(64)"],
-    ["updated_at", "TIMESTAMP DEFAULT NOW()"]
-  ];
-  for (const [col, type] of columns) {
-    await pool.query(`ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS ${col} ${type}`);
-  }
-  // Check if old column pacs_id exists and rename it if needed (optional but good for migration)
-  try {
-    await pool.query("ALTER TABLE mwl_modality_targets RENAME COLUMN pacs_id TO target_pacs_id");
-  } catch (e) { /* ignore error if already renamed or doesn't exist */ }
 }
 
 router.get("/options", async (req, res) => {

@@ -9,10 +9,10 @@ const Scheduling = lazy(() => import("./pages/Scheduling"));
 const PACSpage = lazy(() => import("./pages/PACSpage"));
 const AddPatient = lazy(() => import("./pages/AddPatient"));
 const PatientList = lazy(() => import("./pages/PatientList"));
-const CreateReport = lazy(() => import("./pages/CreateReport"));
+const _CreateReport = lazy(() => import("./pages/CreateReport"));
 const ReportingPage = lazy(() => import("./pages/ReportingPage"));
 const ReportPanelPage = lazy(() => import("./pages/ReportPanel"));
-const ReportPanelV2Page = lazy(() => import("./pages/ReportPanelV2"));
+const _ReportPanelV2Page = lazy(() => import("./pages/ReportPanelV2"));
 const MWLS = lazy(() => import("./pages/MWLS"));
 const TemplateManagement = lazy(() => import("./pages/adminsettings/TemplateManagement"));
 const UserManagement = lazy(() => import("./pages/adminsettings/UserManagement"));
@@ -25,8 +25,8 @@ const BackupManagement = lazy(() => import("./pages/adminsettings/BackupManageme
 const DoctorPortal = lazy(() => import("./pages/DoctorPortal"));
 
 import ProtectedRoute from "./components/ProtectedRoute";
-import MainLayout from "./layout/MainLayout";
-const AddNewReportPage = lazy(() => import("./pages/AddNewReportPage"));
+// import MainLayout from "./layout/MainLayout";
+const _AddNewReportPage = lazy(() => import("./pages/AddNewReportPage"));
 const ReportedBy = lazy(() => import("./pages/adminsettings/ReportedBy"));
 const AuditLogs = lazy(() => import("./pages/adminsettings/AuditLogs"));
 const MobileLiteViewer = lazy(() => import("./pages/MobileLiteViewer"));

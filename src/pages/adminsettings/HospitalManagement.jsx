@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import MainLayout from "../../layout/MainLayout";
-import { Building2, Save, RefreshCw, Award, MapPin, Phone, Mail, Globe, ShieldCheck, FileText, CheckCircle } from "lucide-react";
+import { Building2, Save, RefreshCw, Award, MapPin, Phone, Mail, Globe, FileText } from "lucide-react";
 import "./AdminManagement.css";
 
 export default function HospitalManagement() {

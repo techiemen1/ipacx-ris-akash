@@ -1,0 +1,48 @@
+{
+  "classifications": {
+    "birads": ["BI-RADS 0", "BI-RADS 1", "BI-RADS 2", "BI-RADS 3", "BI-RADS 4A", "BI-RADS 4B", "BI-RADS 4C", "BI-RADS 5", "BI-RADS 6"],
+    "lirads": ["LI-RADS NC", "LI-RADS 1", "LI-RADS 2", "LI-RADS 3", "LI-RADS 4", "LI-RADS 5", "LI-RADS M", "LI-RADS TIV"],
+    "pirads": ["PI-RADS 1", "PI-RADS 2", "PI-RADS 3", "PI-RADS 4", "PI-RADS 5"],
+    "cadrads": ["CAD-RADS 0", "CAD-RADS 1", "CAD-RADS 2", "CAD-RADS 3", "CAD-RADS 4A", "CAD-RADS 4B", "CAD-RADS 5", "CAD-RADS N"],
+    "lungrads": ["Lung-RADS 1", "Lung-RADS 2", "Lung-RADS 3", "Lung-RADS 4A", "Lung-RADS 4B", "Lung-RADS 4X"],
+    "ti-rads": ["TR1", "TR2", "TR3", "TR4", "TR5"]
+  },
+  "anatomicalLevels": {
+    "cervical": ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C1-C2", "C2-C3", "C3-C4", "C4-C5", "C5-C6", "C6-C7", "C7-T1"],
+    "thoracic": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T11-T12", "T12-L1"],
+    "lumbar": ["L1", "L2", "L3", "L4", "L5", "L1-L2", "L2-L3", "L3-L4", "L4-L5", "L5-S1"],
+    "sacral": ["S1", "S2", "S3", "S4", "S5"]
+  },
+  "units": {
+    "mm": "mm",
+    "cm": "cm",
+    "hu": "HU",
+    "hounsfield units": "HU",
+    "percent": "%",
+    "degrees": "°",
+    "cc": "cc",
+    "ml": "mL",
+    "bpm": "bpm",
+    "mgy": "mGy",
+    "mgy-cm": "mGy-cm"
+  },
+  "modalities": [
+    "CT", "MRI", "X-RAY", "ULTRASOUND", "MAMMOGRAPHY", "NUCLEAR MEDICINE", "PET-CT", "INTERVENTIONAL RADIOLOGY", "FLUOROSCOPY", "ECHO"
+  ],
+  "radiologyTerms": [
+    "consolidation", "pneumothorax", "pleural effusion", "atelectasis", "cardiomegaly", "lymphadenopathy",
+    "bronchiectasis", "emphysema", "ground-glass opacity", "tree-in-bud", "honeycombing",
+    "ischemic stroke", "intraparenchymal hemorrhage", "subarachnoid hemorrhage", "subdural hematoma",
+    "epidural hematoma", "encephalomalacia", "gliosis", "hydrocephalus", "leukoaraiosis",
+    "cholelithiasis", "choledocholithiasis", "hepatomegaly", "steatosis", "cirrhosis", "splenomegaly",
+    "nephrolithiasis", "hydronephrosis", "pyelonephritis", "cystitis", "ascites", "pneumoperitoneum",
+    "osteophytes", "spondylolisthesis", "disc herniation", "disc bulge", "spinal stenosis",
+    "foraminal narrowing", "fracture", "subluxation", "dislocation", "osteopenia", "osteoporosis",
+    "BI-RADS", "LI-RADS", "PI-RADS", "CAD-RADS", "Lung-RADS", "Fleischner", "RECIST"
+  ],
+  "eponyms": [
+    "Chiari malformation", "Salter-Harris fracture", "Berry aneurysm", "Schwannoma", "Meningioma",
+    "Colles fracture", "Smith fracture", "Jones fracture", "Lisfranc injury", "Bankart lesion",
+    "Hill-Sachs lesion", "Baker cyst", "Pancoast tumor", "Wilms tumor", "Krukenberg tumor"
+  ]
+}

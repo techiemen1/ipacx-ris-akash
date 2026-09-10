@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from "react";
 import MainLayout from "../../layout/MainLayout";
 import api from "../../api/axios";
-import { Server, Radio, HardDrive, Cpu, CheckCircle, RefreshCw, Plus, Edit2, Trash2, Zap, Activity } from "lucide-react";
+import { Server, Radio, HardDrive, Cpu, CheckCircle, RefreshCw, Plus, Trash2, Activity } from "lucide-react";
 import "./MwlsManagement.css";
 
 function MwlsManagement() {
   const [activeTab, setActiveTab] = useState("status"); // status | modalities | pacs | ohif
   const [mappings, setMappings] = useState([]);
   const [pacsList, setPacsList] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
   const [serviceStatus, setServiceStatus] = useState({ success: null, error: null, checking: false });
   const [modalityOptions, setModalityOptions] = useState([{ code: "ALL", name: "All Modalities" }]);
   const [ohifUrl, setOhifUrl] = useState(localStorage.getItem("OHIF_VIEWER_URL") || "");

@@ -9,12 +9,7 @@ import {
   Clock,
   AlertTriangle,
   Plus,
-  Zap,
-  ArrowRight,
-  TrendingUp,
-  FileText,
-  Eye,
-  ShieldCheck
+  Zap
 } from "lucide-react";
 
 function getTodayString() {
@@ -26,7 +21,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const [selectedDate, setSelectedDate] = useState(getTodayString());
-  const [stats, setStats] = useState({
+  const [stats, _setStats] = useState({
     totalReceipts: 48500,
     procedureScans: 68,
     averageTatMinutes: 24,

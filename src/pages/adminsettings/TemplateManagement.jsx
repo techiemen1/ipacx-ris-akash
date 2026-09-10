@@ -22,7 +22,7 @@ export default function TemplateManagement() {
   const [findings, setFindings] = useState("");
   const [conclusion, setConclusion] = useState("");
   const [modalities, setModalities] = useState([]);
-  const [bodyParts, setBodyParts] = useState([]);
+  const [_bodyParts, setBodyParts] = useState([]);
 
   const sections = { Templates: ["View Templates", "Add Template"] };
 

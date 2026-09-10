@@ -1,27 +1,14 @@
-const fs = require("fs");
-const path = require("path");
-const pool = require("./db");
+const { runMigrations } = require("./migrations/runner");
 
-async function runMigrations() {
-  console.log("🔄 Running database migrations...");
+async function main() {
+  console.log("🔄 Running database migrations via Migration Runner...");
   try {
-    const migrationsDir = path.join(__dirname, "migrations");
-    const files = fs.readdirSync(migrationsDir).sort();
-
-    for (const file of files) {
-      if (file.endsWith(".sql")) {
-        console.log(`📜 Running migration: ${file}`);
-        const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
-        await pool.query(sql);
-        console.log(`✅ Applied: ${file}`);
-      }
-    }
+    await runMigrations();
     console.log("🎉 All migrations completed successfully.");
   } catch (err) {
     console.error("❌ Migration failed:", err.message);
-  } finally {
-    await pool.end();
+    process.exit(1);
   }
 }
 
-runMigrations();
+main();

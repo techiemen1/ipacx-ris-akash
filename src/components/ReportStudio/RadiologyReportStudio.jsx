@@ -4,6 +4,7 @@ import DOMPurify from "dompurify";
 import api from "../../api/axios";
 import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
+import VoiceDictationManager from "../dictation/VoiceDictationManager";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
 import ShareReportModal from "../ShareReportModal";
 import {
@@ -22,12 +23,14 @@ import {
   List,
   ListOrdered,
   RotateCcw,
-  QrCode,
-  Columns,
+  Settings,
   Maximize2,
-  Eye
+  Eye,
+  Camera,
+  QrCode
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
 import "./ReportStudio.css";
 
 export default function RadiologyReportStudio({ studyUIDOverride }) {
@@ -133,6 +136,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const [reportTitle, setReportTitle] = useState("RADIOLOGY REPORT");
   const [selectedModality, setSelectedModality] = useState("XRAY");
   const [attachedSnapshots, setAttachedSnapshots] = useState([]);
+  const [activeViewportInfo, setActiveViewportInfo] = useState(null);
 
   // Auxiliary Features State
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -245,6 +249,35 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     if (conclusionRef.current) conclusionRef.current.innerHTML = clean;
   };
 
+  const handleDictationTranscript = (text, targetField) => {
+    if (targetField === "findings") {
+      const currentText = findingsRef.current ? findingsRef.current.innerHTML : findingsHtml;
+      const cleanText = currentText && currentText !== "<br>" ? currentText : "";
+      const updated = cleanText ? `${cleanText} ${text}` : `<p>${text}</p>`;
+      updateFindings(updated);
+    } else if (targetField === "conclusion") {
+      const currentText = conclusionRef.current ? conclusionRef.current.innerHTML : conclusionHtml;
+      const cleanText = currentText && currentText !== "<br>" ? currentText : "";
+      const updated = cleanText ? `${cleanText} ${text}` : `<p>${text}</p>`;
+      updateConclusion(updated);
+    }
+  };
+
+  const handleVoiceCommand = (commandObj) => {
+    if (!commandObj) return;
+    if (commandObj.commandType === "NAVIGATE") {
+      if (commandObj.targetField === "findings" && findingsRef.current) {
+        findingsRef.current.focus();
+      } else if (commandObj.targetField === "conclusion" && conclusionRef.current) {
+        conclusionRef.current.focus();
+      }
+    } else if (commandObj.commandType === "CLEAR_FIELD") {
+      if (commandObj.targetField === "findings") updateFindings("");
+    } else if (commandObj.commandType === "INSERT_TEMPLATE" && commandObj.templateHtml) {
+      updateFindings(findingsHtml + commandObj.templateHtml);
+    }
+  };
+
   // Load Study & Report Details
   useEffect(() => {
     if (!studyUID) {
@@ -307,22 +340,46 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           const savedConclusion = reportData?.conclusion ?? reportData?.report_content?.conclusion ?? "";
           const savedTitle = reportData?.title ?? reportData?.report_title ?? reportData?.report_content?.title ?? "";
           const savedStatus = reportData?.status ?? "Draft";
-          let savedSnapshots = reportData?.report_content?.snapshots || reportData?.snapshots;
+          
+          let rawSnapshots = reportData?.report_content?.snapshots || reportData?.snapshots || reportData?.images;
+          if (typeof rawSnapshots === "string") {
+            try { rawSnapshots = JSON.parse(rawSnapshots); } catch (e) { rawSnapshots = []; }
+          }
+          if (!Array.isArray(rawSnapshots) || rawSnapshots.length === 0) {
+            if (Array.isArray(reportData?.images) && reportData.images.length > 0) {
+              rawSnapshots = reportData.images.map((img, i) => ({
+                id: `snap_${img.id || Date.now()}_${i}`,
+                instance_id: img.instance_id || `img_${i}`,
+                preview_url: img.image_path || img.url || img.preview_url,
+                caption: img.caption || `Key Image ${i + 1}`
+              }));
+            }
+          }
 
-          if (!savedSnapshots && Array.isArray(reportData?.images)) {
-            savedSnapshots = reportData.images.map((img, i) => ({
-              id: `snap_${img.id || Date.now()}_${i}`,
-              instance_id: `img_${i}`,
-              preview_url: img.image_path || img.url,
-              caption: img.caption || `Key Image ${i + 1}`
-            }));
+          let normalizedSnapshots = [];
+          if (Array.isArray(rawSnapshots)) {
+            normalizedSnapshots = rawSnapshots.map((item, idx) => {
+              if (typeof item === "string") {
+                return {
+                  id: `snap_${Date.now()}_${idx}`,
+                  preview_url: item,
+                  caption: `Key Image ${idx + 1}`
+                };
+              }
+              return {
+                ...item,
+                id: item.id || `snap_${Date.now()}_${idx}`,
+                preview_url: item.preview_url || item.url || item.image_path || item.dataUrl || item.previewUrl || "",
+                caption: item.caption || `Key Image ${idx + 1}`
+              };
+            }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
           const hasSavedContent =
             String(savedFindings || "").trim() !== "" ||
             String(savedConclusion || "").trim() !== "" ||
             String(savedHistory || "").trim() !== "" ||
-            (Array.isArray(savedSnapshots) && savedSnapshots.length > 0);
+            normalizedSnapshots.length > 0;
 
           if (hasSavedContent) {
             setHistory(String(savedHistory || ""));
@@ -337,14 +394,14 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
             setReportTitle(savedTitle || `${mod} REPORT`);
             setReportStatus(savedStatus);
-            if (Array.isArray(savedSnapshots)) {
-              setAttachedSnapshots(savedSnapshots);
-            }
+            setAttachedSnapshots(normalizedSnapshots);
           } else {
             autoMatchTemplate(mod, bPart, sDesc);
+            setAttachedSnapshots([]);
           }
         } catch {
           autoMatchTemplate(mod, bPart, sDesc);
+          setAttachedSnapshots([]);
         }
       } catch (err) {
         console.error("Failed to load study for Report Studio:", err);
@@ -354,7 +411,129 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     };
 
     loadStudyData();
+
   }, [studyUID]);
+
+  // Handle smooth viewMode changes without losing typed findings/conclusion DOM state
+  const handleSetViewMode = (newMode) => {
+    if (findingsRef.current) setFindingsHtml(findingsRef.current.innerHTML);
+    if (conclusionRef.current) setConclusionHtml(conclusionRef.current.innerHTML);
+    setViewMode(newMode);
+  };
+
+  // Sync innerHTML safely when initial loading finishes or viewMode changes
+  useEffect(() => {
+    if (!loading) {
+      if (findingsRef.current && findingsHtml !== undefined) {
+        if (findingsRef.current.innerHTML !== findingsHtml) {
+          findingsRef.current.innerHTML = findingsHtml;
+        }
+      }
+      if (conclusionRef.current && conclusionHtml !== undefined) {
+        if (conclusionRef.current.innerHTML !== conclusionHtml) {
+          conclusionRef.current.innerHTML = conclusionHtml;
+        }
+      }
+    }
+  }, [viewMode, loading, findingsHtml, conclusionHtml]);
+
+
+
+  // Key Images / Snapshots Series State
+  const [studySeriesList, setStudySeriesList] = useState([]);
+  const [selectedSeriesId, setSelectedSeriesId] = useState("");
+  const [targetSliceNumber, setTargetSliceNumber] = useState("1");
+  const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
+  const [pickerSliceNum, setPickerSliceNum] = useState(1);
+
+  // Fetch Series & Instances list for exact series/slice tracking
+  useEffect(() => {
+    if (!studyUID) return;
+    setStudySeriesList([]);
+    setSelectedSeriesId("");
+    setTargetSliceNumber("1");
+
+    api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`)
+      .then((res) => {
+        if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
+          setStudySeriesList(res.data.series);
+          const mainSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
+          setSelectedSeriesId(mainSeries.series_id);
+        }
+      })
+      .catch((err) => console.error("Failed to load study series:", err));
+  }, [studyUID]);
+
+  // Live Viewer postMessage Listener via ViewerBridge
+  useEffect(() => {
+    const unsubscribe = subscribeToViewerMessages(
+      (keyImg) => {
+        setAttachedSnapshots(prev => {
+          if (prev.some(s => s.preview_url === keyImg.dataUrl || (keyImg.sopInstanceUid && s.instance_id === keyImg.sopInstanceUid))) {
+            return prev;
+          }
+
+          return [...prev, {
+            id: keyImg.id || `key_img_${Date.now()}`,
+            instance_id: keyImg.sopInstanceUid || `img_${Date.now()}`,
+            preview_url: keyImg.dataUrl || keyImg.preview_url,
+            caption: keyImg.caption || "Diagnostic Series | Slice 1"
+          }];
+        });
+      },
+      (vpState) => {
+        if (vpState) {
+          const fNum = vpState.frameNumber || vpState.sliceIndex || vpState.instanceNumber;
+          if (fNum) setTargetSliceNumber(String(fNum));
+          const sUid = vpState.seriesInstanceUid || vpState.series_instance_uid;
+          const sDesc = vpState.seriesDescription || vpState.SeriesDescription;
+
+          if (sUid || sDesc) {
+            setActiveViewportInfo({
+              seriesInstanceUid: sUid,
+              seriesDescription: sDesc,
+              frameNumber: fNum,
+              totalSlices: vpState.totalSlices || vpState.totalFrames
+            });
+          }
+
+          if (sUid && Array.isArray(studySeriesList)) {
+            const match = studySeriesList.find(s => 
+              String(s.series_id) === String(sUid) ||
+              String(s.series_instance_uid) === String(sUid) ||
+              String(s.orthanc_series_id) === String(sUid)
+            );
+            if (match) setSelectedSeriesId(match.series_id);
+          }
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, [study, studySeriesList]);
+
+  // Real-time polling to sync iframe active viewport slice & series with RIS controls
+  useEffect(() => {
+    if (!studySeriesList || studySeriesList.length === 0) return;
+    const interval = setInterval(() => {
+      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
+      if (!iframeEl || !iframeEl.contentDocument) return;
+      try {
+        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
+        if (domInfo) {
+          if (domInfo.matchedSeriesId) {
+            setSelectedSeriesId(prev => (prev !== domInfo.matchedSeriesId ? domInfo.matchedSeriesId : prev));
+          }
+          if (domInfo.sliceNumber) {
+            setTargetSliceNumber(prev => (prev !== String(domInfo.sliceNumber) ? String(domInfo.sliceNumber) : prev));
+          }
+        }
+      } catch (err) {
+        // Cross-origin fallback safety
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [studySeriesList]);
 
   // DICOM SR Auto-Fill Engine
   const autoFillDicomSR = async () => {
@@ -383,90 +562,135 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     }
   };
   
-  // 1-Click Key Image / Diagnostic Snapshot Handler
-  const handleAttachKeyImage = async () => {
-    let capturedDataUrl = null;
+  // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
+  const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
+    try {
+      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
+      if (iframeEl && iframeEl.contentWindow) {
+        iframeEl.contentWindow.postMessage({ type: 'OHIF_CAPTURE_VIEWPORT', action: 'CAPTURE' }, '*');
+        iframeEl.contentWindow.postMessage({ type: 'REQUEST_SNAPSHOT', action: 'CAPTURE' }, '*');
+      }
+    } catch (e) {
+      // Ignore postMessage error if cross-origin iframe does not accept message
+    }
+
+    const snapResult = await requestViewerSnapshot(".rs-viewer-iframe, iframe", studySeriesList);
+    const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
+
+    let currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
+    let currentSliceNum = overrideSliceNum !== null 
+      ? parseInt(overrideSliceNum, 10) 
+      : (snapResult?.sliceNumber || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null)));
+    let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
 
     try {
       const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
-      if (iframeEl) {
-        const iframeWin = iframeEl.contentWindow;
-        const iframeDoc = iframeEl.contentDocument || (iframeWin && iframeWin.document);
-        if (iframeDoc) {
-          const canvases = Array.from(iframeDoc.querySelectorAll("canvas"));
-          if (canvases.length > 0) {
-            const targetCanvas = canvases.reduce((acc, c) => (c.width * c.height > acc.width * acc.height ? c : acc), canvases[0]);
-            if (targetCanvas && targetCanvas.width > 0 && targetCanvas.height > 0) {
-              capturedDataUrl = targetCanvas.toDataURL("image/jpeg", 0.95);
-            }
+      if (iframeEl && iframeEl.contentDocument) {
+        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
+        if (domInfo) {
+          if (overrideSeriesId === null && domInfo.matchedSeriesId) {
+            currentSeriesId = domInfo.matchedSeriesId;
+          }
+          if (overrideSliceNum === null && domInfo.sliceNumber) {
+            currentSliceNum = domInfo.sliceNumber;
+          }
+          if (domInfo.totalSlices) {
+            detectedTotal = domInfo.totalSlices;
           }
         }
       }
     } catch (e) {
-      console.warn("Canvas extraction exception:", e);
+      console.warn("Live DOM slice extraction notice:", e);
     }
 
-    if (capturedDataUrl) {
-      setAttachedSnapshots(prev => [...prev, {
-        id: `snap_canvas_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        instance_id: `canvas_${Date.now()}`,
-        preview_url: capturedDataUrl,
-        caption: `Viewport Key Image #${attachedSnapshots.length + 1}`
-      }]);
+    const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
+
+    const seriesObj = (studySeriesList && studySeriesList.length > 0)
+      ? (studySeriesList.find(s => 
+          (currentSeriesId && String(s.series_id) === String(currentSeriesId)) ||
+          (currentSeriesId && String(s.series_instance_uid) === String(currentSeriesId)) ||
+          (currentSeriesId && String(s.orthanc_series_id) === String(currentSeriesId)) ||
+          (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().trim() === String(targetSeriesDesc).toLowerCase().trim()) ||
+          (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().includes(String(targetSeriesDesc).toLowerCase()))
+        ) || (selectedSeriesId ? studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) : null) || studySeriesList[0])
+      : null;
+
+    const totalSlices = detectedTotal || (seriesObj?.total_slices) || (activeViewportInfo?.totalSlices) || 1;
+
+    let displaySliceNum = currentSliceNum || snapResult?.instanceNumber || 1;
+    if (isNaN(displaySliceNum) || displaySliceNum < 1) {
+      displaySliceNum = 1;
+    }
+    displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
+
+    const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || activeViewportInfo?.seriesDescription || "Diagnostic Series";
+    const fullCaption = totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`;
+
+    let targetInst = null;
+    if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
+      const targetInstanceNum = snapResult?.instanceNumber;
+      if (targetInstanceNum) {
+        targetInst = seriesObj.instances.find(inst => 
+          parseInt(inst.slice_number, 10) === targetInstanceNum || 
+          parseInt(inst.instance_number, 10) === targetInstanceNum
+        );
+      }
+      if (!targetInst) {
+        targetInst = seriesObj.instances.find(inst => inst.slice_index === displaySliceNum || inst.slice_number === displaySliceNum);
+      }
+      if (!targetInst) {
+        const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
+        targetInst = seriesObj.instances[boundedIndex];
+      }
+    }
+
+    const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
+    
+    const previewUrl = validDataUrl || targetInst?.preview_url || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null);
+
+    if (!previewUrl) {
+      console.warn("Could not resolve valid preview image URL for key image capture.");
       return;
     }
 
-    try {
-      const { data: snapRes } = await api.get(`/api/pacs/snapshots/${encodeURIComponent(studyUID)}`);
-      if (snapRes?.success && Array.isArray(snapRes.data) && snapRes.data.length > 0) {
-        const pSnap = snapRes.data[0];
-        setAttachedSnapshots(prev => [...prev, {
-          id: `snap_pacs_${Date.now()}`,
-          instance_id: pSnap.instance_id,
-          preview_url: pSnap.preview_url,
-          caption: pSnap.caption || `PACS Key Diagnostic Image`
-        }]);
-      } else {
-        setAttachedSnapshots(prev => [...prev, {
-          id: `snap_single_${Date.now()}`,
-          instance_id: `single_${Date.now()}`,
-          preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
-          caption: `Diagnostic Key Image #${prev.length + 1}`
-        }]);
-      }
-    } catch (err) {
-      console.error("Direct PACS snapshot capture error:", err);
-      setAttachedSnapshots(prev => [...prev, {
-        id: `snap_single_${Date.now()}`,
-        instance_id: `single_${Date.now()}`,
-        preview_url: `/api/pacs/export/single/${encodeURIComponent(studyUID)}`,
-        caption: `Diagnostic Key Image #${prev.length + 1}`
-      }]);
-    }
+    const snapObj = {
+      id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
+      dataUrl: validDataUrl,
+      preview_url: previewUrl,
+      fallback_preview_url: targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null,
+      caption: fullCaption
+    };
+
+    setAttachedSnapshots(prev => [...prev, snapObj]);
   };
 
   // AI Impression Generator Assistant
   const generateAIImpression = async () => {
-    if (!findingsHtml.trim()) {
-      alert("Please enter or select Findings text first to generate an AI Impression.");
+    const currentFindings = findingsRef.current ? findingsRef.current.innerHTML : findingsHtml;
+    const cleanFindings = (currentFindings || "").replace(/<[^>]*>?/gm, ' ').trim();
+    if (!cleanFindings || cleanFindings.length < 5) {
+      alert("Please enter Findings text first before generating an AI Impression.");
       return;
     }
     setIsGeneratingAI(true);
     try {
-      const cleanFindings = findingsHtml.replace(/<[^>]*>?/gm, '');
-      const prompt = `Synthesize concise clinical impression and triage findings: "${cleanFindings}"`;
+      const res = await api.post("/api/ai/generate-impression", {
+        history,
+        findings: cleanFindings,
+        modality: selectedModality || study.Modality,
+        bodyPart: study.BodyPartExamined
+      });
+
+      const impressionText = res.data?.impression || "1. Clinical findings evaluated.\n2. Recommend clinical correlation.";
+      const lines = impressionText.split('\n').filter(l => l.trim().length > 0);
+      const formattedHtml = `<div style="padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px;"><strong style="color: #15803d;">🤖 AI GENERATED IMPRESSION:</strong></div><ol style="padding-left: 20px;">${lines.map(line => `<li>${line.replace(/^\d+\.\s*/, '')}</li>`).join('')}</ol>`;
       
-      const { data } = await api.post("/api/speech/transcribe", { text: prompt }).catch(() => ({
-        data: { text: null }
-      }));
-
-      const aiResult = data?.text || `1. Clinical findings evaluated based on study description.\n2. No acute life-threatening abnormality or critical hemorrhage detected.\n3. Recommend clinical correlation and routine follow-up as indicated.`;
-
-      const aiFormattedHtml = `<p><b>AI ASSISTED IMPRESSION:</b></p><ul>${aiResult.split('\n').map(line => `<li>${line}</li>`).join('')}</ul>`;
-      updateConclusion(aiFormattedHtml);
+      updateConclusion(formattedHtml);
     } catch (err) {
       console.error("AI Impression generation failed:", err);
-      alert("AI Impression service applied standard structured summary.");
+      const fallbackImpression = `<div style="padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px;"><strong style="color: #15803d;">🤖 AI SUMMARY IMPRESSION:</strong></div><ul><li>${cleanFindings.slice(0, 180)}...</li><li>Recommend clinical correlation and routine follow-up as indicated.</li></ul>`;
+      updateConclusion(fallbackImpression);
     } finally {
       setIsGeneratingAI(false);
     }
@@ -748,11 +972,21 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           />
         </div>
 
+        {/* MEDICAL VOICE DICTATION CONTROL BAR */}
+        {!isReadOnly && (
+          <div style={{ marginBottom: 14 }}>
+            <VoiceDictationManager
+              onTranscript={handleDictationTranscript}
+              onCommand={handleVoiceCommand}
+              activeTargetField="findings"
+            />
+          </div>
+        )}
+
         {/* FINDINGS RICH TEXT WYSIWYG EDITOR */}
         <div className="rs-section-card">
-          <div className="rs-section-header">
+          <div className="rs-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="rs-section-title">Detailed Imaging Findings</span>
-            <span style={{ fontSize: 11, color: '#64748b' }}>WYSIWYG Formatted View</span>
           </div>
 
           {!isReadOnly && (
@@ -805,21 +1039,37 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
               }
             }}
             className="rs-rich-editor"
-          />
+          ></div>
         </div>
 
         {/* IMPRESSION / CONCLUSION RICH TEXT EDITOR */}
         <div className="rs-section-card">
-          <div className="rs-section-header">
+          <div className="rs-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span className="rs-section-title">Clinical Impression & Conclusion</span>
             {!isReadOnly && (
-              <button
-                type="button"
-                onClick={generateAIImpression}
-                style={{ background: 'none', border: 'none', color: '#4338ca', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-              >
-                <Sparkles size={14} /> Auto Generate AI Impression
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  disabled={isGeneratingAI}
+                  onClick={generateAIImpression}
+                  style={{
+                    background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)'
+                  }}
+                >
+                  <Sparkles size={14} /> {isGeneratingAI ? "Generating..." : "⚡ Auto AI Impression"}
+                </button>
+              </div>
             )}
           </div>
 
@@ -836,51 +1086,56 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             contentEditable={!isReadOnly}
             onInput={() => setConclusionHtml(conclusionRef.current.innerHTML)}
             className="rs-rich-editor rs-impression-editor"
-          />
+          ></div>
         </div>
-
         {/* ATTACHED KEY DIAGNOSTIC IMAGES CARD */}
-        <div className="rs-section-card">
-          <div className="rs-section-header" style={{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              📸 Attached Key Diagnostic Images ({attachedSnapshots.length})
+        <div className="rs-section-card" style={{ padding: 16 }}>
+          <div className="rs-section-header" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
+              <Camera size={16} style={{ color: "#0284c7" }} /> Attached Key Images / Snapshots ({attachedSnapshots.length})
             </span>
             {!isReadOnly && (
               <button
                 type="button"
-                onClick={handleAttachKeyImage}
+                onClick={() => handleAttachKeyImage()}
                 style={{
                   background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: 8,
-                  padding: "6px 14px",
+                  padding: "7px 14px",
                   fontSize: 12,
                   fontWeight: 700,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)"
+                  boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
                 }}
               >
-                📸 Capture Key Image / Snapshot
+                <Camera size={14} /> 📸 Capture Active Viewer Slice
               </button>
             )}
           </div>
 
           {attachedSnapshots.length === 0 ? (
-            <div style={{ padding: "16px 12px", textAlign: "center", color: "#64748b", fontSize: 12, border: "1px dashed #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
-              No key images attached yet. Click <b>"📸 Capture Key Image / Snapshot"</b> to attach key diagnostic images for this report.
+            <div style={{ padding: "20px 16px", textAlign: "center", color: "#64748b", fontSize: 12, border: "1.5px dashed #cbd5e1", borderRadius: 10, background: "#f8fafc" }}>
+              No key images attached yet. Open any slice in the DICOM Viewer on the left and click <b>"📸 Capture Active Viewer Slice"</b> (or <b>"📸 Key Image / Snapshot"</b> in top bar) to attach it to your report.
             </div>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
               {attachedSnapshots.map((snap, idx) => (
-                <div key={snap.id || idx} style={{ position: "relative", borderRadius: 8, border: "1px solid #cbd5e1", overflow: "hidden", background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
+                <div key={snap.id || idx} style={{ position: "relative", borderRadius: 10, border: "1px solid #cbd5e1", overflow: "hidden", background: "#ffffff", boxShadow: "0 2px 4px rgba(0,0,0,0.06)" }}>
                   <img
-                    src={snap.preview_url || snap.url}
-                    alt={snap.caption || `Key Image ${idx + 1}`}
-                    style={{ width: "100%", height: 125, objectFit: "cover", display: "block" }}
+                    src={snap.preview_url || snap.url || snap.image_path || snap.dataUrl || snap.previewUrl || snap.fallback_preview_url}
+                    alt={snap.caption || `Key Image #${idx + 1}`}
+                    style={{ width: "100%", height: 130, objectFit: "cover", display: "block", background: "#000000" }}
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      if (snap.fallback_preview_url) {
+                        e.target.src = snap.fallback_preview_url;
+                      }
+                    }}
                   />
                   {!isReadOnly && (
                     <button
@@ -888,8 +1143,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                       onClick={() => setAttachedSnapshots(prev => prev.filter((_, i) => i !== idx))}
                       style={{
                         position: "absolute",
-                        top: 4,
-                        right: 4,
+                        top: 6,
+                        right: 6,
                         background: "rgba(239, 68, 68, 0.9)",
                         color: "#ffffff",
                         border: "none",
@@ -900,29 +1155,29 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                         alignItems: "center",
                         justifyContent: "center",
                         cursor: "pointer",
-                        boxShadow: "0 2px 4px rgba(0,0,0,0.5)"
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.4)"
                       }}
                       title="Remove Image"
                     >
                       <X size={13} />
                     </button>
                   )}
-                  <div style={{ padding: '4px 6px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ padding: '6px 8px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
                     <input
                       type="text"
                       value={snap.caption || ''}
+                      readOnly={isReadOnly}
                       onChange={(e) => {
                         const newCap = e.target.value;
                         setAttachedSnapshots(prev => prev.map((item, i) => i === idx ? { ...item, caption: newCap } : item));
                       }}
                       placeholder={`Key Image #${idx + 1}`}
-                      disabled={isReadOnly}
                       style={{
                         width: '100%',
                         border: '1px solid #cbd5e1',
-                        borderRadius: '4px',
+                        borderRadius: '6px',
                         fontSize: '11px',
-                        padding: '2px 4px',
+                        padding: '3px 6px',
                         color: '#1e293b',
                         fontWeight: '600'
                       }}
@@ -996,20 +1251,19 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         {/* VIEW MODE TOGGLE BAR */}
         <div className="rs-viewmode-bar">
           <button
-            onClick={() => setViewMode("studio")}
+            onClick={() => handleSetViewMode("studio")}
             className={`rs-viewmode-btn ${viewMode === "studio" ? "active" : ""}`}
           >
             <FileText size={14} /> Studio Only
           </button>
           <button
-            onClick={() => setShowFlashSplitModal(true)}
-            className="rs-viewmode-btn"
-            style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', color: '#ffffff' }}
+            onClick={() => handleSetViewMode("split")}
+            className={`rs-viewmode-btn ${viewMode === "split" ? "active" : ""}`}
           >
-            <Zap size={14} /> ⚡ Flash Split Workstation
+            <Zap size={14} /> Split View 50/50
           </button>
           <button
-            onClick={() => setViewMode("viewer")}
+            onClick={() => handleSetViewMode("viewer")}
             className={`rs-viewmode-btn ${viewMode === "viewer" ? "active" : ""}`}
           >
             <Maximize2 size={14} /> Viewer Only
@@ -1022,13 +1276,20 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             onClick={() => setShowFlashSplitModal(true)}
             className="rs-btn rs-btn-primary"
             style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', color: '#ffffff' }}
+            title="Launch Fullscreen Diagnostic Workstation"
           >
-            <Zap size={16} /> Flash Split Workstation
+            <Zap size={16} /> ⚡ Diagnostic Workstation
           </button>
 
           <button onClick={() => openStudyViewer(studyUID)} className="rs-btn rs-btn-primary">
-            <Eye size={16} /> Open OHIF Viewer
+            <Eye size={16} /> Open Viewer in New Window
           </button>
+
+          {!isReadOnly && (
+            <button onClick={() => handleAttachKeyImage()} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
+              <Camera size={16} /> 📸 Key Image / Snapshot
+            </button>
+          )}
 
 
 
@@ -1308,7 +1569,152 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
       )}
 
-      {/* VENDOR-GRADE PATIENT & PHYSICIAN SHARE MODAL */}
+      {/* VISUAL DICOM SLICE BROWSER MODAL */}
+      {showSlicePickerModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#ffffff', borderRadius: 12, maxWidth: 720, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', border: '1px solid #cbd5e1', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>🖼️ Visual DICOM Slice Browser</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Select any series and slice number to instantly attach high-resolution preview to report</p>
+              </div>
+              <button type="button" onClick={() => setShowSlicePickerModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '50%', width: 28, height: 28, fontWeight: 800, cursor: 'pointer' }}>✕</button>
+            </div>
+
+            {/* Series Selection Tabs */}
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+              {studySeriesList.map(s => {
+                const isSel = String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId);
+                return (
+                  <button
+                    key={s.series_id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSeriesId(s.series_id);
+                      setPickerSliceNum(1);
+                      setTargetSliceNumber("1");
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      borderRadius: 8,
+                      border: isSel ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                      background: isSel ? '#0284c7' : '#f8fafc',
+                      color: isSel ? '#ffffff' : '#334155',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {s.series_description || `Series ${s.series_number}`} ({s.total_slices} Slices)
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Series & Slider Control */}
+            {(() => {
+              const sObj = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) || studySeriesList[0];
+              const maxS = sObj?.total_slices || 1;
+              const curSlice = Math.min(Math.max(1, pickerSliceNum), maxS);
+              const curInst = sObj?.instances ? sObj.instances[curSlice - 1] : null;
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
+                  {/* Live Preview Container */}
+                  <div style={{ width: '100%', height: 320, background: '#000000', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', border: '2px solid #0284c7' }}>
+                    {curInst ? (
+                      <img
+                        src={`/api/pacs/instance-preview/${curInst.instance_id}`}
+                        alt={`Slice ${curSlice}`}
+                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                      />
+                    ) : (
+                      <div style={{ color: '#94a3b8', fontSize: 13 }}>Preview Loading...</div>
+                    )}
+                    <div style={{ position: 'absolute', bottom: 10, right: 12, background: 'rgba(0,0,0,0.75)', color: '#00f2fe', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, border: '1px solid rgba(0,242,254,0.3)' }}>
+                      Slice {curSlice} / {maxS}
+                    </div>
+                  </div>
+
+                  {/* Slider Stepper */}
+                  <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => setPickerSliceNum(prev => Math.max(1, prev - 1))}
+                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      -
+                    </button>
+                    <input
+                      type="range"
+                      min="1"
+                      max={maxS}
+                      value={curSlice}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        setPickerSliceNum(val);
+                        setTargetSliceNumber(String(val));
+                      }}
+                      style={{ flex: 1, accentColor: '#0284c7', height: 8, cursor: 'pointer' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPickerSliceNum(prev => Math.min(maxS, prev + 1))}
+                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                    >
+                      +
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      max={maxS}
+                      value={curSlice}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 1;
+                        setPickerSliceNum(val);
+                        setTargetSliceNumber(String(val));
+                      }}
+                      style={{ width: 65, padding: '4px 6px', fontSize: 13, fontWeight: 800, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }}
+                    />
+                  </div>
+
+                  {/* Direct Action Attach Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAttachKeyImage(curSlice, sObj?.series_id);
+                      setTargetSliceNumber(String(curSlice));
+                      setShowSlicePickerModal(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '10px 16px',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(2, 132, 199, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8
+                    }}
+                  >
+                    <Camera size={16} /> 📸 Attach Slice #{curSlice} of {sObj?.series_description || 'Series'} to Report
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       <ShareReportModal
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}

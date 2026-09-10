@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../../layout/MainLayout";
 import api, { apiUrl } from "../../api/axios";
-import { Users, UserPlus, Shield, Building2, Check, X, Edit3, Trash2, Activity, Image as ImageIcon } from "lucide-react";
+import { Users, UserPlus, Shield, Building2, X, Edit3, Trash2, Activity } from "lucide-react";
 import "./UserManagement.css";
 
 const EMPTY_FORM = {

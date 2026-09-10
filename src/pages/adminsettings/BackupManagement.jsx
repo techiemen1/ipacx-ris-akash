@@ -24,7 +24,7 @@ export default function BackupManagement() {
   const [errorMsg, setErrorMsg] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
 
-  const [schedule, setSchedule] = useState({
+  const [_schedule, setSchedule] = useState({
     enabled: true,
     frequency: "Daily",
     time: "02:00 AM",

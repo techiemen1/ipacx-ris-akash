@@ -15,20 +15,12 @@ import {
   Radio,
   Server,
   Zap,
-  CheckCircle,
   X
 } from "lucide-react";
-import dayjs from "dayjs";
+import { format } from "date-fns";
 import "./MWLS.css";
 
 const DEFAULT_MODALITIES = ["ALL", "CR", "CT", "MR", "US", "DX", "XA", "MG", "NM"];
-
-const getInitials = (name) => {
-  if (!name) return "P";
-  const parts = String(name).replace(/\^/g, " ").trim().split(" ");
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return parts[0].slice(0, 2).toUpperCase();
-};
 
 const toLocalInput = (value) => {
   if (!value) return "";
@@ -44,16 +36,16 @@ const toLocalInput = (value) => {
 
 const toDisplayTime = (value) => {
   if (!value) return "";
-  const d = dayjs(value);
-  if (!d.isValid()) return "";
-  return d.format("DD-MM-YYYY h:mm A");
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return format(d, "dd-MM-yyyy hh:mm a");
 };
 
 const fromDisplayTime = (value) => {
   if (!value) return "";
-  const d = dayjs(value, "DD-MM-YYYY hh:mm A");
-  if (!d.isValid()) return "";
-  return d.format("YYYY-MM-DDTHH:mm");
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return format(d, "yyyy-MM-dd'T'HH:mm");
 };
 
 const normalizeModalityCode = (mod) => {
@@ -90,7 +82,7 @@ export default function MWLS() {
   const [modalities] = useState(DEFAULT_MODALITIES);
   const [reviewItem, setReviewItem] = useState(null);
   const [autoPush, setAutoPush] = useState(false);
-  const [autoPushLoaded, setAutoPushLoaded] = useState(false);
+  const [_autoPushLoaded, setAutoPushLoaded] = useState(false);
 
   const [targetStatus, setTargetStatus] = useState({ online: 0, total: 0 });
 
@@ -204,7 +196,7 @@ export default function MWLS() {
       patient_id: nextPatientId,
       patient_name: "",
       modality: "CT",
-      scheduled_datetime: dayjs().format("YYYY-MM-DDTHH:mm"),
+      scheduled_datetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
       scheduled_station_aetitle: "",
     });
     setShowModal(true);
@@ -419,7 +411,7 @@ export default function MWLS() {
                     <div className="mwl-info-value">
                       <Clock size={13} />
                       {m.scheduled_datetime
-                        ? dayjs(m.scheduled_datetime).format("DD MMM h:mm A")
+                        ? format(new Date(m.scheduled_datetime), "dd MMM h:mm a")
                         : "-"}
                     </div>
                   </div>

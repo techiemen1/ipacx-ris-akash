@@ -26,9 +26,6 @@ function ensureAuditTable() {
       log_date DATE DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata')::date,
       created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
     );
-    
-    ALTER TABLE audit_logs
-    ADD COLUMN IF NOT EXISTS log_date DATE DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata')::date;
 
     UPDATE audit_logs
     SET log_date = (created_at AT TIME ZONE 'Asia/Kolkata')::date
@@ -347,33 +344,9 @@ function startAuditArchiveScheduler() {
   }, 5 * 60 * 1000);
 }
 
-function getActorFromReq(req) {
-  if (req?.user) {
-    return {
-      username: String(req.user.username || "").trim() || null,
-      role: String(req.user.role || "").trim() || null,
-      session_id: String(req.user.session_id || "").trim() || null,
-    };
-  }
-  const username = String(req.headers["x-audit-username"] || "").trim() || null;
-  const role = String(req.headers["x-audit-role"] || "").trim() || null;
-  const session_id = String(req.headers["x-audit-session"] || "").trim() || null;
-  return { username, role, session_id };
-}
 
-async function logAction(req, { event, page = null, details = null }) {
-  const actor = getActorFromReq(req);
-  await writeAuditLog({
-    session_id: actor.session_id,
-    username: actor.username,
-    role: actor.role,
-    event,
-    page: page || req.originalUrl || null,
-    details,
-    ip_address: getClientIp(req),
-    user_agent: req.headers["user-agent"] || "",
-  });
-}
+
+
 
 module.exports = {
   ensureAuditTable,

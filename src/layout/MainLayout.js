@@ -15,7 +15,6 @@ import {
   ChevronRight,
   LogOut,
   Building2,
-  Building,
   Sparkles,
   ShieldCheck,
   Palette,
@@ -29,7 +28,6 @@ import {
 } from "lucide-react";
 import "./MainLayout.css";
 import { getClickLabel, logAuditEvent } from "../utils/auditClient";
-import { useClinic } from "../context/ClinicContext";
 
 export default function MainLayout({ children }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -43,11 +41,8 @@ export default function MainLayout({ children }) {
   });
 
   const [showAdminMenu, setShowAdminMenu] = useState(false);
-  const [showUserInfo, setShowUserInfo] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
   const { user, logout } = useAuth();
-  const { clinics, activeClinic, switchClinic } = useClinic() || {};
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -111,13 +106,6 @@ export default function MainLayout({ children }) {
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
   }, [user]);
-
-  function getInitials(name) {
-    if (!name || typeof name !== "string") return "DR";
-    const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return name.slice(0, 2).toUpperCase();
-  }
 
   return (
     <div className={`ris-layout theme-${theme}`}>

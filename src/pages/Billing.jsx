@@ -7,29 +7,25 @@ import {
   Search, 
   Printer, 
   CreditCard, 
-  Plus, 
   Trash2, 
   CheckCircle, 
   IndianRupee, 
   Clock, 
-  QrCode, 
-  ShieldCheck, 
   FileText, 
-  RefreshCw,
-  Wallet
+  RefreshCw
 } from "lucide-react";
 
 export default function Billing() {
   const [patients, setPatients] = useState([]);
-  const [prices, setPrices] = useState([]);
+  const [_prices, setPrices] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [billingItems, setBillingItems] = useState([]);
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("UPI_SCAN");
-  const [paymentStatus, setPaymentStatus] = useState("PAID");
+  const [paymentStatus, _setPaymentStatus] = useState("PAID");
   const [searchTerm, setSearchTerm] = useState("");
-  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState("");
+  const [_invoiceSearchTerm, _setInvoiceSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -104,7 +100,7 @@ export default function Billing() {
     }
   };
 
-  const addItem = (priceObj) => {
+  const _addItem = (priceObj) => {
     setBillingItems((prev) => [
       ...prev,
       {

@@ -87,19 +87,91 @@ app.use("/uploads/report_images", express.static(path.join(__dirname, "uploads/r
 app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/signatures")));
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication
 try {
-  const { createProxyMiddleware } = require("http-proxy-middleware");
+  const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
+  const orthancTarget = (process.env.ORTHANC_URL || "http://localhost:8042").replace(/\/$/, "");
   const orthancUser = process.env.ORTHANC_USER || "orthanc";
-  const orthancPass = process.env.ORTHANC_PASS || "orthanc";
+  const orthancPass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
   const authHeader = "Basic " + Buffer.from(`${orthancUser}:${orthancPass}`).toString("base64");
 
   app.use(
-    ["/ohif-proxy", "/api/pacs/ohif-viewer"],
+    "/ohif-proxy",
     createProxyMiddleware({
-      target: process.env.ORTHANC_URL || "http://localhost:8042",
+      target: orthancTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
-      pathRewrite: { "^/ohif-proxy": "", "^/api/pacs/ohif-viewer": "" },
-      ws: true,
+      onProxyReq: (proxyReq) => {
+        proxyReq.setHeader("Authorization", authHeader);
+      }
+    })
+  );
+
+  app.use(
+    "/viewer",
+    createProxyMiddleware({
+      target: orthancTarget,
+      changeOrigin: true,
+      auth: `${orthancUser}:${orthancPass}`,
+      pathRewrite: (path) => {
+        const cleanPath = (path || "").replace(/^\/+/, "");
+        return "/ohif/viewer" + (cleanPath.startsWith("?") || !cleanPath ? cleanPath : "/" + cleanPath);
+      },
+      onProxyReq: (proxyReq) => {
+        proxyReq.setHeader("Authorization", authHeader);
+      }
+    })
+  );
+
+  app.use(
+    "/ohif",
+    createProxyMiddleware({
+      target: orthancTarget,
+      changeOrigin: true,
+      auth: `${orthancUser}:${orthancPass}`,
+      pathRewrite: (path) => {
+        return "/ohif" + (path.startsWith("/") ? path : "/" + path);
+      },
+      onProxyReq: (proxyReq) => {
+        proxyReq.setHeader("Authorization", authHeader);
+      }
+    })
+  );
+
+  // DICOMweb WADO/QIDO DICOM streaming proxies for embedded OHIF viewer
+  app.use(
+    "/dicom-web",
+    createProxyMiddleware({
+      target: orthancTarget,
+      changeOrigin: true,
+      auth: `${orthancUser}:${orthancPass}`,
+      pathRewrite: (path) => {
+        return "/dicom-web" + (path.startsWith("/") ? path : "/" + path);
+      },
+      selfHandleResponse: true,
+      on: {
+        proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
+          const contentType = proxyRes.headers["content-type"] || "";
+          if (contentType.includes("json") || contentType.includes("text/")) {
+            const body = responseBuffer.toString("utf8");
+            return body
+              .replace(/http:\/\/localhost:8042\/dicom-web/g, "/dicom-web")
+              .replace(/http:\/\/127\.0\.0\.1:8042\/dicom-web/g, "/dicom-web")
+              .replace(/http:\/\/host\.docker\.internal:8042\/dicom-web/g, "/dicom-web");
+          }
+          return responseBuffer;
+        }),
+        proxyReq: (proxyReq) => {
+          proxyReq.setHeader("Authorization", authHeader);
+        }
+      }
+    })
+  );
+
+  app.use(
+    ["/wado", "/instances", "/series", "/studies"],
+    createProxyMiddleware({
+      target: orthancTarget,
+      changeOrigin: true,
+      auth: `${orthancUser}:${orthancPass}`,
       onProxyReq: (proxyReq) => {
         proxyReq.setHeader("Authorization", authHeader);
       }
@@ -155,6 +227,9 @@ app.use("/", reportsRoutes);
 const patientsRoutes = require("./routes/patients");
 app.use("/api/patients", patientsRoutes);
 
+const studiesRoutes = require("./routes/studies");
+app.use("/api/studies", studiesRoutes);
+
 const appointmentsRoutes = require("./routes/appointments");
 app.use("/api/appointments", appointmentsRoutes);
 
@@ -169,6 +244,10 @@ app.use("/api", modalitiesRoutes);
 
 const speechRoutes = require("./routes/speech");
 app.use("/api/speech", speechRoutes);
+
+const aiReportingRoutes = require("./routes/aiReporting");
+app.use("/api/ai", aiReportingRoutes);
+app.use("/api/ai-reporting", aiReportingRoutes);
 
 const auditRoutes = require("./routes/audit");
 app.use("/api/audit", checkRole("ADMIN"), auditRoutes);
@@ -202,9 +281,6 @@ app.use("/api/referring-doctors", referringDoctorsRoutes);
 
 const dicomWebRoutes = require("./routes/dicomWeb");
 app.use("/api/dicomweb", dicomWebRoutes);
-
-const aiReportingRoutes = require("./routes/aiReporting");
-app.use("/api/ai", aiReportingRoutes);
 
 const publicReportSheetRoutes = require("./routes/publicReportSheet");
 app.use("/api/public/report-sheet", publicReportSheetRoutes);

@@ -1,8 +1,8 @@
 const axios = require("axios");
 const pool = require("../db");
 
-const ORTHANC_USER = process.env.ORTHANC_USER || "orthanc";
-const ORTHANC_PASS = process.env.ORTHANC_PASS || "orthanc";
+const ORTHANC_USER = process.env.ORTHANC_USER;
+const ORTHANC_PASS = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS;
 
 const orthancAuthConfig = () => {
   if (ORTHANC_USER && ORTHANC_PASS) {

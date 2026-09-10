@@ -3,6 +3,8 @@ const logger = require("../utils/logger");
 
 let io = null;
 
+const { registerSpeechDictationHandlers } = require("./speechDictationService");
+
 function initWebSockets(server) {
   io = new Server(server, {
     cors: {
@@ -13,6 +15,9 @@ function initWebSockets(server) {
 
   io.on("connection", (socket) => {
     logger.info(`WebSocket Client Connected: ${socket.id}`);
+
+    // Register Medical Speech Dictation handlers
+    registerSpeechDictationHandlers(socket);
 
     socket.on("join-modality-room", (modality) => {
       socket.join(`modality-${modality}`);

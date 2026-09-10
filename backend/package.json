@@ -27,7 +27,7 @@
     "express": "^5.2.1",
     "graphql": "^16.10.0",
     "helmet": "^8.1.0",
-    "http-proxy-middleware": "^3.0.3",
+    "http-proxy-middleware": "^3.0.7",
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "jwt-decode": "^4.0.0",

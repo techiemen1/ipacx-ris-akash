@@ -38,9 +38,6 @@ async function ensureAppointmentTable() {
 
 async function ensureAppointmentStationAetColumn() {
   await ensureAppointmentTable();
-  await pool.query(
-    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS scheduled_station_aetitle text"
-  ).catch(() => {});
 }
 
 function pickFromRow(row, keys, fallback = "") {

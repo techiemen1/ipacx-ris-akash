@@ -3,11 +3,11 @@ const router = express.Router();
 const axios = require("axios");
 
 const ORTHANC_URL = (process.env.ORTHANC_URL || "http://orthanc:8042/").replace(/\/?$/, "/");
-const ORTHANC_USER = process.env.ORTHANC_USER || "orthanc";
-const ORTHANC_PASS = process.env.ORTHANC_PASS || "orthanc";
+const ORTHANC_USER = process.env.ORTHANC_USER;
+const ORTHANC_PASS = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS;
 
 function orthancAuth() {
-    return { auth: { username: ORTHANC_USER || "orthanc", password: ORTHANC_PASS || "orthanc" } };
+    return { auth: { username: ORTHANC_USER, password: ORTHANC_PASS } };
 }
 
 function sanitizeDicomQuery(query = {}) {

@@ -55,17 +55,6 @@ function formatDisplayDateTime(dateStr, timeStr) {
   });
 }
 
-function getInitials(name) {
-  if (!name || typeof name !== "string") return "PT";
-  const clean = name.replace(/undefined|null/gi, "").trim();
-  if (!clean) return "PT";
-  const parts = clean.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return clean.slice(0, 2).toUpperCase();
-}
-
 function parseModality(item) {
   const raw = item?.modality || item?.Modality || item?.ModalitiesInStudy || item?.modality_in_study || "";
   const str = String(raw).toUpperCase().replace(/UNDEFINED|NULL/g, "").trim();

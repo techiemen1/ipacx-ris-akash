@@ -1,0 +1,235 @@
+.vdb-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 6px 12px;
+  gap: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: inherit;
+  color: #f8fafc;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.vdb-container.vdb-active {
+  border-color: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+.vdb-main-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vdb-mic-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vdb-mic-btn:hover {
+  background: #334155;
+}
+
+.vdb-mic-btn.vdb-mic-listening {
+  background: #ef4444;
+  border-color: #f87171;
+  color: #ffffff;
+  animation: pulseMic 1.5s infinite;
+}
+
+@keyframes pulseMic {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.vdb-icon-pulse {
+  animation: spinSlow 3s linear infinite;
+}
+
+.vdb-waveform-wrapper {
+  display: flex;
+  align-items: center;
+  background: #1e293b;
+  border-radius: 4px;
+  padding: 2px 6px;
+  border: 1px solid #334155;
+}
+
+.vdb-canvas {
+  display: block;
+}
+
+.vdb-interim-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #6ee7b7;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vdb-pulse-icon {
+  color: #10b981;
+  animation: pulse 1s infinite alternate;
+}
+
+.vdb-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vdb-status-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 4px;
+}
+
+.vdb-status-ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.vdb-status-fallback {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.vdb-target-pill {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.vdb-target-pill strong {
+  color: #38bdf8;
+}
+
+.vdb-hotkey-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #334155;
+  color: #cbd5e1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #475569;
+}
+
+.vdb-icon-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vdb-icon-btn:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.vdb-popover {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  width: 280px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  padding: 10px 12px;
+}
+
+.vdb-popover-wide {
+  width: 440px;
+}
+
+.vdb-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  border-bottom: 1px solid #334155;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+
+.vdb-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.vdb-close-btn:hover {
+  color: #ef4444;
+}
+
+.vdb-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-bottom: 4px;
+}
+
+.vdb-select {
+  width: 100%;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.vdb-cheat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  font-size: 10px;
+  color: #cbd5e1;
+}
+
+.vdb-cheat-grid ul {
+  padding-left: 14px;
+  margin: 4px 0 0 0;
+}
+
+.vdb-cheat-grid code {
+  background: #0f172a;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #38bdf8;
+}

@@ -16,19 +16,15 @@ const ACCESSION_SEQ_NAME = "mwl_accession_seq";
 const ACCESSION_START = 100001;
 
 async function ensureMwlDatetimeColumn() {
-  await pool.query(
-    "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduling_datetime timestamp"
-  );
+  return;
 }
 
 async function ensureMwlStatusColumn() {
-  await pool.query("ALTER TABLE mwl ADD COLUMN IF NOT EXISTS status text DEFAULT 'NEW'");
+  return;
 }
 
 async function ensureMwlStationAetColumn() {
-  await pool.query(
-    "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduledstationaetitle text"
-  );
+  return;
 }
 
 async function ensureAccessionSequence() {
@@ -116,15 +112,6 @@ async function ensureMwlTargetsTable() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_protocol VARCHAR(16)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_calling_ae VARCHAR(64)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCHAR(64)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32)");
-  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256)");
 }
 
 function pick(row, keys, fallback = "") {

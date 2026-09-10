@@ -11,19 +11,11 @@ import {
   Eye,
   RefreshCw,
   UserCheck,
-  Calendar,
   Filter,
   CheckCircle,
   Activity
 } from "lucide-react";
 import "./DoctorPortal.css";
-
-const getInitials = (name) => {
-  if (!name) return "P";
-  const parts = String(name).replace(/\^/g, " ").trim().split(" ");
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return parts[0].slice(0, 2).toUpperCase();
-};
 
 export default function DoctorPortal() {
   const [studies, setStudies] = useState([]);
