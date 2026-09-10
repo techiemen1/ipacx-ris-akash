@@ -718,6 +718,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       return;
     }
 
+    if (!canEditReport) {
+      alert(`🔒 Access Restricted: Users logged in with role '${userRole}' are not authorized to create, edit, or save diagnostic reports. Report editing is restricted to Radiologists & Physicians.`);
+      return;
+    }
+
     try {
       const currentFindings = findingsRef.current ? findingsRef.current.innerHTML : findingsHtml;
       const currentConclusion = conclusionRef.current ? conclusionRef.current.innerHTML : conclusionHtml;

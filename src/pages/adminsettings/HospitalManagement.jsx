@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import api from "../../api/axios";
 import toast from "react-hot-toast";
 import MainLayout from "../../layout/MainLayout";
 import { Building2, Save, RefreshCw, Award, MapPin, Phone, Mail, Globe, FileText } from "lucide-react";
@@ -27,7 +27,7 @@ export default function HospitalManagement() {
   const loadHospitalSettings = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("/api/clinics/active");
+      const res = await api.get("/api/clinics/active");
       if (res.data) {
         setFormData(prev => ({
           ...prev,
@@ -75,7 +75,7 @@ export default function HospitalManagement() {
         logo_url: formData.logo_url
       };
 
-      await axios.post("/api/clinics", payload);
+      await api.post("/api/clinics", payload);
       toast.success("Hospital Profile & Master Letterhead Updated Successfully!", { id: tid });
       loadHospitalSettings();
     } catch (err) {

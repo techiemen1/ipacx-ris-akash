@@ -22,8 +22,24 @@ const EMPTY_FORM = {
 
 const TITLES = ["Dr", "Mr", "Miss", "Mrs"];
 const ROLES = ["ADMIN", "RADIOLOGIST", "TECHNICIAN", "RECEPTIONIST", "NURSE", "SUPERVISOR"];
-const QUALIFICATIONS = ["MBBS", "MBBS, DMRD", "MBBS, MD (Radiology)", "MBBS, DNB (Radiology)"];
-const DESIGNATIONS = ["PG Resident", "Senior Resident", "Consultant Radiologist", "Senior Consultant"];
+
+const ROLE_QUALIFICATIONS = {
+  RADIOLOGIST: ["MBBS, MD (Radiology)", "MBBS, DMRD", "MBBS, DNB (Radiology)", "MBBS, FRCR", "MBBS"],
+  TECHNICIAN: ["B.Sc Radiography & Imaging Technology", "Diploma in Radiographic Technique (DRT)", "Diploma in Medical Radiology Tech (DMRT)", "CRA / Certified Imaging Tech", "M.Sc Medical Imaging"],
+  RECEPTIONIST: ["B.A / B.Com / B.Sc", "Diploma in Hospital Admin", "Higher Secondary (10+2)"],
+  ADMIN: ["B.Tech / BE / MCA", "MBA Hospital Management", "System Admin Certified"],
+  NURSE: ["B.Sc Nursing", "GNM (General Nursing)", "M.Sc Nursing"],
+  SUPERVISOR: ["M.Sc / MBA", "B.Sc Radiology Technology", "Healthcare Management"]
+};
+
+const ROLE_DESIGNATIONS = {
+  RADIOLOGIST: ["Consultant Radiologist", "Senior Consultant", "Senior Resident", "PG Resident", "Interventional Radiologist"],
+  TECHNICIAN: ["Senior Technologist", "CT/MRI Specialist Technologist", "Chief Radiographer", "Radiology Technician", "Interventional Tech"],
+  RECEPTIONIST: ["Front Desk Executive", "Billing Officer", "Patient Care Coordinator", "Reception Manager"],
+  ADMIN: ["System Administrator", "IT Lead", "RIS/PACS Admin"],
+  NURSE: ["Radiology Nursing Officer", "Staff Nurse", "Head Nurse"],
+  SUPERVISOR: ["Department Supervisor", "Operations Manager", "Shift Lead"]
+};
 
 const getInitials = (name) => {
   if (!name) return "U";
@@ -354,22 +370,34 @@ export default function UserManagement() {
 
                 <label>
                   <span>Qualification</span>
-                  <select value={form.qualification} onChange={(e) => setForm({ ...form, qualification: e.target.value })}>
-                    <option value="">Select Qualification...</option>
-                    {QUALIFICATIONS.map((q) => (
-                      <option key={q} value={q}>{q}</option>
+                  <input
+                    type="text"
+                    list="qualification-suggestions"
+                    placeholder={form.role ? `e.g. ${ROLE_QUALIFICATIONS[form.role]?.[0] || 'Qualification'}` : "Select or type qualification..."}
+                    value={form.qualification}
+                    onChange={(e) => setForm({ ...form, qualification: e.target.value })}
+                  />
+                  <datalist id="qualification-suggestions">
+                    {(ROLE_QUALIFICATIONS[form.role] || Object.values(ROLE_QUALIFICATIONS).flat()).map((q) => (
+                      <option key={q} value={q} />
                     ))}
-                  </select>
+                  </datalist>
                 </label>
 
                 <label>
                   <span>Designation</span>
-                  <select value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })}>
-                    <option value="">Select Designation...</option>
-                    {DESIGNATIONS.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                  <input
+                    type="text"
+                    list="designation-suggestions"
+                    placeholder={form.role ? `e.g. ${ROLE_DESIGNATIONS[form.role]?.[0] || 'Designation'}` : "Select or type designation..."}
+                    value={form.designation}
+                    onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                  />
+                  <datalist id="designation-suggestions">
+                    {(ROLE_DESIGNATIONS[form.role] || Object.values(ROLE_DESIGNATIONS).flat()).map((d) => (
+                      <option key={d} value={d} />
                     ))}
-                  </select>
+                  </datalist>
                 </label>
 
                 <div style={{ gridColumn: "span 2", background: "#f8fafc", padding: 14, borderRadius: 12, border: "1px solid #e2e8f0" }}>

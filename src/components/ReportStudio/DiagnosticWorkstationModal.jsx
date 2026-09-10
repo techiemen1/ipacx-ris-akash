@@ -42,6 +42,14 @@ function getInitialModKey(rawMod) {
 export default function DiagnosticWorkstationModal({ studyUID, initialModality = "CR", onClose }) {
   const [viewMode, setViewMode] = useState("split"); // "split" | "viewer" | "studio"
 
+  // RBAC Permission Check
+  const loggedUser = (() => {
+    try { return JSON.parse(sessionStorage.getItem("user") || "{}"); }
+    catch { return {}; }
+  })();
+  const userRole = String(loggedUser.role || "").toUpperCase();
+  const canEditReport = !userRole || ["ADMIN", "RADIOLOGIST", "DOCTOR", "SUPERVISOR"].includes(userRole);
+
   // Study & Patient Demographics State
   const [study, setStudy] = useState({
     PatientName: "",
@@ -676,6 +684,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   // Save Report Action
   const handleSaveReport = async (statusToSave = "Draft") => {
     if (!studyUID) return;
+    if (!canEditReport) {
+      alert(`🔒 Access Restricted: Users logged in with role '${userRole}' are not authorized to create, edit, or save diagnostic reports. Report editing is restricted to Radiologists & Physicians.`);
+      return;
+    }
     try {
       const currentFindings = findingsRef.current ? findingsRef.current.innerHTML : findingsHtml;
       const currentConclusion = conclusionRef.current ? conclusionRef.current.innerHTML : conclusionHtml;
@@ -730,6 +742,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   const renderFormContent = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {!canEditReport && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '10px 14px', borderRadius: 10, color: '#991b1b', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>🔒 READ-ONLY MODE: Logged in as {userRole || "TECHNICIAN"} ({loggedUser.full_name || loggedUser.username}). Diagnostic report drafting, editing, and sign-off are restricted to Radiologists & Physicians.</span>
+        </div>
+      )}
       {/* PATIENT & DEMOGRAPHY BANNER */}
       <div className="rs-patient-banner" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         <div className="rs-patient-field">
@@ -863,7 +880,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
         <div
           ref={findingsRef}
-          contentEditable
+          contentEditable={canEditReport}
           onInput={() => {
             if (findingsRef.current) {
               const raw = findingsRef.current.innerHTML;
@@ -875,7 +892,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             }
           }}
           className="rs-rich-editor"
-          style={{ minHeight: 180 }}
+          style={{ minHeight: 180, pointerEvents: canEditReport ? 'auto' : 'none', opacity: canEditReport ? 1 : 0.8 }}
         ></div>
       </div>
 
@@ -886,7 +903,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               type="button"
-              disabled={isGeneratingAI}
+              disabled={isGeneratingAI || !canEditReport}
               onClick={generateAIImpression}
               style={{
                 background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
@@ -896,10 +913,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 padding: '3px 9px',
                 fontWeight: 700,
                 fontSize: 11,
-                cursor: 'pointer',
+                cursor: canEditReport ? 'pointer' : 'not-allowed',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 4,
+                opacity: canEditReport ? 1 : 0.6,
                 boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)'
               }}
             >
@@ -909,17 +927,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
 
         <div className="rs-wysiwyg-toolbar">
-          <button type="button" onClick={() => execCmd("bold")} className="rs-tool-btn" title="Bold"><Bold size={13} /></button>
-          <button type="button" onClick={() => execCmd("italic")} className="rs-tool-btn" title="Italic"><Italic size={13} /></button>
-          <button type="button" onClick={() => execCmd("insertUnorderedList")} className="rs-tool-btn" title="Bullet List"><List size={13} /></button>
+          <button type="button" onClick={() => execCmd("bold")} className="rs-tool-btn" title="Bold" disabled={!canEditReport}><Bold size={13} /></button>
+          <button type="button" onClick={() => execCmd("italic")} className="rs-tool-btn" title="Italic" disabled={!canEditReport}><Italic size={13} /></button>
+          <button type="button" onClick={() => execCmd("insertUnorderedList")} className="rs-tool-btn" title="Bullet List" disabled={!canEditReport}><List size={13} /></button>
         </div>
 
         <div
           ref={conclusionRef}
-          contentEditable
+          contentEditable={canEditReport}
           onInput={() => setConclusionHtml(conclusionRef.current.innerHTML)}
           className="rs-rich-editor rs-impression-editor"
-          style={{ minHeight: 100 }}
+          style={{ minHeight: 100, pointerEvents: canEditReport ? 'auto' : 'none', opacity: canEditReport ? 1 : 0.8 }}
         ></div>
       </div>
 
@@ -1129,13 +1147,21 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             <Zap size={14} /> {isSyncingSR ? "Syncing..." : "Auto-Fill SR"}
           </button>
 
-          <button onClick={() => handleSaveReport("Draft")} className="dws-btn dws-btn-dark">
-            <Save size={14} /> Save Draft
-          </button>
+          {canEditReport ? (
+            <>
+              <button onClick={() => handleSaveReport("Draft")} className="dws-btn dws-btn-dark">
+                <Save size={14} /> Save Draft
+              </button>
 
-          <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald">
-            <CheckCircle size={14} /> Final Sign-Off
-          </button>
+              <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald">
+                <CheckCircle size={14} /> Final Sign-Off
+              </button>
+            </>
+          ) : (
+            <span style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
+              🔒 Read-Only Access ({userRole || "STAFF"})
+            </span>
+          )}
 
           {/* ❌ PROMINENT CLOSE BUTTON */}
           <button onClick={onClose} className="dws-btn-close" title="Close Workstation (Esc)">

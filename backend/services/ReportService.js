@@ -164,6 +164,14 @@ class ReportService {
 
   async saveReport(req) {
     const scope = getTenantScope(req);
+    const userRole = String(req.user?.role || "").toUpperCase();
+    const canSaveReport = ["ADMIN", "RADIOLOGIST", "DOCTOR", "SUPERVISOR"].includes(userRole);
+    if (req.user?.role && !canSaveReport) {
+      throw {
+        statusCode: 403,
+        message: `🔒 Access Denied: Users logged in with role '${userRole}' are not authorized to create, edit, or save diagnostic reports. Report editing is restricted to Radiologists and Physicians.`
+      };
+    }
     const {
       study_uid,
       accession_number,
