@@ -15,7 +15,6 @@ import {
   Zap,
   UploadCloud,
   FolderPlus,
-  Calendar,
   X,
   Download,
   FileDown,
@@ -415,117 +414,69 @@ export default function PACSpage() {
           onChange={(e) => handleDicomUpload(e, "folder")}
         />
 
-        {/* HEADER BAR */}
-        <header className="pacs-header">
-          <div className="pacs-title-section">
-            <span className="pacs-tag">PACS & DICOM Imaging Node | High Performance Diagnostic Explorer</span>
-            <h1 className="pacs-title">Enterprise PACS Viewer & Studies</h1>
+        {/* EXECUTIVE PACS HEADER & CONNECTED NODES STRIP */}
+        <header className="pacs-header-compact">
+          <div className="pacs-title-group">
+            <div className="pacs-title-row">
+              <h1 className="pacs-title">Enterprise PACS Viewer & Studies</h1>
+              <span className="pacs-tag">DICOM Engine</span>
+            </div>
+            <div className="pacs-node-pills">
+              <span className="pacs-node-label">Nodes:</span>
+              {pacsServers.map((pacs) => {
+                const isActive = activePacs?.id === pacs.id;
+                return (
+                  <button
+                    key={pacs.id}
+                    onClick={() => loadStudies(pacs)}
+                    className={`pacs-node-pill ${isActive ? "active" : ""}`}
+                  >
+                    <Server size={12} />
+                    <span>{pacs.ae_title}</span>
+                    <span className="node-dot" />
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="pacs-header-actions">
-            {/* BUTTON 1: UPLOAD FILE / ZIP (WITH INTEGRATED MICRO PROGRESS BAR) */}
+            {/* UPLOAD FILE / ZIP */}
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <button
                 onClick={() => fileInputRef.current && fileInputRef.current.click()}
                 disabled={uploading}
-                className="pacs-btn pacs-btn-primary"
-                style={{ position: 'relative', overflow: 'hidden', minWidth: 170 }}
+                className="pacs-btn-top primary"
               >
-                <UploadCloud size={15} className={uploading && uploadType === 'zip' ? "animate-bounce" : ""} />
-                {uploading && uploadType === 'zip' ? `Uploading ZIP ${uploadProgress.percentage}%` : "Upload File / ZIP"}
-
-                {/* MICRO PROGRESS TRACKER ON BUTTON */}
+                <UploadCloud size={13} className={uploading && uploadType === 'zip' ? "animate-bounce" : ""} />
+                {uploading && uploadType === 'zip' ? `ZIP ${uploadProgress.percentage}%` : "Upload File/ZIP"}
                 {uploading && uploadType === 'zip' && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    height: 4,
-                    background: '#22c55e',
-                    width: `${uploadProgress.percentage}%`,
-                    transition: 'width 0.15s ease-out'
-                  }} />
+                  <div className="pacs-progress-bar" style={{ width: `${uploadProgress.percentage}%` }} />
                 )}
               </button>
               {uploading && uploadType === 'zip' && (
-                <button
-                  type="button"
-                  onClick={handleCancelUpload}
-                  style={{
-                    position: 'absolute',
-                    right: -28,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: '#fef2f2',
-                    color: '#dc2626',
-                    border: '1px solid #fca5a5',
-                    borderRadius: '50%',
-                    width: 22,
-                    height: 22,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer'
-                  }}
-                  title="Cancel Upload"
-                >
-                  <X size={12} />
+                <button type="button" onClick={handleCancelUpload} className="pacs-cancel-btn" title="Cancel Upload">
+                  <X size={11} />
                 </button>
               )}
             </div>
 
-            {/* BUTTON 2: UPLOAD FOLDER (WITH INTEGRATED MICRO PROGRESS BAR) */}
+            {/* UPLOAD FOLDER */}
             <div style={{ position: 'relative', display: 'inline-block' }}>
               <button
                 onClick={() => folderInputRef.current && folderInputRef.current.click()}
                 disabled={uploading}
-                className="pacs-btn pacs-btn-primary"
-                style={{
-                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  minWidth: 170
-                }}
+                className="pacs-btn-top sky"
               >
-                <FolderPlus size={15} className={uploading && uploadType === 'folder' ? "animate-bounce" : ""} />
-                {uploading && uploadType === 'folder' ? `Uploading Folder ${uploadProgress.percentage}%` : "Upload Folder"}
-
-                {/* MICRO PROGRESS TRACKER ON BUTTON */}
+                <FolderPlus size={13} className={uploading && uploadType === 'folder' ? "animate-bounce" : ""} />
+                {uploading && uploadType === 'folder' ? `Folder ${uploadProgress.percentage}%` : "Upload Folder"}
                 {uploading && uploadType === 'folder' && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    height: 4,
-                    background: '#38bdf8',
-                    width: `${uploadProgress.percentage}%`,
-                    transition: 'width 0.15s ease-out'
-                  }} />
+                  <div className="pacs-progress-bar" style={{ width: `${uploadProgress.percentage}%`, background: '#38bdf8' }} />
                 )}
               </button>
               {uploading && uploadType === 'folder' && (
-                <button
-                  type="button"
-                  onClick={handleCancelUpload}
-                  style={{
-                    position: 'absolute',
-                    right: -28,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: '#fef2f2',
-                    color: '#dc2626',
-                    border: '1px solid #fca5a5',
-                    borderRadius: '50%',
-                    width: 22,
-                    height: 22,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer'
-                  }}
-                  title="Cancel Upload"
-                >
-                  <X size={12} />
+                <button type="button" onClick={handleCancelUpload} className="pacs-cancel-btn" title="Cancel Upload">
+                  <X size={11} />
                 </button>
               )}
             </div>
@@ -533,153 +484,114 @@ export default function PACSpage() {
             <button
               onClick={() => activePacs && loadStudies(activePacs)}
               disabled={loading}
-              className="pacs-btn pacs-btn-secondary"
+              className="pacs-btn-top secondary"
             >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-              Sync Node
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Sync Node
             </button>
           </div>
         </header>
 
-        {/* PACS NODE SELECTOR STRIP */}
-        <div className="pacs-server-strip">
-          <span className="pacs-server-label">Connected DICOM Nodes:</span>
-          <div className="pacs-server-pills">
-            {pacsServers.map((pacs) => {
-              const isActive = activePacs?.id === pacs.id;
-              return (
-                <button
-                  key={pacs.id}
-                  onClick={() => loadStudies(pacs)}
-                  className={`pacs-server-pill ${isActive ? "active" : ""}`}
-                >
-                  <Server size={14} />
-                  <span>{pacs.ae_title}</span>
-                  <span className="pill-dot" />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* SEARCH & ADVANCED DATE RANGE FILTER CARD */}
-        <div className="pacs-card">
-          <div className="pacs-filter-grid">
-            <div className="filter-input-group">
-              <label>Patient ID / MRN</label>
+        {/* UNIFIED SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
+        <div className="pacs-filter-bar">
+          <div className="pacs-filter-row">
+            {/* SEARCH BOX */}
+            <div className="pacs-search-box">
               <input
                 type="text"
-                placeholder="Filter ID..."
-                value={filters.patientId}
-                onChange={(e) => setFilters({ ...filters, patientId: e.target.value })}
-              />
-            </div>
-
-            <div className="filter-input-group">
-              <label>Patient Name</label>
-              <input
-                type="text"
-                placeholder="Filter Name..."
+                placeholder="Search Patient Name, MRN, Accession No..."
                 value={filters.patientName}
-                onChange={(e) => setFilters({ ...filters, patientName: e.target.value })}
+                onChange={(e) => {
+                  setFilters({ ...filters, patientName: e.target.value });
+                  setCurrentPage(1);
+                }}
               />
             </div>
 
-            <div className="filter-input-group">
-              <label>Accession No.</label>
-              <input
-                type="text"
-                placeholder="Filter Accession..."
-                value={filters.accession}
-                onChange={(e) => setFilters({ ...filters, accession: e.target.value })}
-              />
-            </div>
+            {/* MODALITY SELECTOR */}
+            <select
+              value={filters.modality}
+              onChange={(e) => {
+                setFilters({ ...filters, modality: e.target.value });
+                setCurrentPage(1);
+              }}
+              className="pacs-select"
+            >
+              <option value="">All Modalities</option>
+              <option value="CR">CR / DX (X-Ray)</option>
+              <option value="CT">CT Scan</option>
+              <option value="MR">MR (MRI)</option>
+              <option value="US">US (Ultrasound)</option>
+              <option value="MG">MG (Mammography)</option>
+              <option value="EC">EC (ECHO)</option>
+            </select>
 
-            <div className="filter-input-group">
-              <label>Modality</label>
-              <select
-                value={filters.modality}
-                onChange={(e) => setFilters({ ...filters, modality: e.target.value })}
-              >
-                <option value="">All Modalities</option>
-                <option value="CR">CR / DX (X-Ray)</option>
-                <option value="CT">CT Scan</option>
-                <option value="MR">MR (MRI)</option>
-                <option value="US">US (Ultrasound)</option>
-                <option value="MG">MG (Mammography)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* DAY / DATE & FROM-TO DATE RANGE FILTER STRIP */}
-          <div className="pacs-date-filter-strip">
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span className="date-quick-label"><Calendar size={13} /> Quick Date:</span>
+            {/* QUICK DATE PILLS */}
+            <div className="pacs-date-pills">
               {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
                 <button
                   key={quickKey}
                   onClick={() => {
                     setDateQuickFilter(quickKey);
+                    setCurrentPage(1);
                     if (quickKey !== "CUSTOM") {
                       setFromDate("");
                       setToDate("");
                     }
                   }}
-                  className={`date-chip-btn ${dateQuickFilter === quickKey ? "active" : ""}`}
+                  className={`pacs-date-pill ${dateQuickFilter === quickKey ? "active" : ""}`}
                 >
-                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "Last 7 Days" : "Last 30 Days"}
+                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "7 Days" : "30 Days"}
                 </button>
               ))}
             </div>
 
-            {/* FROM DATE - TO DATE */}
-            <div className="date-picker-group">
-              <div className="date-input-wrap">
-                <label>From Date:</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => {
-                    setFromDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
-              </div>
-
-              <div className="date-input-wrap">
-                <label>To Date:</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => {
-                    setToDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
-              </div>
-
+            {/* FROM - TO DATE INPUTS */}
+            <div className="pacs-date-range">
+              <input
+                type="date"
+                value={fromDate}
+                title="From Date"
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
+              <span className="pacs-date-sep">to</span>
+              <input
+                type="date"
+                value={toDate}
+                title="To Date"
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
               {(fromDate || toDate || dateQuickFilter !== "ALL") && (
                 <button
                   onClick={() => {
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
+                    setCurrentPage(1);
                   }}
-                  className="reset-date-btn"
+                  className="pacs-date-reset"
+                  title="Reset date filter"
                 >
-                  Reset Dates
+                  Reset
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* STUDIES TABLE CARD */}
-        <div className="pacs-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {/* STUDIES HIGH-DENSITY DATA TABLE */}
+        <div className="pacs-table-card">
           {loading ? (
             <div className="pacs-loading">
-              <RefreshCw size={28} className="animate-spin" />
-              <span>Fetching DICOM instances & recent cases from {activePacs?.ae_title || "Node"}...</span>
+              <RefreshCw size={26} className="animate-spin" />
+              <span>Fetching DICOM instances from {activePacs?.ae_title || "PACS Node"}...</span>
             </div>
           ) : (
             <>
@@ -687,20 +599,19 @@ export default function PACSpage() {
                 <table className="pacs-table">
                   <thead>
                     <tr>
-                      <th>Patient Name</th>
-                      <th>Patient ID / MRN</th>
+                      <th>Patient Name & ID</th>
                       <th>Modality</th>
                       <th>Study Description</th>
                       <th>Study Date & Time</th>
-                      <th>Accession</th>
+                      <th>Accession No</th>
                       <th style={{ textAlign: "center" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedStudies.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="pacs-empty">
-                          No matching DICOM studies found for the selected date range and criteria.
+                        <td colSpan={6} className="pacs-empty">
+                          No DICOM studies matched your search filters.
                         </td>
                       </tr>
                     ) : (
@@ -712,67 +623,63 @@ export default function PACSpage() {
                         const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
 
                         return (
-                          <tr key={uid || idx} className={`pacs-row-modality mod-row-${mod.toLowerCase()}`}>
+                          <tr key={uid || idx} className="pacs-table-row">
                             <td>
-                              <div className="patient-cell">
-                                <div className="patient-details">
-                                  <span className="patient-name">{pName}</span>
-                                  <span className="patient-sub">{s.PatientSex || "O"} • {s.PatientAge || "N/A"}</span>
-                                </div>
+                              <div className="pacs-patient-block">
+                                <span className="pacs-patient-name">{pName}</span>
+                                <span className="pacs-patient-id">ID: {pId} • {s.PatientSex || "O"} ({s.PatientAge || "N/A"})</span>
                               </div>
                             </td>
 
                             <td>
-                              <span className="pacs-code">{pId}</span>
-                            </td>
-
-                            <td>
-                              <span className={`pacs-badge-modality mod-${mod.toLowerCase()}`}>
+                              <span className={`pacs-modality-badge mod-${mod.toLowerCase()}`}>
                                 {mod}
                               </span>
                             </td>
 
                             <td>
-                              <span className="study-desc">
+                              <span className="pacs-study-desc" title={s.StudyDescription || "General Examination"}>
                                 {s.StudyDescription || "General Examination"}
                               </span>
                             </td>
 
-                            <td style={{ fontWeight: 600, color: "#0f172a" }}>
-                              {formatDisplayDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time)}
+                            <td>
+                              <span className="pacs-time-text">
+                                {formatDisplayDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time)}
+                              </span>
                             </td>
 
                             <td>
-                              <span className="pacs-code-sub">{acc}</span>
+                              <span className="pacs-code-acc">{acc}</span>
                             </td>
 
                             <td style={{ textAlign: "center" }}>
-                              <div className="pacs-action-buttons">
+                              <div className="pacs-action-bar">
                                 <button
                                   onClick={() => setActiveWorkstationItem({ studyUID: uid, modality: mod })}
-                                  className="pacs-icon-btn workstation"
-                                  title="Launch Full-Screen Flash Split Workstation"
+                                  className="pacs-btn-action workstation"
+                                  title="Launch Workstation"
                                 >
-                                  <Zap size={13} /> Split
+                                  <Zap size={13} /> Workstation
                                 </button>
 
                                 <button
                                   onClick={() => openStudyViewer(uid)}
-                                  className="pacs-icon-btn view"
-                                  title="Open in OHIF DICOM Viewer"
+                                  className="pacs-btn-action ghost"
+                                  title="Open OHIF DICOM Viewer"
                                 >
-                                  <Eye size={13} /> OHIF
+                                  <Eye size={13} /> Viewer
                                 </button>
 
                                 <button
                                   onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(uid)}`)}
-                                  className="pacs-icon-btn report"
+                                  className="pacs-btn-action primary"
                                   title="Report Editor"
                                 >
                                   <FileText size={13} /> Report
                                 </button>
 
-                                {/* EXPORT ACTION DROPDOWN */}
+                                {/* EXPORT DROPDOWN */}
                                 <div className="pacs-export-dropdown-container" style={{ position: "relative", display: "inline-block" }}>
                                   <button
                                     onClick={(e) => {
@@ -780,16 +687,16 @@ export default function PACSpage() {
                                       setExportMenuOpenUid(exportMenuOpenUid === uid ? null : uid);
                                     }}
                                     disabled={exportingUid === uid}
-                                    className={`pacs-icon-btn export ${exportingUid === uid ? "exporting" : ""}`}
-                                    title="Export DICOM, JPEG, PNG, or Single Frame Image"
+                                    className={`pacs-btn-action export ${exportingUid === uid ? "exporting" : ""}`}
+                                    title="Export DICOM, JPEG, PNG, or Single Frame"
                                   >
                                     {exportingUid === uid ? (
                                       <>
-                                        <RefreshCw size={13} className="animate-spin" /> Exporting...
+                                        <RefreshCw size={12} className="animate-spin" /> Exporting...
                                       </>
                                     ) : (
                                       <>
-                                        <Download size={13} /> Export <ChevronDown size={11} />
+                                        <Download size={12} /> Export <ChevronDown size={10} />
                                       </>
                                     )}
                                   </button>
@@ -797,20 +704,15 @@ export default function PACSpage() {
                                   {/* DROPDOWN MENU */}
                                   {exportMenuOpenUid === uid && (
                                     <div className="pacs-export-dropdown" onClick={(e) => e.stopPropagation()}>
-                                      <div className="export-dropdown-header">
-                                        <span>Universal Export Options</span>
-                                      </div>
-
+                                      <div className="export-dropdown-header">Export Format</div>
                                       <button
                                         onClick={() => handleExportStudy(uid, "dicom", pName)}
                                         className="export-menu-item"
                                       >
-                                        <div className="export-icon dicom">
-                                          <Archive size={14} />
-                                        </div>
+                                        <div className="export-icon dicom"><FileType size={14} /></div>
                                         <div className="export-item-text">
-                                          <span className="item-title">DICOM Archive (.zip)</span>
-                                          <span className="item-desc">Raw ISO standard .dcm dataset</span>
+                                          <span className="item-title">DICOM Dataset (.ZIP)</span>
+                                          <span className="item-desc">Full 16-bit diagnostic DCM files</span>
                                         </div>
                                       </button>
 
@@ -818,12 +720,10 @@ export default function PACSpage() {
                                         onClick={() => handleExportStudy(uid, "jpeg", pName)}
                                         className="export-menu-item"
                                       >
-                                        <div className="export-icon jpeg">
-                                          <Image size={14} />
-                                        </div>
+                                        <div className="export-icon jpeg"><Image size={14} /></div>
                                         <div className="export-item-text">
-                                          <span className="item-title">JPEG Bundle (.zip)</span>
-                                          <span className="item-desc">Universal medical image photos</span>
+                                          <span className="item-title">JPEG Series (.ZIP)</span>
+                                          <span className="item-desc">8-bit lossy image series</span>
                                         </div>
                                       </button>
 
@@ -831,12 +731,10 @@ export default function PACSpage() {
                                         onClick={() => handleExportStudy(uid, "png", pName)}
                                         className="export-menu-item"
                                       >
-                                        <div className="export-icon png">
-                                          <FileType size={14} />
-                                        </div>
+                                        <div className="export-icon png"><Archive size={14} /></div>
                                         <div className="export-item-text">
-                                          <span className="item-title">PNG Bundle (.zip)</span>
-                                          <span className="item-desc">Lossless high-res images</span>
+                                          <span className="item-title">PNG Series (.ZIP)</span>
+                                          <span className="item-desc">Lossless high-res PNG images</span>
                                         </div>
                                       </button>
 
@@ -844,12 +742,10 @@ export default function PACSpage() {
                                         onClick={() => handleExportStudy(uid, "single", pName)}
                                         className="export-menu-item"
                                       >
-                                        <div className="export-icon single">
-                                          <FileDown size={14} />
-                                        </div>
+                                        <div className="export-icon single"><FileDown size={14} /></div>
                                         <div className="export-item-text">
-                                          <span className="item-title">Key Image (.jpg)</span>
-                                          <span className="item-desc">Single frame preview photo</span>
+                                          <span className="item-title">Key Frame Snapshot (.JPG)</span>
+                                          <span className="item-desc">Single representative image</span>
                                         </div>
                                       </button>
                                     </div>
@@ -865,27 +761,28 @@ export default function PACSpage() {
                 </table>
               </div>
 
-              {/* PAGINATION */}
-              {filteredStudies.length > rowsPerPage && (
+              {/* PAGINATION FOOTER */}
+              {filteredStudies.length > 0 && (
                 <div className="pacs-pagination">
-                  <span>
-                    Showing {(currentPage - 1) * rowsPerPage + 1} -{" "}
-                    {Math.min(currentPage * rowsPerPage, filteredStudies.length)} of {filteredStudies.length} studies
+                  <span className="pacs-pag-info">
+                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                    <strong>{Math.min(currentPage * rowsPerPage, filteredStudies.length)}</strong> of{" "}
+                    <strong>{filteredStudies.length}</strong> studies
                   </span>
 
-                  <div className="pagination-buttons">
+                  <div className="pacs-pag-controls">
                     <button
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="pacs-pag-btn"
                     >
                       Prev
                     </button>
-
-                    <span>Page {currentPage} of {Math.ceil(filteredStudies.length / rowsPerPage)}</span>
-
+                    <span className="pacs-pag-page">Page {currentPage} of {Math.ceil(filteredStudies.length / rowsPerPage) || 1}</span>
                     <button
                       disabled={currentPage >= Math.ceil(filteredStudies.length / rowsPerPage)}
                       onClick={() => setCurrentPage((p) => p + 1)}
+                      className="pacs-pag-btn"
                     >
                       Next
                     </button>
@@ -896,7 +793,7 @@ export default function PACSpage() {
           )}
         </div>
 
-        {/* FULL-SCREEN FLASH DIAGNOSTIC WORKSTATION MODAL */}
+        {/* FULL-SCREEN DIAGNOSTIC WORKSTATION MODAL */}
         {activeWorkstationItem && (
           <DiagnosticWorkstationModal
             studyUID={activeWorkstationItem.studyUID}
