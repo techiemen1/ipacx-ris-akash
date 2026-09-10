@@ -15,7 +15,6 @@ import {
   RefreshCw,
   FileCheck,
   Zap,
-  Calendar,
   Share2
 } from "lucide-react";
 
@@ -254,71 +253,80 @@ export default function ReportingPage() {
   return (
     <MainLayout>
       <div className="rp-container">
-        {/* HEADER BAR */}
-        <header className="rp-header">
-          <div className="rp-title-section">
-            <span className="rp-tag">Radiology Information System | Worklist Engine</span>
-            <h1 className="rp-title">Reporting Hub & Worklist</h1>
+        {/* EXECUTIVE WORKLIST HEADER & COMPACT KPI STRIP */}
+        <header className="rp-header-compact">
+          <div className="rp-title-group">
+            <div className="rp-title-row">
+              <h1 className="rp-title">Reporting Hub & Worklist</h1>
+              <span className="rp-tag">RIS Engine v1.1</span>
+            </div>
+            <p className="rp-subtitle">Real-time PACS DICOM worklist, diagnostic reporting & distribution</p>
           </div>
 
-          <div className="rp-header-actions">
-            <button onClick={fetchData} className="rp-btn secondary" disabled={loading}>
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Sync Worklist
+          {/* HIGH-DENSITY INLINE KPI CARDS */}
+          <div className="rp-kpi-strip">
+            <div className="rp-kpi-pill total">
+              <FileText size={14} />
+              <span className="kpi-label">Total</span>
+              <span className="kpi-val">{stats.total}</span>
+            </div>
+
+            <div className="rp-kpi-pill warning">
+              <Clock size={14} />
+              <span className="kpi-label">Unreported</span>
+              <span className="kpi-val">{stats.unreported}</span>
+            </div>
+
+            <div className="rp-kpi-pill info">
+              <FileCheck size={14} />
+              <span className="kpi-label">Draft</span>
+              <span className="kpi-val">{stats.draft}</span>
+            </div>
+
+            <div className="rp-kpi-pill success">
+              <CheckCircle size={14} />
+              <span className="kpi-label">Final</span>
+              <span className="kpi-val">{stats.final}</span>
+            </div>
+
+            {stats.statCount > 0 && (
+              <div className="rp-kpi-pill stat">
+                <Zap size={14} />
+                <span className="kpi-label">STAT Emergency</span>
+                <span className="kpi-val">{stats.statCount}</span>
+              </div>
+            )}
+
+            <button onClick={fetchData} className="rp-btn-sync" disabled={loading} title="Sync latest DICOM worklist">
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Sync Worklist
             </button>
           </div>
         </header>
 
-        {/* 4-COLUMN KPI CARDS GRID */}
-        <div className="rp-stats-grid">
-          <div className="rp-stat-card">
-            <div className="stat-icon total"><FileText size={20} /></div>
-            <div className="stat-info">
-              <span className="stat-label">Total Studies</span>
-              <span className="stat-value">{stats.total}</span>
-            </div>
-          </div>
-
-          <div className="rp-stat-card">
-            <div className="stat-icon warning"><Clock size={20} /></div>
-            <div className="stat-info">
-              <span className="stat-label">Unreported</span>
-              <span className="stat-value">{stats.unreported}</span>
-            </div>
-          </div>
-
-          <div className="rp-stat-card">
-            <div className="stat-icon info"><FileCheck size={20} /></div>
-            <div className="stat-info">
-              <span className="stat-label">Draft Reports</span>
-              <span className="stat-value">{stats.draft}</span>
-            </div>
-          </div>
-
-          <div className="rp-stat-card">
-            <div className="stat-icon success"><CheckCircle size={20} /></div>
-            <div className="stat-info">
-              <span className="stat-label">Final Reports</span>
-              <span className="stat-value">{stats.final}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* SEARCH & ADVANCED DATE RANGE FILTER CARD */}
-        <div className="rp-card">
-          <div className="rp-filter-grid">
+        {/* UNIFIED SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
+        <div className="rp-filter-bar">
+          <div className="rp-filter-row-primary">
+            {/* SEARCH BOX */}
             <div className="rp-search-box">
-              <Search size={16} />
+              <Search size={15} />
               <input
                 type="text"
-                placeholder="Search patient, MRN, accession..."
+                placeholder="Search by Patient Name, ID/MRN, Accession No..."
                 value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
+                onChange={(e) => {
+                  setSearchText(e.target.value);
+                  setCurrentPage(1);
+                }}
               />
             </div>
 
+            {/* MODALITY FILTER */}
             <select
               value={filterModality}
-              onChange={(e) => setFilterModality(e.target.value)}
+              onChange={(e) => {
+                setFilterModality(e.target.value);
+                setCurrentPage(1);
+              }}
               className="rp-select"
             >
               <option value="">All Modalities</option>
@@ -327,90 +335,92 @@ export default function ReportingPage() {
               <option value="MR">MR (MRI)</option>
               <option value="US">US (Ultrasound)</option>
               <option value="MG">MG (Mammography)</option>
+              <option value="EC">EC (ECHO)</option>
             </select>
 
+            {/* STATUS FILTER */}
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => {
+                setFilterStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="rp-select"
             >
               <option value="">All Statuses</option>
               <option value="STAT">🚨 STAT Emergency ({stats.statCount})</option>
-              <option value="Unreported">Unreported</option>
-              <option value="Draft">Draft</option>
-              <option value="Final">Final</option>
+              <option value="Unreported">Unreported ({stats.unreported})</option>
+              <option value="Draft">Draft ({stats.draft})</option>
+              <option value="Final">Final ({stats.final})</option>
             </select>
-          </div>
 
-          {/* DAY / DATE & FROM-TO DATE RANGE FILTER STRIP */}
-          <div className="rp-date-filter-strip">
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span className="date-quick-label"><Calendar size={13} /> Quick Date:</span>
+            {/* QUICK DATE PILLS */}
+            <div className="rp-date-pills">
               {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
                 <button
                   key={quickKey}
                   onClick={() => {
                     setDateQuickFilter(quickKey);
+                    setCurrentPage(1);
                     if (quickKey !== "CUSTOM") {
                       setFromDate("");
                       setToDate("");
                     }
                   }}
-                  className={`date-chip-btn ${dateQuickFilter === quickKey ? "active" : ""}`}
+                  className={`rp-date-pill ${dateQuickFilter === quickKey ? "active" : ""}`}
                 >
-                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "Last 7 Days" : "Last 30 Days"}
+                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "7 Days" : "30 Days"}
                 </button>
               ))}
             </div>
 
-            {/* FROM DATE - TO DATE */}
-            <div className="date-picker-group">
-              <div className="date-input-wrap">
-                <label>From Date:</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => {
-                    setFromDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
-              </div>
-
-              <div className="date-input-wrap">
-                <label>To Date:</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => {
-                    setToDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
-              </div>
-
+            {/* FROM - TO DATE INPUTS */}
+            <div className="rp-date-range">
+              <input
+                type="date"
+                value={fromDate}
+                title="From Date"
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
+              <span className="rp-date-sep">to</span>
+              <input
+                type="date"
+                value={toDate}
+                title="To Date"
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
               {(fromDate || toDate || dateQuickFilter !== "ALL") && (
                 <button
                   onClick={() => {
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
+                    setCurrentPage(1);
                   }}
-                  className="reset-date-btn"
+                  className="rp-date-reset"
+                  title="Reset date filter"
                 >
-                  Reset Dates
+                  Reset
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* WORKLIST TABLE CARD */}
-        <div className="rp-card" style={{ padding: 0, overflow: 'hidden' }}>
+        {/* WORKLIST HIGH-DENSITY DATA TABLE */}
+        <div className="rp-table-card">
           {loading ? (
             <div className="rp-loading">
-              <RefreshCw size={28} className="animate-spin" />
-              <span>Fetching worklist records & latest studies...</span>
+              <RefreshCw size={26} className="animate-spin" />
+              <span>Fetching latest PACS DICOM worklist records...</span>
             </div>
           ) : (
             <>
@@ -418,12 +428,11 @@ export default function ReportingPage() {
                 <table className="rp-table">
                   <thead>
                     <tr>
-                      <th>Patient Name</th>
-                      <th>Patient ID / MRN</th>
+                      <th>Patient Name & ID</th>
                       <th>Modality</th>
                       <th>Study Description</th>
                       <th>Study Date & Time</th>
-                      <th>Accession</th>
+                      <th>Accession No</th>
                       <th>Status</th>
                       <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
@@ -431,70 +440,79 @@ export default function ReportingPage() {
                   <tbody>
                     {pagedWorklist.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="rp-empty">
-                          No matching worklist studies found for the selected date range and criteria.
+                        <td colSpan={7} className="rp-empty">
+                          No DICOM studies matched your search filters.
                         </td>
                       </tr>
                     ) : (
                       pagedWorklist.map((item, idx) => (
-                        <tr key={item.study_uid || idx} className={`rp-row-modality mod-row-${item.modality.toLowerCase()}`}>
+                        <tr key={item.study_uid || idx} className={`rp-table-row ${item.isSTAT ? 'row-stat' : ''}`}>
                           <td>
-                            <div className="rp-patient-cell" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span className="rp-patient-name">{item.patient_name}</span>
-                              {item.isSTAT && (
-                                <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '2px 6px', borderRadius: 6, fontSize: 10, fontWeight: 900 }} title="Emergency STAT Priority Scan">
-                                  🚨 STAT
-                                </span>
-                              )}
+                            <div className="rp-patient-block">
+                              <div className="rp-patient-main">
+                                <span className="rp-patient-name">{item.patient_name}</span>
+                                {item.isSTAT && (
+                                  <span className="rp-stat-tag" title="Emergency STAT Scan">
+                                    🚨 STAT
+                                  </span>
+                                )}
+                              </div>
+                              <span className="rp-patient-id">ID: {item.patient_id}</span>
                             </div>
                           </td>
-                          <td><span className="rp-code">{item.patient_id}</span></td>
                           <td>
-                            <span className={`rp-badge-modality mod-${item.modality.toLowerCase()}`}>
+                            <span className={`rp-modality-badge mod-${item.modality.toLowerCase()}`}>
                               {item.modality}
                             </span>
                           </td>
-                          <td>{item.study_description}</td>
-                          <td style={{ fontWeight: 600, color: "#0f172a" }}>
-                            {formatDisplayDateTime(item.study_date, item.study_time)}
+                          <td>
+                            <span className="rp-study-desc" title={item.study_description}>
+                              {item.study_description}
+                            </span>
                           </td>
-                          <td><span className="rp-code">{item.accession_number}</span></td>
+                          <td>
+                            <span className="rp-time-text">
+                              {formatDisplayDateTime(item.study_date, item.study_time)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="rp-code-acc">{item.accession_number}</span>
+                          </td>
                           <td>
                             <span className={`rp-status-badge status-${item.status.toLowerCase()}`}>
                               {item.status}
                             </span>
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <div className="rp-action-btn-group">
+                            <div className="rp-action-bar">
                               <button
                                 onClick={() => setActiveWorkstationItem({ studyUID: item.study_uid, modality: item.modality })}
-                                className="rp-action-btn indigo"
-                                title="Launch Full-Screen Flash Split Workstation"
+                                className="rp-btn-action workstation"
+                                title="Launch Workstation"
                               >
-                                <Zap size={13} /> Split
+                                <Zap size={13} /> Workstation
                               </button>
 
                               <button
                                 onClick={() => openStudyViewer(item.study_uid)}
-                                className="rp-action-btn secondary"
-                                title="Open in OHIF DICOM Viewer"
+                                className="rp-btn-action ghost"
+                                title="Open OHIF DICOM Viewer"
                               >
-                                <Eye size={13} /> OHIF
+                                <Eye size={13} /> Viewer
                               </button>
 
                               <button
                                 onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(item.study_uid)}`)}
-                                className="rp-action-btn primary"
-                                title="Report Editor"
+                                className="rp-btn-action primary"
+                                title="Open Report Editor"
                               >
                                 <FileText size={13} /> Report
                               </button>
 
                               <button
                                 onClick={() => setShareItem(item)}
-                                className="rp-action-btn"
-                                style={{ background: "#4f46e5", color: "#ffffff" }}
-                                title="Share 7-Day DICOM Viewer & PDF Report"
+                                className="rp-btn-action share"
+                                title="Share Report & Viewer Link"
                               >
                                 <Share2 size={13} /> Share
                               </button>
@@ -507,25 +525,28 @@ export default function ReportingPage() {
                 </table>
               </div>
 
-              {/* PAGINATION */}
-              {filteredWorklist.length > rowsPerPage && (
+              {/* PAGINATION FOOTER */}
+              {filteredWorklist.length > 0 && (
                 <div className="rp-pagination">
-                  <span>
-                    Showing {(currentPage - 1) * rowsPerPage + 1} -{" "}
-                    {Math.min(currentPage * rowsPerPage, filteredWorklist.length)} of {filteredWorklist.length} records
+                  <span className="rp-pag-info">
+                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                    <strong>{Math.min(currentPage * rowsPerPage, filteredWorklist.length)}</strong> of{" "}
+                    <strong>{filteredWorklist.length}</strong> studies
                   </span>
 
-                  <div className="pagination-buttons">
+                  <div className="rp-pag-controls">
                     <button
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="rp-pag-btn"
                     >
                       Prev
                     </button>
-                    <span>Page {currentPage} of {Math.ceil(filteredWorklist.length / rowsPerPage)}</span>
+                    <span className="rp-pag-page">Page {currentPage} of {Math.ceil(filteredWorklist.length / rowsPerPage) || 1}</span>
                     <button
                       disabled={currentPage >= Math.ceil(filteredWorklist.length / rowsPerPage)}
                       onClick={() => setCurrentPage((p) => p + 1)}
+                      className="rp-pag-btn"
                     >
                       Next
                     </button>
@@ -536,7 +557,7 @@ export default function ReportingPage() {
           )}
         </div>
 
-        {/* FULL-SCREEN FLASH DIAGNOSTIC WORKSTATION MODAL */}
+        {/* FULL-SCREEN DIAGNOSTIC WORKSTATION MODAL */}
         {activeWorkstationItem && (
           <DiagnosticWorkstationModal
             studyUID={activeWorkstationItem.studyUID}
