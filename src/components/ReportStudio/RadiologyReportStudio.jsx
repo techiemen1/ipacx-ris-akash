@@ -822,50 +822,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
   const renderStudioForm = () => (
     <div className="rs-main-grid">
-      {/* LEFT COLUMN: TEMPLATE SELECTOR & MODALITY CHIPS */}
-      <div className="rs-sidebar-card">
-        <div className="rs-sidebar-title">
-          <span>Structured Radiology Templates</span>
-          <span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: 10, fontSize: 10 }}>Auto-Matched</span>
-        </div>
-
-        <div className="rs-modality-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {[
-            { id: "CT", label: "CT" },
-            { id: "MRI", label: "MRI" },
-            { id: "USG", label: "USG" },
-            { id: "CR", label: "X-Ray" },
-            { id: "MG", label: "Mammo" },
-            { id: "XA", label: "Angio" },
-            { id: "PT", label: "PET-CT" },
-            { id: "ECHO", label: "ECHO" }
-          ].map(m => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setSelectedModality(m.id)}
-              className={`rs-chip ${(selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "active" : ""}`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="rs-template-list">
-          {((RADIOLOGY_TEMPLATES[selectedModality] || (selectedModality === "XRAY" ? RADIOLOGY_TEMPLATES.CR : [])) || []).map((tpl) => (
-            <div key={tpl.id} onClick={() => applyTemplate(tpl)} className="rs-template-item">
-              <div className="rs-template-name">{tpl.name}</div>
-              <div className="rs-template-bodypart">Body Part: {tpl.body_part}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: REPORT EDITOR CANVAS */}
-      <div className="rs-editor-canvas">
+      {/* SINGLE-COLUMN STREAMLINED REPORT EDITOR CANVAS */}
+      <div className="rs-editor-canvas" style={{ maxWidth: 1240, margin: '0 auto', width: '100%' }}>
         {/* PRIOR STUDIES HISTORICAL COMPARISON BAR */}
         {priorStudies.length > 0 && (
-          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 14, padding: 14, marginBottom: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: '#0369a1', display: 'flex', alignItems: 'center', gap: 6 }}>
                 🕒 Patient Imaging History ({priorStudies.length} Prior Study Records Found)
@@ -917,7 +878,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             borderRadius: 12,
             background: '#eff6ff',
             border: '1.5px solid #93c5fd',
-            marginBottom: 16,
+            marginBottom: 14,
             display: 'flex',
             alignItems: 'center',
             gap: 10
@@ -939,7 +900,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             borderRadius: 12,
             background: isReadOnly ? '#fef2f2' : '#f0fdf4',
             border: isReadOnly ? '1.5px solid #fca5a5' : '1.5px solid #86efac',
-            marginBottom: 16,
+            marginBottom: 14,
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -987,7 +948,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         )}
 
         {/* COMPACT EXECUTIVE DEMOGRAPHY & REPORT HEADER CARD */}
-        <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #cbd5e1', padding: '12px 16px', marginBottom: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #cbd5e1', padding: '12px 16px', marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           {/* TOP ROW: 4-COLUMN COMPACT DEMOGRAPHICS */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, paddingBottom: 10, borderBottom: '1px solid #e2e8f0' }}>
             <div>
@@ -1056,6 +1017,75 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                 }}
               />
             </div>
+          </div>
+        </div>
+
+        {/* ULTRA-COMPACT SINGLE-ROW TEMPLATE SELECTOR BAR */}
+        <div style={{ background: "#ffffff", borderRadius: 10, border: "1px solid #cbd5e1", padding: "6px 12px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Modality:
+            </span>
+            {[
+              { id: "CT", label: "CT" },
+              { id: "MRI", label: "MRI" },
+              { id: "USG", label: "USG" },
+              { id: "CR", label: "X-Ray" },
+              { id: "ECHO", label: "ECHO" }
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSelectedModality(m.id)}
+                style={{
+                  padding: "3px 9px",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  border: "1px solid",
+                  borderColor: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#4338ca" : "#cbd5e1",
+                  background: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#4338ca" : "#f8fafc",
+                  color: (selectedModality === m.id || (selectedModality === "XRAY" && m.id === "CR")) ? "#ffffff" : "#475569",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease"
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, background: "#e0e7ff", color: "#3730a3", padding: "2px 8px", borderRadius: 10, fontWeight: 800 }}>
+              Auto-Matched
+            </span>
+            <select
+              onChange={(e) => {
+                const list = RADIOLOGY_TEMPLATES[selectedModality] || RADIOLOGY_TEMPLATES.CR || [];
+                const tpl = list.find((t) => t.id === e.target.value);
+                if (tpl) applyTemplate(tpl);
+              }}
+              defaultValue=""
+              style={{
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid #cbd5e1",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#0f172a",
+                background: "#f8fafc",
+                outline: "none",
+                cursor: "pointer",
+                maxWidth: 280
+              }}
+            >
+              <option value="" disabled>Select Radiology Template...</option>
+              {((RADIOLOGY_TEMPLATES[selectedModality] || (selectedModality === "XRAY" ? RADIOLOGY_TEMPLATES.CR : [])) || []).map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name} ({tpl.body_part})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

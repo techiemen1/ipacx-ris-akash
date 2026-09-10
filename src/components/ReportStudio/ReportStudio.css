@@ -231,9 +231,12 @@
 
 /* MAIN TWO-COLUMN STUDIO GRID */
 .rs-main-grid {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  max-width: 1240px;
+  margin: 0 auto;
+  width: 100%;
+  gap: 12px;
 }
 
 /* LEFT SIDEBAR — STRUCTURED TEMPLATES */
