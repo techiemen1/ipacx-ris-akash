@@ -26,6 +26,30 @@ router.get("/studies/:studyUID/metadata", async (req, res, next) => {
   }
 });
 
+// GET /api/dicomweb/studies/:studyUID/instances - QIDO-RS search study instances
+router.get("/studies/:studyUID/instances", async (req, res, next) => {
+  try {
+    const { studyUID } = req.params;
+    const instances = await dicomWebService.getStudyInstances(studyUID);
+    res.json(instances);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/dicomweb/studies/:studyUID/series/:seriesUID/instances/:instanceUID/rendered
+router.get("/studies/:studyUID/series/:seriesUID/instances/:instanceUID/rendered", async (req, res, next) => {
+  try {
+    const { instanceUID } = req.params;
+    const stream = await dicomWebService.getRenderedInstance(instanceUID);
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/dicomweb/studies - STOW-RS DICOM upload endpoint
 router.post("/studies", upload.single("file"), async (req, res, next) => {
   try {

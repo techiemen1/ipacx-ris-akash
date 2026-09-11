@@ -192,6 +192,14 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/mobile-viewer"
+                  element={
+                    <ProtectedRoute>
+                      <MobileLiteViewer />
+                    </ProtectedRoute>
+                  }
+                />
                 {/* Admin routes */}
                 <Route
                   path="/admin/clinics"

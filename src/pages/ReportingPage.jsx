@@ -15,7 +15,8 @@ import {
   RefreshCw,
   FileCheck,
   Zap,
-  Share2
+  Share2,
+  Smartphone
 } from "lucide-react";
 
 function parseDicomDateTime(dateStr, timeStr) {
@@ -496,9 +497,18 @@ export default function ReportingPage() {
                               <button
                                 onClick={() => openStudyViewer(item.study_uid)}
                                 className="rp-btn-action ghost"
-                                title="Open OHIF DICOM Viewer"
+                                title="Open Full OHIF DICOM Viewer"
                               >
                                 <Eye size={13} /> Viewer
+                              </button>
+
+                              <button
+                                onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
+                                className="rp-btn-action ghost"
+                                style={{ color: "#38bdf8", borderColor: "#0284c7" }}
+                                title="Open Ultra-Fast Mobile DICOM Viewer (<50ms)"
+                              >
+                                <Smartphone size={13} /> Mobile
                               </button>
 
                               <button

@@ -62,6 +62,42 @@ class DicomWebService {
     });
     return response.data;
   }
+
+  /**
+   * QIDO-RS / WADO-RS: Retrieve Study Instances list
+   */
+  async getStudyInstances(studyUID) {
+    try {
+      const dicomWebUrl = `${ORTHANC_URL}dicom-web/studies/${studyUID}/instances`;
+      const response = await axios.get(dicomWebUrl, {
+        headers: { Accept: "application/dicom+json" },
+        ...authConfig(),
+      });
+      return response.data;
+    } catch (err) {
+      console.warn("[DICOMweb] Fallback for getStudyInstances:", err.message);
+      const findRes = await axios.post(`${ORTHANC_URL}tools/find`, { Level: "Study", Query: { StudyInstanceUID: studyUID } }, authConfig());
+      if (!findRes.data.length) return [];
+      const studyId = findRes.data[0];
+      const res = await axios.get(`${ORTHANC_URL}studies/${studyId}/instances`, authConfig());
+      return (res.data || []).map((inst, idx) => ({
+        "00080018": { Value: [inst.MainDicomTags?.SOPInstanceUID || inst.ID] },
+        "0020000E": { Value: [inst.ParentSeries || "series-1"] },
+        "00200013": { Value: [String(inst.MainDicomTags?.InstanceNumber || idx + 1)] }
+      }));
+    }
+  }
+
+  /**
+   * WADO-RS: Rendered JPEG Instance Stream
+   */
+  async getRenderedInstance(instanceId) {
+    const response = await axios.get(`${ORTHANC_URL}instances/${instanceId}/preview`, {
+      responseType: "stream",
+      ...authConfig(),
+    });
+    return response.data;
+  }
 }
 
 module.exports = new DicomWebService();

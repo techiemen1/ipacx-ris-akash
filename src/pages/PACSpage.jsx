@@ -21,7 +21,8 @@ import {
   Image,
   Archive,
   ChevronDown,
-  FileType
+  FileType,
+  Smartphone
 } from "lucide-react";
 
 const safeLower = (v) => String(v ?? "").toLowerCase();
@@ -666,9 +667,18 @@ export default function PACSpage() {
                                 <button
                                   onClick={() => openStudyViewer(uid)}
                                   className="pacs-btn-action ghost"
-                                  title="Open OHIF DICOM Viewer"
+                                  title="Open Full OHIF DICOM Viewer"
                                 >
                                   <Eye size={13} /> Viewer
+                                </button>
+
+                                <button
+                                  onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
+                                  className="pacs-btn-action ghost"
+                                  style={{ color: "#38bdf8", borderColor: "#0284c7" }}
+                                  title="Open Ultra-Fast Mobile DICOM Viewer (<50ms)"
+                                >
+                                  <Smartphone size={13} /> Mobile
                                 </button>
 
                                 <button

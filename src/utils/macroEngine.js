@@ -39,7 +39,11 @@ export const CLINICAL_MACROS = {
 
   ".carotid": `<p><b>CAROTID ARTERIES:</b> Bilateral CCA, ICA, and ECA show smooth intima-media thickness (IMT = 0.65 mm). Normal ICA low-resistance velocity spectrum (PSV = 68 cm/s). No stenosis.</p>`,
 
-  ".echo": `<p><b>LV FUNCTION:</b> Preserved LV global systolic function with LVEF = 63%. No regional wall motion abnormality (RWMA).</p><p><b>VALVES & PRESSURES:</b> Mitral, Aortic, and Tricuspid valves normal. Estimated PASP = 22 mmHg (Normal).</p>`
+  ".echo": `<p><b>LV FUNCTION:</b> Preserved LV global systolic function with LVEF = 63%. No regional wall motion abnormality (RWMA).</p><p><b>VALVES & PRESSURES:</b> Mitral, Aortic, and Tricuspid valves normal. Estimated PASP = 22 mmHg (Normal).</p>`,
+
+  ".fracture": `<p><b>OSSEOUS STRUCTURES:</b> Smooth cortical margins and trabecular pattern maintained. No acute cortical disruption, fracture line, subluxation, or joint dislocation identified. Periarticular soft tissues unremarkable.</p>`,
+
+  ".covid": `<p><b>LUNG PARENCHYMA:</b> Peripheral ground-glass opacities (GGO) with vascular dilation. CORADS 5 high clinical suspicion for viral/COVID-19 pneumonia. No large pleural effusion.</p>`
 };
 
 /**

@@ -312,6 +312,64 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   }
 }));
 
+/* ======================================================
+   MOBILE FAST RETRIEVAL PAYLOAD (OPTIMIZED FOR SMARTPHONES)
+====================================================== */
+router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
+  const { studyUID } = req.params;
+  const orthancUrl = await getOrthancUrl();
+  const orthancId = await findOrthancStudy(studyUID);
+
+  if (!orthancId) {
+    return res.status(404).json({ success: false, message: "Study not found in PACS" });
+  }
+
+  const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 });
+
+  const patientName = (studyData.MainDicomTags?.PatientName || "Patient").replace(/\^/g, " ").trim();
+  const patientId = studyData.MainDicomTags?.PatientID || "N/A";
+  const accession = studyData.MainDicomTags?.AccessionNumber || "N/A";
+  const modality = studyData.MainDicomTags?.Modality || "CR";
+  const studyDate = studyData.MainDicomTags?.StudyDate || "";
+  const studyDescription = studyData.MainDicomTags?.StudyDescription || "";
+
+  const seriesList = [];
+  if (Array.isArray(studyData.Series)) {
+    for (let idx = 0; idx < studyData.Series.length; idx++) {
+      const sId = studyData.Series[idx];
+      try {
+        const { data: sData } = await axios.get(`${orthancUrl}series/${sId}`, { ...orthancAuthConfig(), timeout: 3000 });
+        const sDesc = sData.MainDicomTags?.SeriesDescription || `Series ${idx + 1}`;
+        const instances = (sData.Instances || []).map((instId, iIdx) => ({
+          id: instId,
+          instanceNumber: iIdx + 1,
+          previewUrl: `/api/pacs/instance-preview/${instId}`
+        }));
+
+        seriesList.push({
+          seriesId: sId,
+          seriesDescription: sDesc,
+          seriesNumber: sData.MainDicomTags?.SeriesNumber || idx + 1,
+          totalSlices: instances.length,
+          instances
+        });
+      } catch (e) {}
+    }
+  }
+
+  res.json({
+    success: true,
+    studyUID,
+    patientName,
+    patientId,
+    accession,
+    modality,
+    studyDate,
+    studyDescription,
+    series: seriesList
+  });
+}));
+
 router.get("/snapshots/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;

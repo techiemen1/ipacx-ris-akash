@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { 
@@ -10,6 +10,10 @@ import {
   Sun, 
   Moon,
   Maximize,
+  Sliders,
+  Layers,
+  FileText,
+  RefreshCw,
   X
 } from "lucide-react";
 import "./MobileLiteViewer.css";
@@ -17,45 +21,80 @@ import "./MobileLiteViewer.css";
 const MobileLiteViewer = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const studyUID = searchParams.get("study");
+  const studyUID = searchParams.get("study") || searchParams.get("study_uid") || searchParams.get("studyUID");
   
-  const [instances, setInstances] = useState([]);
-  const [showList, setShowList] = useState(false);
+  const [studyMeta, setStudyMeta] = useState(null);
+  const [seriesList, setSeriesList] = useState([]);
+  const [activeSeriesIndex, setActiveSeriesIndex] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  
+  const [showSeriesDrawer, setShowSeriesDrawer] = useState(false);
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [contrast, setContrast] = useState(1);
+  const [isInverted, setIsInverted] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
-  const fetchInstances = useCallback(async () => {
+  // Touch Swipe State
+  const touchStartX = useRef(0);
+
+  const fetchStudyData = useCallback(async () => {
     if (!studyUID) return;
     setLoading(true);
     try {
-      // Fetch instances using DICOMWeb QIDO-RS via direct Nginx proxy
-      const res = await api.get(`/pacs/dicom-web/studies/${studyUID}/instances`);
-      
-      const instanceList = res.data.map(inst => ({
-        id: inst["00080018"]?.Value?.[0], // SOPInstanceUID
-        seriesId: inst["0020000E"]?.Value?.[0], // SeriesInstanceUID
-        instanceNumber: parseInt(inst["00200013"]?.Value?.[0] || 0)
-      })).sort((a, b) => a.instanceNumber - b.instanceNumber);
-      
-      setInstances(instanceList);
+      // 1. Try ultra-fast Mobile Study API payload
+      const res = await api.get(`/api/pacs/mobile-study/${encodeURIComponent(studyUID)}`).catch(() => null);
+      if (res?.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
+        setStudyMeta({
+          patientName: res.data.patientName,
+          patientId: res.data.patientId,
+          accession: res.data.accession,
+          modality: res.data.modality,
+          studyDescription: res.data.studyDescription
+        });
+        setSeriesList(res.data.series);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Fallback to Series Instances API
+      const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
+      if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
+        const formatted = resFallback.data.series.map(s => ({
+          seriesId: s.series_id,
+          seriesDescription: s.series_description,
+          totalSlices: s.total_slices,
+          instances: (s.instances || []).map((inst, i) => ({
+            id: inst.instance_id,
+            instanceNumber: inst.slice_number || i + 1,
+            previewUrl: inst.preview_url
+          }))
+        }));
+        setSeriesList(formatted);
+      }
     } catch (error) {
-      console.error("Failed to fetch instances", error);
+      console.error("Failed to load DICOM study for mobile viewer", error);
     } finally {
       setLoading(false);
     }
   }, [studyUID]);
 
   useEffect(() => {
-    fetchInstances();
-  }, [fetchInstances]);
+    fetchStudyData();
+  }, [fetchStudyData]);
+
+  const activeSeries = seriesList[activeSeriesIndex] || { instances: [] };
+  const currentInstances = activeSeries.instances || [];
+  const currentInstance = currentInstances[currentIndex];
+
+  const imageUrl = currentInstance 
+    ? (currentInstance.previewUrl || `/api/pacs/instance-preview/${currentInstance.id}`)
+    : "";
 
   const nextImage = () => {
-    if (currentIndex < instances.length - 1) {
+    if (currentIndex < currentInstances.length - 1) {
       setCurrentIndex(prev => prev + 1);
     }
   };
@@ -70,90 +109,134 @@ const MobileLiteViewer = () => {
     setZoom(1);
     setBrightness(1);
     setContrast(1);
+    setIsInverted(false);
     setRotation(0);
   };
 
-
-  const currentInstance = instances[currentIndex];
-  // Robust URL construction: Use relative path if possible or the current origin to avoid 'localhost' issues on mobile
-  const getFullImageUrl = (path) => {
-    if (!path) return "";
-    return `${window.location.origin}${path.startsWith('/') ? '' : '/'}${path}`;
+  // Touch Swipe Handlers for Mobile Slice Scrubbing
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
   };
 
-  const imageUrl = currentInstance 
-    ? getFullImageUrl(`/pacs/dicom-web/studies/${studyUID}/series/${currentInstance.seriesId}/instances/${currentInstance.id}/rendered`)
-    : "";
+  const handleTouchEnd = (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX.current - touchEndX;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) nextImage();
+      else prevImage();
+    }
+  };
 
   if (!studyUID) {
     return (
       <div className="lite-viewer-error">
-        <h3>Study UID missing</h3>
-        <button onClick={() => navigate(-1)}>Go Back</button>
+        <h3>StudyInstanceUID Missing</h3>
+        <p>Please select a valid study from the PACS worklist.</p>
+        <button onClick={() => navigate(-1)}>Return to PACS</button>
       </div>
     );
   }
 
   return (
     <div className={`lite-viewer-container ${isDarkMode ? "dark" : "light"}`}>
-      {/* Header */}
+      {/* Sleek Mobile Executive Header */}
       <header className="lite-viewer-header">
-        <button className="icon-btn" onClick={() => navigate(-1)}>
-          <ChevronLeft size={24} />
+        <button className="icon-btn" onClick={() => navigate(-1)} title="Back">
+          <ChevronLeft size={22} />
         </button>
-        <button className="icon-btn" onClick={() => setShowList(!showList)}>
-          <div style={{ position: 'relative' }}>
-            <span className="index-label">{currentIndex + 1} / {instances.length}</span>
-          </div>
-        </button>
-        <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
-          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
+
+        <div className="patient-banner" onClick={() => setShowSeriesDrawer(true)}>
+          <span className="patient-title">
+            {studyMeta?.patientName || "DICOM Mobile Viewer"}
+          </span>
+          <span className="patient-sub">
+            {studyMeta?.modality || "CR"} • {studyMeta?.accession ? `Acc: ${studyMeta.accession}` : "Mobile Lite"} • Slice {currentIndex + 1}/{currentInstances.length}
+          </span>
+        </div>
+
+        <div className="header-actions">
+          <button className="icon-btn text-indigo-400" onClick={() => setShowSeriesDrawer(true)} title="Series Drawer">
+            <Layers size={20} />
+          </button>
+          <button className="icon-btn text-emerald-400" onClick={() => navigate(`/report-editor?study=${studyUID}`)} title="Open Report Studio">
+            <FileText size={20} />
+          </button>
+          <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+        </div>
       </header>
 
-      {/* Instance List Sidebar (Drawer) */}
-      <div className={`lite-instance-list ${showList ? "open" : ""}`}>
+      {/* Series Selection Drawer (Mobile Drawer) */}
+      <div className={`lite-instance-list ${showSeriesDrawer ? "open" : ""}`}>
         <div className="list-header">
-          <span>Instances ({instances.length})</span>
-          <button onClick={() => setShowList(false)}><X size={20} /></button>
+          <span>DICOM Series ({seriesList.length})</span>
+          <button onClick={() => setShowSeriesDrawer(false)}><X size={20} /></button>
         </div>
         <div className="list-content">
-          {instances.map((inst, idx) => (
+          {seriesList.map((s, sIdx) => (
             <div 
-              key={inst.id} 
-              className={`list-item ${idx === currentIndex ? "active" : ""}`}
+              key={s.seriesId || sIdx} 
+              className={`list-item ${sIdx === activeSeriesIndex ? "active" : ""}`}
               onClick={() => {
-                setCurrentIndex(idx);
-                setShowList(false);
+                setActiveSeriesIndex(sIdx);
+                setCurrentIndex(0);
+                setShowSeriesDrawer(false);
               }}
             >
-              Image {idx + 1}
+              <div style={{ fontWeight: "700" }}>{s.seriesDescription || `Series ${sIdx + 1}`}</div>
+              <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.totalSlices || s.instances?.length || 0} DICOM Slices</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Main Viewport */}
-      <main className="lite-viewer-main">
+      {/* Main Viewport & Touch Canvas */}
+      <main 
+        className="lite-viewer-main"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         {loading ? (
-          <div className="loader">Loading Study...</div>
+          <div className="loader">
+            <RefreshCw className="animate-spin text-indigo-500" size={32} />
+            <span style={{ marginTop: 8, fontSize: 13, fontWeight: 700 }}>Streaming Mobile DICOM Slices...</span>
+          </div>
         ) : (
           <div className="viewport-wrapper" onWheel={(e) => setZoom(z => Math.max(0.5, Math.min(5, z + (e.deltaY < 0 ? 0.1 : -0.1))))}>
-            <img 
-              src={imageUrl} 
-              alt="DICOM Instance"
-              className="main-image"
-              style={{
-                transform: `scale(${zoom}) rotate(${rotation}deg)`,
-                filter: `brightness(${brightness}) contrast(${contrast})`,
-                transition: "transform 0.2s ease-out, filter 0.2s ease-out"
-              }}
-            />
+            {imageUrl ? (
+              <img 
+                src={imageUrl} 
+                alt="DICOM Slice"
+                className="main-image"
+                style={{
+                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                  filter: `brightness(${brightness}) contrast(${contrast}) ${isInverted ? "invert(1)" : ""}`,
+                  transition: "transform 0.1s ease-out, filter 0.1s ease-out"
+                }}
+              />
+            ) : (
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this slice.</div>
+            )}
           </div>
         )}
       </main>
 
-      {/* Footer Tools */}
+      {/* Fast Slice Scrubber Slider Bar */}
+      {currentInstances.length > 1 && (
+        <div className="scrubber-bar">
+          <input 
+            type="range"
+            min={0}
+            max={currentInstances.length - 1}
+            value={currentIndex}
+            onChange={(e) => setCurrentIndex(parseInt(e.target.value, 10))}
+            className="scrubber-range"
+          />
+        </div>
+      )}
+
+      {/* Footer Quick Tools */}
       <footer className="lite-viewer-footer">
         <div className="tool-row scroll-x">
           <button className="tool-btn" onClick={prevImage} disabled={currentIndex === 0}>
@@ -162,23 +245,26 @@ const MobileLiteViewer = () => {
           
           <div className="divider" />
           
-          <button className="tool-btn" onClick={() => setZoom(z => Math.min(5, z + 0.2))}>
+          <button className="tool-btn" onClick={() => setZoom(z => Math.min(5, z + 0.25))} title="Zoom In">
             <ZoomIn size={20} />
           </button>
-          <button className="tool-btn" onClick={() => setZoom(z => Math.max(0.5, z - 0.2))}>
+          <button className="tool-btn" onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} title="Zoom Out">
             <ZoomOut size={20} />
           </button>
-          <button className="tool-btn" onClick={() => setRotation(r => (r + 90) % 360)}>
+          <button className="tool-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate">
             <RotateCw size={20} />
           </button>
           
           <div className="divider" />
           
-          <button className="tool-btn" onClick={() => setBrightness(b => Math.min(2, b + 0.1))}>
+          <button className="tool-btn" onClick={() => setBrightness(b => b >= 1.8 ? 1 : b + 0.2)} title="Brightness">
             <Sun size={20} />
           </button>
-          <button className="tool-btn" onClick={() => setContrast(c => Math.min(2, c + 0.1))}>
+          <button className="tool-btn" onClick={() => setContrast(c => c >= 1.8 ? 1 : c + 0.2)} title="Contrast">
             <Maximize size={20} />
+          </button>
+          <button className={`tool-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Colors">
+            <Sliders size={20} />
           </button>
           
           <div className="divider" />
@@ -189,7 +275,7 @@ const MobileLiteViewer = () => {
           
           <div className="divider" />
 
-          <button className="tool-btn" onClick={nextImage} disabled={currentIndex === instances.length - 1}>
+          <button className="tool-btn" onClick={nextImage} disabled={currentIndex === currentInstances.length - 1}>
             <ChevronRight size={20} />
           </button>
         </div>
