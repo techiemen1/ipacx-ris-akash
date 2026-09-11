@@ -17,7 +17,7 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
   }
 
   if (mode === "mobile" || (mode === "auto" && isMobileDevice())) {
-    return `/native-viewer?study=${encodeURIComponent(studyUID.trim())}`;
+    return `/mobile-viewer?study=${encodeURIComponent(studyUID.trim())}`;
   }
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();

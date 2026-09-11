@@ -7,7 +7,6 @@ import {
   ZoomOut,
   RotateCw,
   Sun,
-  Maximize2,
   Sliders,
   Play,
   Pause,
@@ -18,9 +17,6 @@ import {
   RotateCcw,
   RefreshCw,
   X,
-  Eye,
-  CheckCircle,
-  Smartphone,
   Compass
 } from "lucide-react";
 import "./NativeDicomViewer.css";
