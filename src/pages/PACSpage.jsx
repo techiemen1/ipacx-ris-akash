@@ -127,7 +127,7 @@ export default function PACSpage() {
   }, [filters.modality, dateQuickFilter, fromDate, toDate]);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const rowsPerPage = 15;
+  const rowsPerPage = 30;
 
   const [exportMenuOpenUid, setExportMenuOpenUid] = useState(null);
   const [exportingUid, setExportingUid] = useState(null);

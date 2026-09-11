@@ -46,15 +46,21 @@ const MobileLiteViewer = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Touch Swipe & Vertical Drag State
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
+  // TOUCH GESTURE ENGINE STATE (SCROLL | WL | PAN)
+  const [touchMode, setTouchMode] = useState("SCROLL");
+  const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
+  const [tagSearchText, setTagSearchText] = useState("");
+
+  const initialPinchDist = useRef(null);
+  const initialPinchZoom = useRef(1);
+  const touchLastPos = useRef({ x: 0, y: 0 });
+  const touchDeltaAccumulator = useRef({ x: 0, y: 0 });
+  const lastTapTime = useRef(0);
 
   const fetchStudyData = useCallback(async () => {
     if (!studyUID) return;
     setLoading(true);
     try {
-      // 1. Ultra-fast Mobile Study API payload with ordered slice sorting
       const res = await api.get(`/api/pacs/mobile-study/${encodeURIComponent(studyUID)}`).catch(() => null);
       if (res?.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
         setStudyMeta({
@@ -70,7 +76,6 @@ const MobileLiteViewer = () => {
         return;
       }
 
-      // 2. Fallback to Series Instances API
       const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
       if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
         const formatted = resFallback.data.series.map(s => ({
@@ -104,7 +109,6 @@ const MobileLiteViewer = () => {
     ? (currentInstance.previewUrl || `/api/pacs/instance-preview/${currentInstance.id}`)
     : "";
 
-  // Fetch DICOM Tags for current active instance
   const fetchInstanceTags = useCallback(async () => {
     if (!currentInstance?.id) return;
     setLoadingTags(true);
@@ -113,7 +117,6 @@ const MobileLiteViewer = () => {
       if (res?.data?.success && res.data.tags) {
         setTagsData(res.data.tags);
       } else {
-        // Fallback to study level tags
         const resStudy = await api.get(`/api/pacs/dicom-tags/${encodeURIComponent(studyUID)}`).catch(() => null);
         if (resStudy?.data?.data) {
           setTagsData(resStudy.data.data);
@@ -132,13 +135,12 @@ const MobileLiteViewer = () => {
     }
   }, [showTagsModal, fetchInstanceTags]);
 
-  // Cine Auto-Play Loop
   useEffect(() => {
     let timer = null;
     if (isPlaying && currentInstances.length > 1) {
       timer = setInterval(() => {
         setCurrentIndex(prev => (prev + 1) % currentInstances.length);
-      }, 150); // ~6.6 FPS for smooth diagnostic review
+      }, 150);
     }
     return () => {
       if (timer) clearInterval(timer);
@@ -159,6 +161,7 @@ const MobileLiteViewer = () => {
 
   const resetTools = () => {
     setZoom(1);
+    setPanPosition({ x: 0, y: 0 });
     setBrightness(1);
     setContrast(1);
     setIsInverted(false);
@@ -166,31 +169,72 @@ const MobileLiteViewer = () => {
     setIsPlaying(false);
   };
 
-  // Touch Drag Handlers (Swipe for Slice Scrubber, Vertical for W/L Brightness)
+  // MULTI-TOUCH GESTURE ENGINE (PINCH TO ZOOM + TOUCH SLICE SCROLL + TOUCH W/L + PAN)
   const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
+    const now = Date.now();
+    if (now - lastTapTime.current < 300) {
+      // Double tap reset
+      resetTools();
+    }
+    lastTapTime.current = now;
+
+    if (e.touches.length === 2) {
+      // 2-Finger Pinch Start
+      const x1 = e.touches[0].clientX;
+      const y1 = e.touches[0].clientY;
+      const x2 = e.touches[1].clientX;
+      const y2 = e.touches[1].clientY;
+      initialPinchDist.current = Math.hypot(x2 - x1, y2 - y1);
+      initialPinchZoom.current = zoom;
+    } else if (e.touches.length === 1) {
+      // 1-Finger Touch Start
+      touchLastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      touchDeltaAccumulator.current = { x: 0, y: 0 };
+    }
   };
 
-  const handleTouchEnd = (e) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const touchEndY = e.changedTouches[0].clientY;
-    const diffX = touchStartX.current - touchEndX;
-    const diffY = touchStartY.current - touchEndY;
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && initialPinchDist.current) {
+      // 2-Finger Pinch Zooming
+      const x1 = e.touches[0].clientX;
+      const y1 = e.touches[0].clientY;
+      const x2 = e.touches[1].clientX;
+      const y2 = e.touches[1].clientY;
+      const dist = Math.hypot(x2 - x1, y2 - y1);
+      const scale = dist / initialPinchDist.current;
+      const newZoom = Math.max(0.5, Math.min(6, parseFloat((initialPinchZoom.current * scale).toFixed(2))));
+      setZoom(newZoom);
+    } else if (e.touches.length === 1) {
+      const currentX = e.touches[0].clientX;
+      const currentY = e.touches[0].clientY;
+      const dx = currentX - touchLastPos.current.x;
+      const dy = currentY - touchLastPos.current.y;
+      touchLastPos.current = { x: currentX, y: currentY };
 
-    // Horizontal Swipe -> Change Slice
-    if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY)) {
-      if (diffX > 0) nextImage();
-      else prevImage();
-    }
-    // Vertical Swipe -> Adjust Brightness / Contrast (Window/Level)
-    else if (Math.abs(diffY) > 50 && Math.abs(diffY) > Math.abs(diffX)) {
-      if (diffY > 0) {
-        setBrightness(b => Math.min(2.2, parseFloat((b + 0.15).toFixed(2))));
-      } else {
-        setBrightness(b => Math.max(0.4, parseFloat((b - 0.15).toFixed(2))));
+      if (touchMode === "PAN") {
+        setPanPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      } else if (touchMode === "WL") {
+        // Vertical drag -> Brightness/Level; Horizontal drag -> Contrast/Width
+        setBrightness(b => Math.max(0.2, Math.min(3, parseFloat((b - dy * 0.008).toFixed(2)))));
+        setContrast(c => Math.max(0.2, Math.min(3, parseFloat((c + dx * 0.008).toFixed(2)))));
+      } else if (touchMode === "SCROLL") {
+        // Continuous touch drag for fast slice scrolling
+        touchDeltaAccumulator.current.y += dy;
+        const threshold = 14; // pixels to trigger slice step
+        if (touchDeltaAccumulator.current.y <= -threshold) {
+          nextImage();
+          touchDeltaAccumulator.current.y = 0;
+        } else if (touchDeltaAccumulator.current.y >= threshold) {
+          prevImage();
+          touchDeltaAccumulator.current.y = 0;
+        }
       }
     }
+  };
+
+  const handleTouchEnd = () => {
+    initialPinchDist.current = null;
+    touchDeltaAccumulator.current = { x: 0, y: 0 };
   };
 
   const captureSnapshot = () => {
@@ -250,6 +294,31 @@ const MobileLiteViewer = () => {
         </div>
       </header>
 
+      {/* Touch Mode Selection Strip */}
+      <div className="touch-mode-bar">
+        <button
+          className={`touch-mode-btn ${touchMode === "SCROLL" ? "active" : ""}`}
+          onClick={() => setTouchMode("SCROLL")}
+          title="1-Finger Drag to Scroll DICOM Slices"
+        >
+          📜 Slice Scroll
+        </button>
+        <button
+          className={`touch-mode-btn ${touchMode === "WL" ? "active" : ""}`}
+          onClick={() => setTouchMode("WL")}
+          title="1-Finger Drag Up/Down for Window Level, Left/Right for Window Width"
+        >
+          🌗 Touch W/L
+        </button>
+        <button
+          className={`touch-mode-btn ${touchMode === "PAN" ? "active" : ""}`}
+          onClick={() => setTouchMode("PAN")}
+          title="1-Finger Drag to Pan, 2-Finger Pinch to Zoom"
+        >
+          🔍 Pinch & Pan
+        </button>
+      </div>
+
       {/* DICOM Tags Inspector Modal */}
       {showTagsModal && (
         <div className="tags-modal-backdrop" onClick={() => setShowTagsModal(false)}>
@@ -263,6 +332,16 @@ const MobileLiteViewer = () => {
                 <X size={18} />
               </button>
             </div>
+
+            <div className="tags-modal-search">
+              <input
+                type="text"
+                placeholder="Search DICOM Tag attribute or code..."
+                value={tagSearchText}
+                onChange={(e) => setTagSearchText(e.target.value)}
+                className="tags-search-input"
+              />
+            </div>
             
             <div className="tags-modal-body scroll-y">
               {loadingTags ? (
@@ -272,12 +351,18 @@ const MobileLiteViewer = () => {
                 </div>
               ) : tagsData ? (
                 <div className="tags-grid">
-                  {Object.entries(tagsData).map(([key, val]) => (
-                    <div key={key} className="tag-row">
-                      <span className="tag-key">{key}</span>
-                      <span className="tag-val">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
-                    </div>
-                  ))}
+                  {Object.entries(tagsData)
+                    .filter(([k, v]) => {
+                      if (!tagSearchText) return true;
+                      const q = tagSearchText.toLowerCase();
+                      return String(k).toLowerCase().includes(q) || String(v).toLowerCase().includes(q);
+                    })
+                    .map(([key, val]) => (
+                      <div key={key} className="tag-row">
+                        <span className="tag-key">{key}</span>
+                        <span className="tag-val">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
+                      </div>
+                    ))}
                 </div>
               ) : (
                 <div className="text-center p-6 text-slate-400 text-sm">
@@ -322,6 +407,7 @@ const MobileLiteViewer = () => {
       <main 
         className="lite-viewer-main"
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {loading ? (
@@ -337,28 +423,37 @@ const MobileLiteViewer = () => {
                 alt="DICOM Slice"
                 className="main-image"
                 style={{
-                  transform: `scale(${zoom}) rotate(${rotation}deg)`,
+                  transform: `translate(${panPosition.x}px, ${panPosition.y}px) scale(${zoom}) rotate(${rotation}deg)`,
                   filter: `brightness(${brightness}) contrast(${contrast}) ${isInverted ? "invert(1)" : ""}`,
-                  transition: "transform 0.1s ease-out, filter 0.1s ease-out"
+                  transition: isDragging.current ? "none" : "transform 0.08s ease-out, filter 0.08s ease-out"
                 }}
               />
             ) : (
               <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this slice.</div>
             )}
 
-            {/* Diagnostic On-Screen Overlay */}
+            {/* Diagnostic On-Screen DICOM Header Overlay (4 Corners) */}
             <div className="overlay-info top-left">
-              <div className="overlay-line font-bold">{studyMeta?.patientName}</div>
-              <div className="overlay-line">{studyMeta?.patientId}</div>
-              <div className="overlay-line">{studyMeta?.studyDescription || activeSeries?.seriesDescription}</div>
+              <div className="overlay-line font-bold text-cyan-300">{studyMeta?.patientName || "Patient"}</div>
+              <div className="overlay-line text-slate-300">ID: {studyMeta?.patientId || "N/A"}</div>
+              <div className="overlay-line text-slate-400">{studyMeta?.studyDescription || activeSeries?.seriesDescription || "DICOM Study"}</div>
             </div>
+
             <div className="overlay-info top-right">
-              <div className="overlay-line text-cyan-400 font-semibold">{activeSeries?.seriesDescription || "Series 1"}</div>
-              <div className="overlay-line font-mono">Slice: {currentIndex + 1} / {currentInstances.length}</div>
+              <div className="overlay-line text-amber-300 font-semibold">[{studyMeta?.modality || "CR"}] {studyMeta?.studyDate || ""}</div>
+              <div className="overlay-line text-slate-300">Acc: {studyMeta?.accession || "N/A"}</div>
+              <div className="overlay-line text-cyan-400 font-mono">Slice: {currentIndex + 1} / {currentInstances.length}</div>
             </div>
+
             <div className="overlay-info bottom-left">
-              <div className="overlay-line">Zoom: {(zoom * 100).toFixed(0)}%</div>
-              <div className="overlay-line">W/L: B{(brightness * 100).toFixed(0)} C{(contrast * 100).toFixed(0)}</div>
+              <div className="overlay-line text-indigo-300">Zoom: {(zoom * 100).toFixed(0)}%</div>
+              <div className="overlay-line text-slate-300">Pan: {panPosition.x.toFixed(0)}, {panPosition.y.toFixed(0)}</div>
+              <div className="overlay-line text-slate-400">Mode: {touchMode}</div>
+            </div>
+
+            <div className="overlay-info bottom-right">
+              <div className="overlay-line text-emerald-300 font-mono">W: {(contrast * 400).toFixed(0)} L: {(brightness * 40).toFixed(0)}</div>
+              <div className="overlay-line text-slate-300">Rot: {rotation}°</div>
             </div>
           </div>
         )}
@@ -385,47 +480,47 @@ const MobileLiteViewer = () => {
       {/* Footer Quick Diagnostic Toolbar */}
       <footer className="lite-viewer-footer">
         <div className="tool-row scroll-x">
-          <button className="tool-btn" onClick={prevImage} disabled={currentIndex === 0}>
+          <button className="tool-btn" onClick={prevImage} disabled={currentIndex === 0} title="Previous Slice">
             <ChevronLeft size={20} />
           </button>
           
           <div className="divider" />
           
-          <button className="tool-btn" onClick={() => setZoom(z => Math.min(5, z + 0.25))} title="Zoom In">
+          <button className="tool-btn" onClick={() => setZoom(z => Math.min(6, z + 0.25))} title="Zoom In">
             <ZoomIn size={20} />
           </button>
           <button className="tool-btn" onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} title="Zoom Out">
             <ZoomOut size={20} />
           </button>
-          <button className="tool-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate">
+          <button className="tool-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
             <RotateCw size={20} />
           </button>
           
           <div className="divider" />
           
-          <button className="tool-btn" onClick={() => setBrightness(b => b >= 1.8 ? 1 : b + 0.2)} title="Brightness (Vertical Drag)">
+          <button className="tool-btn" onClick={() => setBrightness(b => b >= 2.0 ? 0.6 : b + 0.2)} title="Brightness W/L">
             <Sun size={20} />
           </button>
-          <button className="tool-btn" onClick={() => setContrast(c => c >= 1.8 ? 1 : c + 0.2)} title="Contrast">
+          <button className="tool-btn" onClick={() => setContrast(c => c >= 2.0 ? 0.6 : c + 0.2)} title="Contrast W/W">
             <Maximize size={20} />
           </button>
-          <button className={`tool-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Colors">
+          <button className={`tool-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Monochrome">
             <Sliders size={20} />
           </button>
           
           <div className="divider" />
 
-          <button className="tool-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image">
+          <button className="tool-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image Snapshot">
             <Camera size={20} />
           </button>
           
-          <button className="tool-btn reset" onClick={resetTools}>
+          <button className="tool-btn reset" onClick={resetTools} title="Reset All Transformations">
             RESET
           </button>
           
           <div className="divider" />
 
-          <button className="tool-btn" onClick={nextImage} disabled={currentIndex === currentInstances.length - 1}>
+          <button className="tool-btn" onClick={nextImage} disabled={currentIndex === currentInstances.length - 1} title="Next Slice">
             <ChevronRight size={20} />
           </button>
         </div>

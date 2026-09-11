@@ -106,7 +106,7 @@ export default function ReportingPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [activeWorkstationItem, setActiveWorkstationItem] = useState(null);
   const [shareItem, setShareItem] = useState(null);
-  const rowsPerPage = 12;
+  const rowsPerPage = 30;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
