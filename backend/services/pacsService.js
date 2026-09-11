@@ -2,11 +2,7 @@ const axios = require("axios");
 const PacsRepository = require("../repositories/PacsRepository");
 const cacheService = require("./cacheService");
 const { BadRequestError, NotFoundError } = require("../utils/AppError");
-
-function authConfig(username, password) {
-  if (!username || !password) return {};
-  return { auth: { username, password } };
-}
+const { getOrthancUrl, orthancAuthConfig } = require("../utils/orthancHelper");
 
 class PacsService {
   constructor(pool) {
@@ -45,9 +41,9 @@ class PacsService {
   async listActiveStudies({ startDate, endDate }) {
     const cacheKey = `pacs:studies:${startDate || "any"}:${endDate || "any"}`;
     const cached = await cacheService.get(cacheKey);
-    if (cached) return cached;
+    if (cached && Array.isArray(cached) && cached.length > 0) return cached;
 
-    const activePacs = await this.repository.findActive();
+    const activePacs = await this.repository.findActive().catch(() => []);
     const allStudies = [];
 
     for (const pacs of activePacs) {
@@ -66,6 +62,17 @@ class PacsService {
       }
     }
 
+    // Dynamic Fallback to working Orthanc URL if configured nodes return empty
+    if (allStudies.length === 0) {
+      try {
+        const dynamicUrl = await getOrthancUrl();
+        const fallbackStudies = await this.fetchOrthancFromUrl(dynamicUrl, { startDate, endDate });
+        allStudies.push(...fallbackStudies);
+      } catch (e) {
+        console.error("[PacsService] Dynamic Orthanc fallback failed:", e.message);
+      }
+    }
+
     const unique = Object.values(
       allStudies.reduce((acc, study) => {
         if (study.StudyInstanceUID && !acc[study.StudyInstanceUID]) {
@@ -75,16 +82,22 @@ class PacsService {
       }, {})
     );
 
-    await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 45));
+    if (unique.length > 0) {
+      await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 45));
+    }
     return unique;
   }
 
   async fetchOrthancStudies(pacs, { startDate, endDate }) {
-    const serverUrl = `http://${pacs.ip_address}:${pacs.port}/`;
-    const config = authConfig(
-      pacs.username || process.env.ORTHANC_USER,
-      pacs.password || process.env.ORTHANC_PASS
-    );
+    let serverUrl = `http://${pacs.ip_address}:${pacs.port}/`;
+    if (pacs.ip_address === "localhost" || pacs.ip_address === "127.0.0.1") {
+      serverUrl = await getOrthancUrl();
+    }
+    return this.fetchOrthancFromUrl(serverUrl, { startDate, endDate });
+  }
+
+  async fetchOrthancFromUrl(serverUrl, { startDate, endDate }) {
+    const config = orthancAuthConfig();
     const payload = { Level: "Study", Query: {}, Limit: 200 };
     if (startDate && endDate) payload.Query.StudyDate = `${startDate}-${endDate}`;
 
@@ -135,7 +148,7 @@ class PacsService {
           Modality: modality.toUpperCase(),
           BodyPartExamined: bodyPart,
           StudyInstanceUID: data.MainDicomTags?.StudyInstanceUID || data.ID,
-          PACS: pacs.pacs_name || "ORTHANC",
+          PACS: "ORTHANC",
         };
       })
     );
@@ -149,7 +162,7 @@ class PacsService {
     if (startDate && endDate) params.StudyDate = `${startDate}-${endDate}`;
 
     const response = await axios.get(qidoUrl, {
-      ...authConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+      ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
       params,
       headers: { Accept: "application/dicom+json" },
     });

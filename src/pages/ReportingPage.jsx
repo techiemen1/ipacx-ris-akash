@@ -17,8 +17,18 @@ import {
   Zap,
   Share2,
   Smartphone,
-  Compass
+  Compass,
+  SlidersHorizontal
 } from "lucide-react";
+
+function formatPatientName(name) {
+  if (!name) return "Patient";
+  const cleaned = String(name)
+    .replace(/\^+/g, " ")
+    .replace(/undefined|null/gi, "")
+    .trim();
+  return cleaned || "Patient";
+}
 
 function parseDicomDateTime(dateStr, timeStr) {
   if (!dateStr) return 0;
@@ -92,10 +102,20 @@ export default function ReportingPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [activeWorkstationItem, setActiveWorkstationItem] = useState(null);
   const [shareItem, setShareItem] = useState(null);
   const rowsPerPage = 12;
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterModality) count++;
+    if (filterStatus) count++;
+    if (dateQuickFilter !== "ALL") count++;
+    if (fromDate || toDate) count++;
+    return count;
+  }, [filterModality, filterStatus, dateQuickFilter, fromDate, toDate]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -322,6 +342,19 @@ export default function ReportingPage() {
               />
             </div>
 
+            {/* MOBILE FILTER ACCORDION TOGGLE BUTTON */}
+            <button
+              className="rp-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="rp-filter-badge-count">{activeFilterCount}</span>}
+            </button>
+          </div>
+
+          <div className={`rp-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
             {/* MODALITY FILTER */}
             <select
               value={filterModality}
@@ -452,7 +485,7 @@ export default function ReportingPage() {
                           <td>
                             <div className="rp-patient-block">
                               <div className="rp-patient-main">
-                                <span className="rp-patient-name">{item.patient_name}</span>
+                                <span className="rp-patient-name">{formatPatientName(item.patient_name)}</span>
                                 {item.isSTAT && (
                                   <span className="rp-stat-tag" title="Emergency STAT Scan">
                                     🚨 STAT
@@ -549,7 +582,7 @@ export default function ReportingPage() {
                       <div className="rpmc-header">
                         <div>
                           <div className="rpmc-name-row">
-                            <span className="rpmc-name">{item.patient_name}</span>
+                            <span className="rpmc-name">{formatPatientName(item.patient_name)}</span>
                             {item.isSTAT && <span className="rp-stat-tag">🚨 STAT</span>}
                           </div>
                           <span className="rpmc-sub">ID: {item.patient_id}</span>

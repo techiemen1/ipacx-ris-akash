@@ -23,8 +23,18 @@ import {
   ChevronDown,
   FileType,
   Smartphone,
-  Compass
+  Compass,
+  SlidersHorizontal
 } from "lucide-react";
+
+function formatPatientName(name) {
+  if (!name) return "Patient";
+  const cleaned = String(name)
+    .replace(/\^+/g, " ")
+    .replace(/undefined|null/gi, "")
+    .trim();
+  return cleaned || "Patient";
+}
 
 const safeLower = (v) => String(v ?? "").toLowerCase();
 
@@ -106,6 +116,15 @@ export default function PACSpage() {
   const [dateQuickFilter, setDateQuickFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.modality) count++;
+    if (dateQuickFilter !== "ALL") count++;
+    if (fromDate || toDate) count++;
+    return count;
+  }, [filters.modality, dateQuickFilter, fromDate, toDate]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 15;
@@ -536,6 +555,18 @@ export default function PACSpage() {
               />
             </div>
 
+            <button
+              className="pacs-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="pacs-filter-badge-count">{activeFilterCount}</span>}
+            </button>
+          </div>
+
+          <div className={`pacs-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
             {/* MODALITY SELECTOR */}
             <select
               value={filters.modality}
@@ -647,7 +678,8 @@ export default function PACSpage() {
                       pagedStudies.map((s, idx) => {
                         const uid = s.StudyInstanceUID || s.study_uid || s.ID || s.id;
                         const mod = parseModality(s);
-                        const pName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim() || "Patient";
+                        const rawPName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim() || "Patient";
+                        const pName = formatPatientName(rawPName);
                         const pId = String(s.PatientID || s.patient_id || "").replace(/undefined|null/gi, "-");
                         const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
 
@@ -818,7 +850,8 @@ export default function PACSpage() {
                   pagedStudies.map((s, idx) => {
                     const uid = s.StudyInstanceUID || s.study_uid || s.ID || s.id;
                     const mod = parseModality(s);
-                    const pName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim() || "Patient";
+                    const rawPName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim() || "Patient";
+                    const pName = formatPatientName(rawPName);
                     const pId = String(s.PatientID || s.patient_id || "").replace(/undefined|null/gi, "-");
                     const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
 

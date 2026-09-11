@@ -536,7 +536,7 @@
   z-index: -1;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .ris-mobile-header {
     display: flex;
   }

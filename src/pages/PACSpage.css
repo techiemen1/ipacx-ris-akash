@@ -600,6 +600,18 @@
   color: #334155;
 }
 
+.pacs-mobile-filter-toggle {
+  display: none;
+}
+
+.pacs-filter-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
 .pacs-mobile-card-list {
   display: none;
 }
@@ -607,17 +619,18 @@
 /* =========================================================
    RESPONSIVE SMARTPHONE & TABLET CARD LAYOUT (ZERO HORIZONTAL SCROLL)
    ========================================================= */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .pacs-container {
-    padding: 8px;
+    padding: 6px;
     max-width: 100vw;
     overflow-x: hidden;
   }
 
   .pacs-header-compact {
-    padding: 10px 12px;
+    padding: 8px 10px;
     flex-direction: column;
     align-items: flex-start;
+    gap: 6px;
   }
 
   .pacs-header-actions {
@@ -627,13 +640,59 @@
     gap: 6px;
   }
 
+  .pacs-filter-bar {
+    padding: 8px 10px;
+  }
+
   .pacs-filter-row {
-    flex-direction: column;
-    align-items: stretch;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
   }
 
   .pacs-search-box {
-    width: 100%;
+    flex: 1;
+    width: auto;
+  }
+
+  .pacs-mobile-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 11px;
+    background: #e0e7ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .pacs-filter-badge-count {
+    background: #4338ca;
+    color: #ffffff;
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 900;
+  }
+
+  .pacs-filter-controls-group {
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .pacs-filter-controls-group.show-mobile {
+    display: flex;
   }
 
   .pacs-date-pills {

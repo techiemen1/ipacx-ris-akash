@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { CalendarDays, SquarePen, Printer, Receipt, Trash2, RefreshCw, Plus, Search, Users, Activity, Clock, ShieldCheck, Share2 } from "lucide-react";
+import { CalendarDays, SquarePen, Printer, Receipt, Trash2, RefreshCw, Plus, Search, Users, Activity, Clock, ShieldCheck, Share2, SlidersHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../layout/MainLayout";
 
@@ -8,6 +8,15 @@ import ShareReportModal from "../components/ShareReportModal";
 import api from "../api/axios";
 import { toast } from "react-hot-toast";
 import "./PatientList.css";
+
+function formatPatientName(name) {
+  if (!name) return "Patient";
+  const cleaned = String(name)
+    .replace(/\^+/g, " ")
+    .replace(/undefined|null/gi, "")
+    .trim();
+  return cleaned || "Patient";
+}
 
 function parseDicomDateTime(dateStr, timeStr) {
   if (!dateStr) return 0;
@@ -98,6 +107,15 @@ function PatientList() {
   const [dateQuickFilter, setDateQuickFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedModality !== "ALL") count++;
+    if (dateQuickFilter !== "ALL") count++;
+    if (fromDate || toDate) count++;
+    return count;
+  }, [selectedModality, dateQuickFilter, fromDate, toDate]);
 
   const navigate = useNavigate();
 
@@ -481,6 +499,18 @@ function PatientList() {
               />
             </div>
 
+            <button
+              className="pl-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="pl-filter-badge-count">{activeFilterCount}</span>}
+            </button>
+          </div>
+
+          <div className={`pl-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
             <select
               className="pl-modality-select"
               value={selectedModality}
@@ -494,66 +524,66 @@ function PatientList() {
               <option value="OPG">🦷 OPG Dental</option>
               <option value="MG">🎀 Mammography</option>
             </select>
-          </div>
 
-          <div className="pl-date-bar">
-            <div className="pl-quick-dates">
-              <span className="pl-quick-label">📅 Quick Date:</span>
-              {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
-                <button
-                  key={quickKey}
-                  onClick={() => {
-                    setDateQuickFilter(quickKey);
-                    if (quickKey !== "CUSTOM") {
+            <div className="pl-date-bar">
+              <div className="pl-quick-dates">
+                <span className="pl-quick-label">📅 Quick Date:</span>
+                {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
+                  <button
+                    key={quickKey}
+                    onClick={() => {
+                      setDateQuickFilter(quickKey);
+                      if (quickKey !== "CUSTOM") {
+                        setFromDate("");
+                        setToDate("");
+                      }
+                    }}
+                    className={`pl-quick-btn ${dateQuickFilter === quickKey ? "active" : ""}`}
+                  >
+                    {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "Last 7 Days" : "Last 30 Days"}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pl-custom-dates">
+                <div className="pl-date-field">
+                  <label>From:</label>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      setDateQuickFilter("CUSTOM");
+                    }}
+                  />
+                </div>
+
+                <div className="pl-date-field">
+                  <label>To:</label>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setDateQuickFilter("CUSTOM");
+                    }}
+                  />
+                </div>
+
+                {(fromDate || toDate || dateQuickFilter !== "ALL") && (
+                  <button
+                    onClick={() => {
+                      setDateQuickFilter("ALL");
                       setFromDate("");
                       setToDate("");
-                    }
-                  }}
-                  className={`pl-quick-btn ${dateQuickFilter === quickKey ? "active" : ""}`}
-                >
-                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "Last 7 Days" : "Last 30 Days"}
-                </button>
-              ))}
-            </div>
-
-            <div className="pl-custom-dates">
-              <div className="pl-date-field">
-                <label>From:</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => {
-                    setFromDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
+                    }}
+                    className="pl-quick-btn"
+                    style={{ color: '#ef4444', borderColor: '#fca5a5' }}
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
-
-              <div className="pl-date-field">
-                <label>To:</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => {
-                    setToDate(e.target.value);
-                    setDateQuickFilter("CUSTOM");
-                  }}
-                />
-              </div>
-
-              {(fromDate || toDate || dateQuickFilter !== "ALL") && (
-                <button
-                  onClick={() => {
-                    setDateQuickFilter("ALL");
-                    setFromDate("");
-                    setToDate("");
-                  }}
-                  className="pl-quick-btn"
-                  style={{ color: '#ef4444', borderColor: '#fca5a5' }}
-                >
-                  Reset
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -717,7 +747,8 @@ function PatientList() {
                 </div>
               ) : (
                 filteredPatients.map((p, idx) => {
-                  const pName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
+                  const rawPName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
+                  const pName = formatPatientName(rawPName);
                   const pId = p.uhid || p.patient_id || p.mrn || p.id || "-";
                   const mod = p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "CR");
                   const uid = p.study_uid || p.StudyInstanceUID;
