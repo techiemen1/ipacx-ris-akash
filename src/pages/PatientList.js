@@ -707,6 +707,75 @@ function PatientList() {
               </tbody>
             </table>
           </div>
+
+          {/* DEDICATED MOBILE PATIENT CARDS VIEW */}
+          <div className="pl-mobile-card-list">
+            {filteredPatients.length === 0 ? (
+              <div className="no-data">
+                No matching patient records found for the selected filter criteria.
+              </div>
+            ) : (
+              filteredPatients.map((p, idx) => {
+                const pName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
+                const pId = p.uhid || p.patient_id || p.mrn || p.id || "-";
+                const mod = p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "CR");
+                const uid = p.study_uid || p.StudyInstanceUID;
+
+                return (
+                  <div key={pId || idx} className="pl-mobile-card">
+                    <div className="plmc-header">
+                      <div className="plmc-user">
+                        <div className="pl-avatar">{getInitials(pName)}</div>
+                        <div>
+                          <span className="plmc-name">{pName}</span>
+                          <span className="plmc-sub">ID: {pId} • {p.gender || "O"} ({p.age || "N/A"})</span>
+                        </div>
+                      </div>
+                      <span className={`pl-mod-badge mod-${String(mod).toLowerCase()}`}>
+                        {mod}
+                      </span>
+                    </div>
+
+                    <div className="plmc-grid">
+                      <div className="plmc-field">
+                        <span className="plmc-lbl">Ref Doctor</span>
+                        <span className="plmc-val">{p.referring_doctor || "-"}</span>
+                      </div>
+                      <div className="plmc-field">
+                        <span className="plmc-lbl">Date</span>
+                        <span className="plmc-val">{formatDisplayDateTime(p.created_at || p.study_date, p.study_time)}</span>
+                      </div>
+                    </div>
+
+                    <div className="plmc-actions">
+                      {uid ? (
+                        <button
+                          onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
+                          className="plmc-btn primary"
+                        >
+                          <Smartphone size={15} /> Mobile Viewer
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleSchedule(p)}
+                          className="plmc-btn primary"
+                        >
+                          <CalendarDays size={15} /> Schedule
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleEdit(p)}
+                        className="plmc-btn secondary"
+                      >
+                        <SquarePen size={15} /> Edit
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         )}
       </div>
     </MainLayout>

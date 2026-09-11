@@ -537,6 +537,68 @@ export default function ReportingPage() {
                 </table>
               </div>
 
+              {/* DEDICATED MOBILE PATIENT CARDS VIEW */}
+              <div className="rp-mobile-card-list">
+                {pagedWorklist.length === 0 ? (
+                  <div className="rp-empty">
+                    No DICOM studies matched your search filters.
+                  </div>
+                ) : (
+                  pagedWorklist.map((item, idx) => (
+                    <div key={item.study_uid || idx} className={`rp-mobile-card ${item.isSTAT ? 'row-stat' : ''}`}>
+                      <div className="rpmc-header">
+                        <div>
+                          <div className="rpmc-name-row">
+                            <span className="rpmc-name">{item.patient_name}</span>
+                            {item.isSTAT && <span className="rp-stat-tag">🚨 STAT</span>}
+                          </div>
+                          <span className="rpmc-sub">ID: {item.patient_id}</span>
+                        </div>
+                        <div className="rpmc-badges">
+                          <span className={`rp-modality-badge mod-${item.modality.toLowerCase()}`}>
+                            {item.modality}
+                          </span>
+                          <span className={`rp-status-badge status-${item.status.toLowerCase()}`}>
+                            {item.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="rpmc-grid">
+                        <div className="rpmc-field">
+                          <span className="rpmc-lbl">Exam</span>
+                          <span className="rpmc-val">{item.study_description || "General Examination"}</span>
+                        </div>
+                        <div className="rpmc-field">
+                          <span className="rpmc-lbl">Acc No</span>
+                          <span className="rpmc-val code">{item.accession_number || "-"}</span>
+                        </div>
+                        <div className="rpmc-field" style={{ gridColumn: "span 2" }}>
+                          <span className="rpmc-lbl">Date & Time</span>
+                          <span className="rpmc-val">{formatDisplayDateTime(item.study_date, item.study_time)}</span>
+                        </div>
+                      </div>
+
+                      <div className="rpmc-actions">
+                        <button
+                          onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
+                          className="rpmc-btn primary"
+                        >
+                          <Smartphone size={15} /> Mobile Viewer
+                        </button>
+
+                        <button
+                          onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(item.study_uid)}`)}
+                          className="rpmc-btn secondary"
+                        >
+                          <FileText size={15} /> Report
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
               {/* PAGINATION FOOTER */}
               {filteredWorklist.length > 0 && (
                 <div className="rp-pagination">

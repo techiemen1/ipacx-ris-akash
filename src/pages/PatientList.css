@@ -447,6 +447,13 @@
 /* =========================================================
    RESPONSIVE SMARTPHONE & TABLET CARD LAYOUT (ZERO HORIZONTAL SCROLL)
    ========================================================= */
+.pl-mobile-card-list {
+  display: none;
+}
+
+/* =========================================================
+   RESPONSIVE SMARTPHONE & TABLET CARD LAYOUT (ZERO HORIZONTAL SCROLL)
+   ========================================================= */
 @media (max-width: 768px) {
   .patient-page {
     padding: 6px;
@@ -470,57 +477,116 @@
   }
 
   .table-wrapper {
-    overflow-x: hidden;
+    display: none !important;
+  }
+
+  .pl-mobile-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     width: 100%;
+    padding: 4px 0;
   }
 
-  .patient-table {
-    display: block;
-    width: 100%;
-  }
-
-  .patient-table thead {
-    display: none;
-  }
-
-  .patient-table tbody {
+  .pl-mobile-card {
+    background: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    padding: 14px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: 100%;
   }
 
-  .patient-table tbody tr {
-    display: flex;
-    flex-direction: column;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-  }
-
-  .patient-table td {
+  .plmc-header {
     display: flex;
     justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .plmc-user {
+    display: flex;
     align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px dashed #f1f5f9;
+    gap: 10px;
   }
 
-  .patient-table td:last-child {
-    border-bottom: none;
-    padding-top: 10px;
+  .plmc-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    display: block;
+    line-height: 1.25;
+  }
+
+  .plmc-sub {
+    font-size: 11.5px;
+    color: #64748b;
+    font-weight: 600;
+    display: block;
+  }
+
+  .plmc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    background: #f8fafc;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #f1f5f9;
+  }
+
+  .plmc-field {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plmc-lbl {
+    font-size: 10px;
+    font-weight: 800;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .plmc-val {
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+    word-break: break-word;
+  }
+
+  .plmc-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .plmc-btn {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    gap: 6px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
   }
 
-  .action-wrap {
-    width: 100%;
-    justify-content: space-around;
+  .plmc-btn.primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
   }
 
-  .schedule-btn {
-    width: 32px;
-    height: 32px;
+  .plmc-btn.secondary {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
   }
 }

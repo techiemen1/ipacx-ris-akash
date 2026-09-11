@@ -177,19 +177,36 @@ export default function PACSpage() {
   async function loadStudies(pacs) {
     if (!pacs) return;
 
-    setActivePacs(pacs);
-    sessionStorage.setItem("activePacs", JSON.stringify(pacs));
+  async function loadStudies(pacs) {
+    const targetPacs = pacs || { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
+    setActivePacs(targetPacs);
+    sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
     setLoading(true);
     setCurrentPage(1);
 
     try {
-      const res = await api.get("/api/pacs/studies", { params: { pacs_id: pacs.id } }).catch(() => ({ data: [] }));
-      let studiesList = Array.isArray(res.data) ? res.data : [];
+      const res = await api.get("/api/pacs/studies", { params: { pacs_id: targetPacs.id || "orthanc" } }).catch(() => ({ data: [] }));
+      let studiesList = Array.isArray(res.data) 
+        ? res.data 
+        : (Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data?.studies) ? res.data.studies : []));
 
-      if (studiesList.length === 0 && pacs.pacs_type !== "ORTHANC") {
+      if (studiesList.length === 0 && targetPacs.pacs_type !== "ORTHANC") {
         const orthancRes = await api.get("/api/pacs/studies", { params: { pacs_id: "orthanc" } }).catch(() => ({ data: [] }));
-        if (Array.isArray(orthancRes.data) && orthancRes.data.length > 0) {
-          studiesList = orthancRes.data;
+        const fallbackList = Array.isArray(orthancRes.data)
+          ? orthancRes.data
+          : (Array.isArray(orthancRes.data?.data) ? orthancRes.data.data : []);
+        if (fallbackList.length > 0) {
+          studiesList = fallbackList;
+        }
+      }
+
+      if (studiesList.length === 0) {
+        const allRes = await api.get("/api/pacs/studies").catch(() => ({ data: [] }));
+        const allList = Array.isArray(allRes.data)
+          ? allRes.data
+          : (Array.isArray(allRes.data?.data) ? allRes.data.data : []);
+        if (allList.length > 0) {
+          studiesList = allList;
         }
       }
 
@@ -211,7 +228,9 @@ export default function PACSpage() {
     async function initPacsServers() {
       try {
         const res = await api.get("/api/mwl-targets").catch(() => ({ data: [] }));
-        const list = Array.isArray(res.data) ? res.data : [];
+        const list = Array.isArray(res.data) 
+          ? res.data 
+          : (Array.isArray(res.data?.data) ? res.data.data : []);
         setPacsServers(list);
 
         const saved = sessionStorage.getItem("activePacs");
@@ -790,6 +809,68 @@ export default function PACSpage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              {/* DEDICATED MOBILE PATIENT CARDS VIEW */}
+              <div className="pacs-mobile-card-list">
+                {pagedStudies.length === 0 ? (
+                  <div className="pacs-empty">
+                    No DICOM studies matched your search filters.
+                  </div>
+                ) : (
+                  pagedStudies.map((s, idx) => {
+                    const uid = s.StudyInstanceUID || s.study_uid || s.ID || s.id;
+                    const mod = parseModality(s);
+                    const pName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim() || "Patient";
+                    const pId = String(s.PatientID || s.patient_id || "").replace(/undefined|null/gi, "-");
+                    const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
+
+                    return (
+                      <div key={uid || idx} className="pacs-mobile-card">
+                        <div className="pmc-header">
+                          <div>
+                            <span className="pmc-name">{pName}</span>
+                            <span className="pmc-sub">ID: {pId} • {s.PatientSex || "O"} ({s.PatientAge || "N/A"})</span>
+                          </div>
+                          <span className={`pacs-modality-badge mod-${mod.toLowerCase()}`}>
+                            {mod}
+                          </span>
+                        </div>
+
+                        <div className="pmc-grid">
+                          <div className="pmc-field">
+                            <span className="pmc-lbl">Exam</span>
+                            <span className="pmc-val">{s.StudyDescription || "General Examination"}</span>
+                          </div>
+                          <div className="pmc-field">
+                            <span className="pmc-lbl">Acc No</span>
+                            <span className="pmc-val code">{acc}</span>
+                          </div>
+                          <div className="pmc-field" style={{ gridColumn: "span 2" }}>
+                            <span className="pmc-lbl">Date & Time</span>
+                            <span className="pmc-val">{formatDisplayDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time)}</span>
+                          </div>
+                        </div>
+
+                        <div className="pmc-actions">
+                          <button
+                            onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
+                            className="pmc-btn primary"
+                          >
+                            <Smartphone size={15} /> Mobile Viewer
+                          </button>
+
+                          <button
+                            onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(uid)}`)}
+                            className="pmc-btn secondary"
+                          >
+                            <FileText size={15} /> Report
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
               {/* PAGINATION FOOTER */}
