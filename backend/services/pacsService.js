@@ -106,18 +106,25 @@ class PacsService {
       ids.map(async (id) => {
         const { data } = await axios.get(`${serverUrl}studies/${id}`, config);
         
-        let modality = "";
-        let bodyPart = "";
+        let modality = data.MainDicomTags?.Modality || "";
+        let bodyPart = data.MainDicomTags?.BodyPartExamined || "";
 
         if (Array.isArray(data.Series) && data.Series.length > 0) {
-          try {
-            const seriesRes = await axios.get(`${serverUrl}series/${data.Series[0]}`, config);
-            if (seriesRes.data?.MainDicomTags) {
-              modality = seriesRes.data.MainDicomTags.Modality || modality;
-              bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined || "";
+          for (const sId of data.Series) {
+            try {
+              const seriesRes = await axios.get(`${serverUrl}series/${sId}`, config);
+              if (seriesRes.data?.MainDicomTags) {
+                if (!modality && seriesRes.data.MainDicomTags.Modality) {
+                  modality = seriesRes.data.MainDicomTags.Modality;
+                }
+                if (!bodyPart && seriesRes.data.MainDicomTags.BodyPartExamined) {
+                  bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined;
+                }
+                if (modality) break;
+              }
+            } catch (e) {
+              // fallback
             }
-          } catch (e) {
-            // fallback
           }
         }
 
@@ -128,12 +135,12 @@ class PacsService {
           else if (normMod === "ECHO") modality = "EC";
           else modality = normMod;
         } else {
-          // Description Fallback (Prioritize X-Ray before CT!)
+          // Description Fallback
           const desc = String(data.MainDicomTags?.StudyDescription || "").toUpperCase();
           if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) modality = "CR";
-          else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("KNEE")) modality = "MR";
+          else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) modality = "MR";
           else if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) modality = "US";
-          else if (desc.includes("CT") || desc.includes("TOMOGRAPHY")) modality = "CT";
+          else if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) modality = "CT";
           else modality = "CR";
         }
 

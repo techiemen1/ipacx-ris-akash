@@ -70,20 +70,18 @@ function parseModality(item) {
   const raw = item?.modality || item?.Modality || item?.ModalitiesInStudy || item?.modality_in_study || "";
   const str = String(raw).toUpperCase().replace(/UNDEFINED|NULL/g, "").trim();
 
-  if (str && str !== "N/A") {
-    if (["CR", "DX", "XR", "CT", "MR", "MRI", "US", "USG", "MG", "EC", "ECHO"].includes(str)) {
-      if (str === "MRI") return "MR";
-      if (str === "USG") return "US";
-      if (str === "ECHO") return "EC";
-      return str;
-    }
+  if (str && str !== "N/A" && str !== "UNDEFINED") {
+    if (str === "MRI") return "MR";
+    if (str === "USG") return "US";
+    if (str === "ECHO") return "EC";
+    if (["CR", "DX", "XR", "CT", "MR", "US", "MG", "EC"].includes(str)) return str;
   }
 
-  const desc = String(item?.study_description || item?.StudyDescription || "").toUpperCase();
+  const desc = String(item?.study_description || item?.StudyDescription || item?.study_type || "").toUpperCase();
   if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) return "CR";
-  if (desc.includes("MRI") || desc.includes("MR")) return "MR";
+  if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) return "MR";
   if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) return "US";
-  if (desc.includes("CT") || desc.includes("TOMOGRAPHY")) return "CT";
+  if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) return "CT";
 
   return "CR";
 }
@@ -212,7 +210,8 @@ export default function ReportingPage() {
         item.patient_id.toLowerCase().includes(searchText.toLowerCase()) ||
         item.accession_number.toLowerCase().includes(searchText.toLowerCase());
 
-      const matchModality = !filterModality || item.modality === filterModality;
+      const matchModality = !filterModality ||
+        (filterModality === "CR" ? (item.modality === "CR" || item.modality === "DX" || item.modality === "XR") : item.modality === filterModality);
       const matchStatus = !filterStatus ? true : filterStatus === "STAT" ? item.isSTAT : item.status === filterStatus;
 
       let matchDate = true;

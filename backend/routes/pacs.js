@@ -299,10 +299,11 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
 
   const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 });
 
-  const patientName = (studyData.MainDicomTags?.PatientName || "Patient").replace(/\^/g, " ").trim();
-  const patientId = studyData.MainDicomTags?.PatientID || "N/A";
+  const rawPName = studyData.PatientMainDicomTags?.PatientName || studyData.MainDicomTags?.PatientName || "Patient";
+  const patientName = String(rawPName).replace(/\^+/g, " ").trim() || "Patient";
+  const patientId = studyData.PatientMainDicomTags?.PatientID || studyData.MainDicomTags?.PatientID || "N/A";
   const accession = studyData.MainDicomTags?.AccessionNumber || "N/A";
-  const modality = studyData.MainDicomTags?.Modality || "CR";
+  let modality = studyData.MainDicomTags?.Modality || "";
   const studyDate = studyData.MainDicomTags?.StudyDate || "";
   const studyDescription = studyData.MainDicomTags?.StudyDescription || "";
 
@@ -313,6 +314,9 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
       try {
         const { data: sData } = await axios.get(`${orthancUrl}series/${sId}`, { ...orthancAuthConfig(), timeout: 3000 });
         const sDesc = sData.MainDicomTags?.SeriesDescription || `Series ${idx + 1}`;
+        if (!modality && sData.MainDicomTags?.Modality) {
+          modality = sData.MainDicomTags.Modality;
+        }
 
         let orderedInstances = [];
         // Try ordered-slices first for 3D spatial sorting (CT/MRI)
@@ -375,6 +379,19 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
         });
       } catch (e) {}
     }
+  }
+
+  // Fallback modality parsing if missing
+  const normMod = String(modality).toUpperCase().trim();
+  if (!normMod || !["CR", "DX", "XR", "CT", "MR", "MRI", "US", "USG", "MG", "EC", "ECHO"].includes(normMod)) {
+    const desc = String(studyDescription).toUpperCase();
+    if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) modality = "CR";
+    else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN")) modality = "MR";
+    else if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) modality = "US";
+    else if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) modality = "CT";
+    else modality = "CR";
+  } else {
+    modality = normMod === "MRI" ? "MR" : normMod === "USG" ? "US" : normMod;
   }
 
   res.json({

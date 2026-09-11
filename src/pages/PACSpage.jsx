@@ -82,14 +82,14 @@ function parseModality(study) {
     if (str === "MRI") return "MR";
     if (str === "USG") return "US";
     if (str === "ECHO") return "EC";
-    return str;
+    if (["CR", "DX", "XR", "CT", "MR", "US", "MG", "EC"].includes(str)) return str;
   }
 
   const desc = String(study?.StudyDescription || study?.study_description || "").toUpperCase();
-  if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN")) return "MR";
-  if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) return "US";
-  if (desc.includes("CT") || desc.includes("ABDOMEN") || desc.includes("HEAD")) return "CT";
   if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) return "CR";
+  if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) return "MR";
+  if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) return "US";
+  if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) return "CT";
 
   return "CR";
 }
@@ -389,7 +389,8 @@ export default function PACSpage() {
       const matchId = !filters.patientId || safeLower(pId).includes(safeLower(filters.patientId));
       const matchName = !filters.patientName || safeLower(pName).includes(safeLower(filters.patientName));
       const matchAcc = !filters.accession || safeLower(acc).includes(safeLower(filters.accession));
-      const matchMod = !filters.modality || mod === filters.modality;
+      const matchMod = !filters.modality ||
+        (filters.modality === "CR" ? (mod === "CR" || mod === "DX" || mod === "XR") : mod === filters.modality);
 
       let matchDate = true;
       const recordTs = s.raw_timestamp || parseDicomDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time);

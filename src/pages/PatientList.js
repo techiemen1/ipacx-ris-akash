@@ -9,6 +9,26 @@ import api from "../api/axios";
 import { toast } from "react-hot-toast";
 import "./PatientList.css";
 
+function parseModality(item) {
+  const raw = item?.Modality || item?.modality || item?.ModalitiesInStudy || item?.modalitiesInStudy || item?.modality_in_study || "";
+  const str = String(raw).toUpperCase().replace(/UNDEFINED|NULL/g, "").trim();
+
+  if (str && str !== "N/A" && str !== "UNDEFINED") {
+    if (str === "MRI") return "MR";
+    if (str === "USG") return "US";
+    if (str === "ECHO") return "EC";
+    if (["CR", "DX", "XR", "CT", "MR", "US", "MG", "EC"].includes(str)) return str;
+  }
+
+  const desc = String(item?.StudyDescription || item?.study_description || item?.studyDescription || item?.study_type || "").toUpperCase();
+  if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) return "CR";
+  if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) return "MR";
+  if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) return "US";
+  if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) return "CT";
+
+  return "CR";
+}
+
 function formatPatientName(name) {
   if (!name) return "Patient";
   const cleaned = String(name)
@@ -176,17 +196,28 @@ function PatientList() {
       });
 
       pacsStudies.forEach((ps) => {
-        const key = String(ps.patient_id || ps.patientId || "").toUpperCase().trim();
+        const key = String(ps.PatientID || ps.patient_id || ps.patientId || ps.uhid || ps.StudyInstanceUID || "").toUpperCase().trim();
         if (key) {
+          const studyModality = parseModality(ps);
+          const studyDate = ps.StudyDate || ps.study_date || ps.studyDate;
+          const studyTime = ps.StudyTime || ps.study_time || ps.studyTime;
+          const studyDesc = ps.StudyDescription || ps.study_description || ps.studyDescription || "Imaging Study";
+          const patientName = formatPatientName(ps.PatientName || ps.patient_name || ps.patientName);
+          const patientSex = ps.PatientSex || ps.patient_sex || ps.patientSex || "O";
+          const referringDoc = ps.ReferringPhysicianName || ps.referring_physician_name || "PACS Direct";
+          const studyUid = ps.StudyInstanceUID || ps.study_uid || ps.ID;
+
           if (combinedMap.has(key)) {
             const existing = combinedMap.get(key);
             combinedMap.set(key, {
               ...existing,
-              modality: existing.modality || ps.modality || ps.modalitiesInStudy,
-              study_date: existing.study_date || ps.study_date || ps.studyDate,
-              study_time: existing.study_time || ps.study_time || ps.studyTime,
-              study_type: existing.study_type || ps.study_description || ps.studyDescription,
-              referring_doctor: existing.referring_doctor || ps.referring_physician_name || "PACS Direct",
+              modality: existing.modality ? parseModality(existing) : studyModality,
+              study_date: existing.study_date || studyDate,
+              study_time: existing.study_time || studyTime,
+              study_type: existing.study_type || studyDesc,
+              referring_doctor: existing.referring_doctor || referringDoc,
+              study_uid: existing.study_uid || studyUid,
+              StudyInstanceUID: existing.StudyInstanceUID || studyUid,
               _hasPACS: true,
             });
           } else {
@@ -194,13 +225,15 @@ function PatientList() {
               id: key,
               uhid: key,
               patient_id: key,
-              first_name: ps.patient_name || ps.patientName || "PACS Patient",
-              gender: ps.patient_sex || ps.patientSex || "O",
-              modality: ps.modality || ps.modalitiesInStudy || "CR",
-              study_date: ps.study_date || ps.studyDate,
-              study_time: ps.study_time || ps.studyTime,
-              study_type: ps.study_description || ps.studyDescription || "Imaging Study",
-              referring_doctor: ps.referring_physician_name || "PACS Direct",
+              first_name: patientName,
+              gender: patientSex,
+              modality: studyModality,
+              study_date: studyDate,
+              study_time: studyTime,
+              study_type: studyDesc,
+              referring_doctor: referringDoc,
+              study_uid: studyUid,
+              StudyInstanceUID: studyUid,
               visit_type: "DICOM Study",
               _source: "PACS",
               _hasPACS: true,
@@ -235,7 +268,10 @@ function PatientList() {
 
     if (selectedModality !== "ALL") {
       result = result.filter((p) => {
-        const mod = String(p.modality || (Array.isArray(p.modalities) ? p.modalities.join(",") : "")).toUpperCase();
+        const mod = parseModality(p).toUpperCase();
+        if (selectedModality === "CR") {
+          return mod === "CR" || mod === "DX" || mod === "XR";
+        }
         return mod.includes(selectedModality);
       });
     }
