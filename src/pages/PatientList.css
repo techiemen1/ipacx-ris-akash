@@ -464,9 +464,10 @@
 
 @media (max-width: 1024px) {
   .patient-page {
-    padding: 6px;
+    padding: 6px 6px 40px 6px;
     max-width: 100vw;
     overflow-x: hidden;
+    min-height: min-content;
   }
 
   .patient-header {
