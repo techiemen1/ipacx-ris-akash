@@ -89,7 +89,7 @@ export default function ShareReportModal({ isOpen, onClose, studyUID, patientID,
 
   const displayName = cleanName(patientName);
   const viewerUrl = shareData?.viewerUrl || "";
-  const pdfUrl = shareData?.downloadPdfUrl || (studyUID ? `http://localhost:5000/api/reports/by-study/${encodeURIComponent(studyUID)}/pdf` : `http://localhost:5000/api/reports/${reportID || 'latest'}/pdf`);
+  const pdfUrl = shareData?.downloadPdfUrl || (studyUID ? `/api/reports/by-study/${encodeURIComponent(studyUID)}/pdf` : `/api/reports/${reportID || 'latest'}/pdf`);
   const qrCodeUrl = viewerUrl ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(viewerUrl)}` : "";
 
   const encodedMsg = encodeURIComponent(

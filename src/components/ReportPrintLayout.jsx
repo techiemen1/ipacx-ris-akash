@@ -169,7 +169,7 @@ export default function ReportPrintLayout({ report }) {
                   src={
                     img.startsWith("http")
                       ? img
-                      : `http://localhost:5000${img}`
+                      : img.startsWith("/") ? img : `/${img}`
                   }
                   alt={`Key Image ${index + 1}`}
                   style={{
