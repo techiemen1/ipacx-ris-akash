@@ -30,6 +30,7 @@ const _AddNewReportPage = lazy(() => import("./pages/AddNewReportPage"));
 const ReportedBy = lazy(() => import("./pages/adminsettings/ReportedBy"));
 const AuditLogs = lazy(() => import("./pages/adminsettings/AuditLogs"));
 const MobileLiteViewer = lazy(() => import("./pages/MobileLiteViewer"));
+const NativeDicomViewer = lazy(() => import("./pages/NativeDicomViewer"));
 const ReportVerification = lazy(() => import("./pages/ReportVerification"));
 
 
@@ -197,6 +198,22 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <MobileLiteViewer />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/native-viewer"
+                  element={
+                    <ProtectedRoute>
+                      <NativeDicomViewer />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/viewer-native"
+                  element={
+                    <ProtectedRoute>
+                      <NativeDicomViewer />
                     </ProtectedRoute>
                   }
                 />

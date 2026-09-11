@@ -16,7 +16,8 @@ import {
   FileCheck,
   Zap,
   Share2,
-  Smartphone
+  Smartphone,
+  Compass
 } from "lucide-react";
 
 function parseDicomDateTime(dateStr, timeStr) {
@@ -503,10 +504,19 @@ export default function ReportingPage() {
                               </button>
 
                               <button
+                                onClick={() => navigate(`/native-viewer?study=${encodeURIComponent(item.study_uid)}`)}
+                                className="rp-btn-action ghost"
+                                style={{ color: "#a855f7", borderColor: "#9333ea" }}
+                                title="Open Ultra-Fast Native Canvas DICOM Viewer (<20ms)"
+                              >
+                                <Compass size={13} /> Canvas
+                              </button>
+
+                              <button
                                 onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
                                 className="rp-btn-action ghost"
                                 style={{ color: "#38bdf8", borderColor: "#0284c7" }}
-                                title="Open Ultra-Fast Mobile DICOM Viewer (<50ms)"
+                                title="Open Mobile DICOM Viewer"
                               >
                                 <Smartphone size={13} /> Mobile
                               </button>

@@ -1,14 +1,23 @@
+import { detectDeviceType, isTouchSupported } from "./deviceDetector";
+
 export const isMobileDevice = () => {
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent
-  );
+  return detectDeviceType() !== "desktop" || isTouchSupported();
 };
 
-export const getViewerUrl = (studyUID, _mode = "@ohif/mode-longitudinal") => {
+export const getNativeViewerUrl = (studyUID) => {
+  if (!studyUID) return "#";
+  return `/native-viewer?study=${encodeURIComponent(studyUID.trim())}`;
+};
+
+export const getViewerUrl = (studyUID, mode = "auto") => {
   if (!studyUID) return "#";
 
-  if (isMobileDevice()) {
-    return `/lite?study=${encodeURIComponent(studyUID)}`;
+  if (mode === "native") {
+    return getNativeViewerUrl(studyUID);
+  }
+
+  if (mode === "mobile" || (mode === "auto" && isMobileDevice())) {
+    return `/native-viewer?study=${encodeURIComponent(studyUID.trim())}`;
   }
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
@@ -43,13 +52,13 @@ export const getViewerUrl = (studyUID, _mode = "@ohif/mode-longitudinal") => {
   return `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
 
-export const openStudyViewer = (study) => {
+export const openStudyViewer = (study, mode = "auto") => {
   if (!study) return;
   const studyUID =
     typeof study === "string"
       ? study
       : study?.StudyInstanceUID || study?.study_uid || study?.ID || study?.id;
   if (!studyUID || typeof studyUID !== "string") return;
-  const url = getViewerUrl(studyUID.trim());
+  const url = getViewerUrl(studyUID.trim(), mode);
   window.open(url, "_blank");
 };
