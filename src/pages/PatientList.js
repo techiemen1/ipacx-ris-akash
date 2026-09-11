@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { CalendarDays, SquarePen, Printer, Receipt, Trash2, RefreshCw, Plus, Search, Users, Activity, Clock, ShieldCheck, Share2, SlidersHorizontal } from "lucide-react";
+import { CalendarDays, SquarePen, Printer, Receipt, Trash2, RefreshCw, Plus, Search, Users, Activity, Clock, ShieldCheck, Share2, SlidersHorizontal, Smartphone } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../layout/MainLayout";
 
@@ -651,7 +651,7 @@ function PatientList() {
           </div>
         )}
 
-        {/* PATIENT DIRECTORY TABLE CARD */}
+        {/* PATIENT DIRECTORY TABLE CARD & MOBILE VIEWS */}
         {loading ? (
           <div className="loading-text">
             <Activity size={28} className="animate-spin text-indigo-600 inline-block mb-2" /><br />
@@ -659,6 +659,36 @@ function PatientList() {
           </div>
         ) : (
           <>
+            {/* TOP PAGINATION BAR (Desktop & Mobile) */}
+            {filteredPatients.length > 0 && (
+              <div className="pacs-pagination-bar pacs-pagination-top">
+                <div className="pacs-pag-info">
+                  Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                  <strong>{Math.min(currentPage * rowsPerPage, filteredPatients.length)}</strong> of{" "}
+                  <strong>{filteredPatients.length}</strong> patients
+                </div>
+                <div className="pacs-pag-controls">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="pacs-pag-btn"
+                  >
+                    ◀ Previous
+                  </button>
+                  <span className="pacs-pag-page">
+                    Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredPatients.length / rowsPerPage) || 1}</strong>
+                  </span>
+                  <button
+                    disabled={currentPage >= Math.ceil(filteredPatients.length / rowsPerPage)}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    className="pacs-pag-btn"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="table-wrapper">
               <table className="patient-table">
                 <thead>
@@ -856,33 +886,35 @@ function PatientList() {
               )}
             </div>
 
-            {/* PAGINATION BAR FOR PATIENT DIRECTORY */}
-            <div className="pacs-pagination-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#fff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 12px 12px' }}>
-              <div style={{ fontSize: 13, color: '#64748b' }}>
-                Showing <strong>{filteredPatients.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
-                <strong>{Math.min(currentPage * rowsPerPage, filteredPatients.length)}</strong> of{" "}
-                <strong>{filteredPatients.length}</strong> patients
+            {/* BOTTOM PAGINATION BAR (Desktop & Mobile) */}
+            {filteredPatients.length > 0 && (
+              <div className="pacs-pagination-bar pacs-pagination-bottom">
+                <div className="pacs-pag-info">
+                  Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                  <strong>{Math.min(currentPage * rowsPerPage, filteredPatients.length)}</strong> of{" "}
+                  <strong>{filteredPatients.length}</strong> patients
+                </div>
+                <div className="pacs-pag-controls">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="pacs-pag-btn"
+                  >
+                    ◀ Previous
+                  </button>
+                  <span className="pacs-pag-page">
+                    Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredPatients.length / rowsPerPage) || 1}</strong>
+                  </span>
+                  <button
+                    disabled={currentPage >= Math.ceil(filteredPatients.length / rowsPerPage)}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    className="pacs-pag-btn"
+                  >
+                    Next ▶
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: currentPage === 1 ? '#f1f5f9' : '#fff', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}
-                >
-                  ◀ Previous
-                </button>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', padding: '0 4px' }}>
-                  Page {currentPage} of {Math.ceil(filteredPatients.length / rowsPerPage) || 1}
-                </span>
-                <button
-                  disabled={currentPage >= Math.ceil(filteredPatients.length / rowsPerPage)}
-                  onClick={() => setCurrentPage((p) => p + 1)}
-                  style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: currentPage >= Math.ceil(filteredPatients.length / rowsPerPage) ? '#f1f5f9' : '#fff', cursor: currentPage >= Math.ceil(filteredPatients.length / rowsPerPage) ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}
-                >
-                  Next ▶
-                </button>
-              </div>
-            </div>
+            )}
           </>
         )}
       </div>

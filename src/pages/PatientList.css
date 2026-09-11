@@ -658,3 +658,98 @@
     border: 1px solid #cbd5e1;
   }
 }
+
+/* PAGINATION BAR STYLING FOR PATIENT DIRECTORY */
+.pacs-pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.pacs-pagination-top {
+  border-radius: 12px 12px 0 0;
+  border-bottom: 1px solid #e2e8f0;
+  margin-top: 8px;
+  margin-bottom: 6px;
+}
+
+.pacs-pagination-bottom {
+  border-radius: 0 0 12px 12px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+.pacs-pag-info strong {
+  color: #0f172a;
+}
+
+.pacs-pag-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pacs-pag-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pacs-pag-btn:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.pacs-pag-btn:not(:disabled):hover {
+  background: #e0e7ff;
+  color: #4338ca;
+  border-color: #c7d2fe;
+}
+
+.pacs-pag-page {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  padding: 0 4px;
+}
+
+@media (max-width: 768px) {
+  .pacs-pagination-bar {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    text-align: center;
+    border-radius: 12px;
+  }
+
+  .pacs-pagination-top {
+    margin-top: 8px;
+    margin-bottom: 8px;
+  }
+
+  .pacs-pagination-bottom {
+    margin-top: 8px;
+    margin-bottom: 12px;
+  }
+
+  .pacs-pag-controls {
+    width: 100%;
+    justify-content: center;
+  }
+}
+

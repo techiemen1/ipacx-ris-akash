@@ -564,6 +564,25 @@
   color: #64748b;
 }
 
+.pacs-pagination-top {
+  border-top: none;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+@media (max-width: 768px) {
+  .pacs-pagination {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .pacs-pag-controls {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .pacs-pag-info strong {
   color: #0f172a;
 }

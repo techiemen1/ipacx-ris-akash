@@ -656,6 +656,37 @@ export default function PACSpage() {
             </div>
           ) : (
             <>
+              {/* TOP PAGINATION BAR (Desktop & Mobile) */}
+              {filteredStudies.length > 0 && (
+                <div className="pacs-pagination pacs-pagination-top">
+                  <span className="pacs-pag-info">
+                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                    <strong>{Math.min(currentPage * rowsPerPage, filteredStudies.length)}</strong> of{" "}
+                    <strong>{filteredStudies.length}</strong> studies
+                  </span>
+
+                  <div className="pacs-pag-controls">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="pacs-pag-btn"
+                    >
+                      Prev
+                    </button>
+                    <span className="pacs-pag-page">
+                      Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredStudies.length / rowsPerPage) || 1}</strong>
+                    </span>
+                    <button
+                      disabled={currentPage >= Math.ceil(filteredStudies.length / rowsPerPage)}
+                      onClick={() => setCurrentPage((p) => p + 1)}
+                      className="pacs-pag-btn"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="table-responsive">
                 <table className="pacs-table">
                   <thead>

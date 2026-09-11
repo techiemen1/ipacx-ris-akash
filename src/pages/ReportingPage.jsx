@@ -457,6 +457,37 @@ export default function ReportingPage() {
             </div>
           ) : (
             <>
+              {/* TOP PAGINATION BAR (Desktop & Mobile) */}
+              {filteredWorklist.length > 0 && (
+                <div className="rp-pagination rp-pagination-top">
+                  <span className="rp-pag-info">
+                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                    <strong>{Math.min(currentPage * rowsPerPage, filteredWorklist.length)}</strong> of{" "}
+                    <strong>{filteredWorklist.length}</strong> studies
+                  </span>
+
+                  <div className="rp-pag-controls">
+                    <button
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="rp-pag-btn"
+                    >
+                      Prev
+                    </button>
+                    <span className="rp-pag-page">
+                      Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredWorklist.length / rowsPerPage) || 1}</strong>
+                    </span>
+                    <button
+                      disabled={currentPage >= Math.ceil(filteredWorklist.length / rowsPerPage)}
+                      onClick={() => setCurrentPage((p) => p + 1)}
+                      className="rp-pag-btn"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="table-responsive">
                 <table className="rp-table">
                   <thead>

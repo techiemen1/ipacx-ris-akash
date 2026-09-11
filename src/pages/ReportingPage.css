@@ -495,6 +495,25 @@
   color: #64748b;
 }
 
+.rp-pagination-top {
+  border-top: none;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+@media (max-width: 768px) {
+  .rp-pagination {
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .rp-pag-controls {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 .rp-pag-info strong {
   color: #0f172a;
 }
