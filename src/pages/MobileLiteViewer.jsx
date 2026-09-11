@@ -4,13 +4,9 @@ import api from "../api/axios";
 import { 
   ChevronLeft, 
   ChevronRight, 
-  ZoomIn, 
-  ZoomOut, 
   RotateCw, 
   Sun, 
   Moon,
-  Maximize,
-  Sliders,
   Layers,
   FileText,
   RefreshCw,
@@ -18,7 +14,12 @@ import {
   Play,
   Pause,
   Tag,
-  Camera
+  Camera,
+  SlidersHorizontal,
+  Eye,
+  EyeOff,
+  RotateCcw,
+  Sparkles
 } from "lucide-react";
 import "./MobileLiteViewer.css";
 
@@ -34,6 +35,8 @@ const MobileLiteViewer = () => {
   
   const [showSeriesDrawer, setShowSeriesDrawer] = useState(false);
   const [showTagsModal, setShowTagsModal] = useState(false);
+  const [showPresetsMenu, setShowPresetsMenu] = useState(false);
+  const [showOverlayInfo, setShowOverlayInfo] = useState(true);
   const [tagsData, setTagsData] = useState(null);
   const [loadingTags, setLoadingTags] = useState(false);
   
@@ -46,8 +49,8 @@ const MobileLiteViewer = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // TOUCH GESTURE ENGINE STATE (SCROLL | WL | PAN)
-  const [touchMode, setTouchMode] = useState("SCROLL");
+  // TOUCH GESTURE ENGINE STATE ("SCROLL" | "WL" | "PAN")
+  const [touchMode, setTouchMode] = useState("PAN");
   const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
   const [tagSearchText, setTagSearchText] = useState("");
 
@@ -73,6 +76,13 @@ const MobileLiteViewer = () => {
           studyDescription: res.data.studyDescription
         });
         setSeriesList(res.data.series);
+        // Default touch mode: CR/DX -> PAN/ZOOM, CT/MR -> SCROLL
+        const mod = String(res.data.modality || "").toUpperCase();
+        if (mod === "CT" || mod === "MR") {
+          setTouchMode("SCROLL");
+        } else {
+          setTouchMode("PAN");
+        }
         setLoading(false);
         return;
       }
@@ -259,147 +269,160 @@ const MobileLiteViewer = () => {
     );
   }
 
+  const modalityKey = String(studyMeta?.modality || "CR").toUpperCase();
+
   return (
     <div className={`lite-viewer-container ${isDarkMode ? "dark" : "light"}`}>
-      {/* Sleek Glassmorphism Header */}
+      {/* 🌟 ULTRA-SLEEK GLASSMOPHISM HEADER */}
       <header className="lite-viewer-header">
-        <button className="icon-btn" onClick={() => navigate(-1)} title="Back">
-          <ChevronLeft size={22} />
+        <button className="icon-btn-glass" onClick={() => navigate(-1)} title="Back to Worklist">
+          <ChevronLeft size={20} />
         </button>
 
         <div className="patient-banner" onClick={() => setShowSeriesDrawer(true)}>
-          <span className="patient-title">
-            {studyMeta?.patientName || "DICOM Mobile Viewer"}
-          </span>
+          <div className="patient-title-row">
+            <span className="patient-title">{studyMeta?.patientName || "DICOM Mobile Viewer"}</span>
+            <span className={`modality-pill mod-${modalityKey.toLowerCase()}`}>{modalityKey}</span>
+          </div>
           <span className="patient-sub">
-            <span className="badge-modality">{studyMeta?.modality || "CR"}</span> • {studyMeta?.patientId ? `ID: ${studyMeta.patientId}` : "Mobile Lite"} • Slice {currentIndex + 1}/{currentInstances.length}
+            ID: {studyMeta?.patientId || "PACS-Direct"} • Slice {currentIndex + 1}/{currentInstances.length || 1}
           </span>
         </div>
 
         <div className="header-actions">
-          <button className={`icon-btn ${showTagsModal ? "active-glow" : ""}`} onClick={() => setShowTagsModal(true)} title="DICOM Tags">
-            <Tag size={20} />
+          <button 
+            className={`icon-btn-glass ${showPresetsMenu ? "active-glow" : ""}`} 
+            onClick={() => setShowPresetsMenu(!showPresetsMenu)} 
+            title="W/L Presets"
+          >
+            <SlidersHorizontal size={18} />
           </button>
-          <button className="icon-btn text-indigo-400" onClick={() => setShowSeriesDrawer(true)} title="Series Drawer">
-            <Layers size={20} />
+          
+          {seriesList.length > 1 && (
+            <button 
+              className={`icon-btn-glass ${showSeriesDrawer ? "active-glow" : ""}`} 
+              onClick={() => setShowSeriesDrawer(true)} 
+              title="Series Drawer"
+            >
+              <Layers size={18} />
+            </button>
+          )}
+
+          <button 
+            className={`icon-btn-glass ${showTagsModal ? "active-glow" : ""}`} 
+            onClick={() => setShowTagsModal(true)} 
+            title="DICOM Tags Inspector"
+          >
+            <Tag size={18} />
           </button>
-          <button className="icon-btn text-emerald-400" onClick={() => navigate(`/report-editor?study=${studyUID}`)} title="Open Report Studio">
-            <FileText size={20} />
+
+          <button 
+            className="icon-btn-glass action-report" 
+            onClick={() => navigate(`/report-editor?study=${studyUID}`)} 
+            title="Open Radiology Report Editor"
+          >
+            <FileText size={18} />
           </button>
-          <button className="icon-btn" onClick={() => setIsDarkMode(!isDarkMode)}>
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+
+          <button className="icon-btn-glass" onClick={() => setIsDarkMode(!isDarkMode)}>
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
         </div>
       </header>
 
-      {/* Touch Mode Selection Strip */}
-      <div className="touch-mode-bar">
-        <button
-          className={`touch-mode-btn ${touchMode === "SCROLL" ? "active" : ""}`}
-          onClick={() => setTouchMode("SCROLL")}
-          title="1-Finger Drag Up/Down to Scroll Slices"
-        >
-          📜 Slice Scroll
-        </button>
-        <button
-          className={`touch-mode-btn ${touchMode === "WL" ? "active" : ""}`}
-          onClick={() => setTouchMode("WL")}
-          title="1-Finger Drag Up/Down for Brightness, Left/Right for Contrast"
-        >
-          🌗 Touch W/L
-        </button>
-        <button
-          className={`touch-mode-btn ${touchMode === "PAN" ? "active" : ""}`}
-          onClick={() => setTouchMode("PAN")}
-          title="1-Finger Drag to Pan, 2-Finger Pinch to Zoom"
-        >
-          🔍 Pinch & Pan
-        </button>
-      </div>
+      {/* 🪟 FLOATING HIGH-TECH PRESETS SHEET MENU */}
+      {showPresetsMenu && (
+        <div className="presets-floating-sheet" onClick={() => setShowPresetsMenu(false)}>
+          <div className="presets-sheet-content" onClick={(e) => e.stopPropagation()}>
+            <div className="presets-sheet-header">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal size={16} className="text-cyan-400" />
+                <span className="text-white font-bold text-xs uppercase tracking-wide">
+                  Window / Level Presets ({modalityKey})
+                </span>
+              </div>
+              <button className="close-mini-btn" onClick={() => setShowPresetsMenu(false)}>
+                <X size={16} />
+              </button>
+            </div>
 
-      {/* Modality-Aware W/L Quick Preset Bar */}
-      <div className="wl-preset-bar scroll-x">
-        <span className="wl-preset-label">Presets ({studyMeta?.modality || "CR"}):</span>
-        {studyMeta?.modality === "CT" ? (
-          <>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); }} title="CT Soft Tissue Window (W:400 L:50)">
-              🟢 Soft Tissue
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); }} title="CT Bone Window (W:2000 L:500)">
-              🦴 Bone
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); }} title="CT Lung Window (W:1500 L:-600)">
-              🫁 Lung
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); }} title="CT Brain Window (W:80 L:40)">
-              🧠 Brain
-            </button>
-          </>
-        ) : studyMeta?.modality === "MR" ? (
-          <>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.2); }} title="MR Soft Tissue Contrast">
-              🧠 T1/T2 Brain
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(0.9); setContrast(1.65); }} title="MR Musculoskeletal Detail">
-              🦴 Spine / Joint
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(1.15); setContrast(1.7); }} title="MR Contrast Enhancement">
-              🩸 Contrast Enhanced
-            </button>
-          </>
-        ) : studyMeta?.modality === "US" ? (
-          <>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(0.9); setContrast(1.5); }} title="Ultrasound High Contrast">
-              🌊 High Contrast
-            </button>
-          </>
-        ) : (
-          <>
-            {/* X-Ray / CR / DX Radiography Presets */}
-            <button className="wl-preset-btn" onClick={() => { setBrightness(1.05); setContrast(1.25); }} title="Chest X-Ray Soft Tissue">
-              🫁 Chest Radiograph
-            </button>
-            <button className="wl-preset-btn" onClick={() => { setBrightness(0.85); setContrast(1.85); }} title="Bone Radiograph Detail">
-              🦴 Bone Radiograph
-            </button>
-            <button className={`wl-preset-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Monochrome Radiograph">
-              🔄 {isInverted ? "Inverted (White)" : "Invert (Black)"}
-            </button>
-          </>
-        )}
+            <div className="presets-grid">
+              {modalityKey === "CT" ? (
+                <>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🟢</span>
+                    <div className="p-text"><span className="p-name">Soft Tissue</span><span className="p-val">W:400 L:50</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🦴</span>
+                    <div className="p-text"><span className="p-name">Bone Window</span><span className="p-val">W:2000 L:500</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🫁</span>
+                    <div className="p-text"><span className="p-name">Lung Window</span><span className="p-val">W:1500 L:-600</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🧠</span>
+                    <div className="p-text"><span className="p-name">Brain Window</span><span className="p-val">W:80 L:40</span></div>
+                  </button>
+                </>
+              ) : modalityKey === "MR" ? (
+                <>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.2); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🧠</span>
+                    <div className="p-text"><span className="p-name">T1/T2 Brain</span><span className="p-val">Neuro Detail</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.65); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🦴</span>
+                    <div className="p-text"><span className="p-name">Spine / Joint</span><span className="p-val">MSK High Contrast</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.15); setContrast(1.7); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🩸</span>
+                    <div className="p-text"><span className="p-name">Contrast Enhanced</span><span className="p-val">Vascular Detail</span></div>
+                  </button>
+                </>
+              ) : modalityKey === "US" ? (
+                <>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.5); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🌊</span>
+                    <div className="p-text"><span className="p-name">High Contrast</span><span className="p-val">Ultrasound Gray</span></div>
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* CR / DX Radiography Presets */}
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.05); setContrast(1.25); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🫁</span>
+                    <div className="p-text"><span className="p-name">Chest Radiograph</span><span className="p-val">Soft Tissue PA</span></div>
+                  </button>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.85); setContrast(1.85); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">🦴</span>
+                    <div className="p-text"><span className="p-name">Bone Radiograph</span><span className="p-val">Fracture Detail</span></div>
+                  </button>
+                  <button className={`preset-card-btn ${isInverted ? "active" : ""}`} onClick={() => { setIsInverted(!isInverted); setShowPresetsMenu(false); }}>
+                    <span className="p-icon">☯️</span>
+                    <div className="p-text"><span className="p-name">Invert Monochrom</span><span className="p-val">{isInverted ? "White Background" : "Black Background"}</span></div>
+                  </button>
+                </>
+              )}
 
-        <button className="wl-preset-btn reset" onClick={() => { setBrightness(1.0); setContrast(1.0); setZoom(1); setPanPosition({ x: 0, y: 0 }); setIsInverted(false); }} title="Reset All Transformations">
-          ⚡ Reset
-        </button>
-      </div>
-
-      {/* Quick Series Selector Strip (For CT/MR Multi-Series) */}
-      {seriesList.length > 1 && (
-        <div className="quick-series-bar scroll-x">
-          <span className="qs-label">Series:</span>
-          {seriesList.map((s, sIdx) => (
-            <button
-              key={s.seriesId || sIdx}
-              className={`qs-chip ${sIdx === activeSeriesIndex ? "active" : ""}`}
-              onClick={() => {
-                setActiveSeriesIndex(sIdx);
-                setCurrentIndex(0);
-              }}
-            >
-              {s.seriesDescription || `Series ${sIdx + 1}`} ({s.totalSlices || s.instances?.length || 0})
-            </button>
-          ))}
+              <button className="preset-card-btn reset" onClick={() => { resetTools(); setShowPresetsMenu(false); }}>
+                <span className="p-icon">⚡</span>
+                <div className="p-text"><span className="p-name">Reset All</span><span className="p-val">100% Zoom / 1:1 W/L</span></div>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* DICOM Tags Inspector Modal */}
+      {/* 🏷️ DICOM TAGS INSPECTOR MODAL */}
       {showTagsModal && (
         <div className="tags-modal-backdrop" onClick={() => setShowTagsModal(false)}>
           <div className="tags-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="tags-modal-header">
               <div className="flex items-center gap-2">
                 <Tag className="text-cyan-400" size={18} />
-                <span className="font-bold text-white text-base">DICOM Tags Inspector</span>
+                <span className="font-bold text-white text-base">DICOM Tags Header</span>
               </div>
               <button className="close-btn" onClick={() => setShowTagsModal(false)}>
                 <X size={18} />
@@ -409,7 +432,7 @@ const MobileLiteViewer = () => {
             <div className="tags-modal-search">
               <input
                 type="text"
-                placeholder="Search DICOM Tag attribute or code..."
+                placeholder="Search DICOM attribute or tag..."
                 value={tagSearchText}
                 onChange={(e) => setTagSearchText(e.target.value)}
                 className="tags-search-input"
@@ -439,7 +462,7 @@ const MobileLiteViewer = () => {
                 </div>
               ) : (
                 <div className="text-center p-6 text-slate-400 text-sm">
-                  No DICOM header tags could be extracted for instance {currentInstance?.id || "N/A"}.
+                  No DICOM header tags available for this instance.
                 </div>
               )}
             </div>
@@ -447,7 +470,7 @@ const MobileLiteViewer = () => {
         </div>
       )}
 
-      {/* Series Selection Drawer (Mobile Drawer) */}
+      {/* 📚 SERIES SELECTION DRAWER */}
       <div className={`lite-instance-list ${showSeriesDrawer ? "open" : ""}`}>
         <div className="list-header">
           <span className="font-bold text-white flex items-center gap-2">
@@ -469,14 +492,14 @@ const MobileLiteViewer = () => {
             >
               <div style={{ fontWeight: "700", color: "#f8fafc" }}>{s.seriesDescription || `Series ${sIdx + 1}`}</div>
               <div style={{ fontSize: 12, color: "#94a3b8" }}>
-                Series #{s.seriesNumber || (sIdx + 1)} • {s.totalSlices || s.instances?.length || 0} DICOM Slices
+                Series #{s.seriesNumber || (sIdx + 1)} • {s.totalSlices || s.instances?.length || 0} Slices
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Main Viewport & Touch Canvas */}
+      {/* 🖥️ MAIN FULL-HEIGHT DICOM VIEWPORT & TOUCH CANVAS */}
       <main 
         className="lite-viewer-main"
         onTouchStart={handleTouchStart}
@@ -486,7 +509,7 @@ const MobileLiteViewer = () => {
         {loading ? (
           <div className="loader">
             <RefreshCw className="animate-spin text-indigo-500" size={32} />
-            <span style={{ marginTop: 8, fontSize: 13, fontWeight: 700 }}>Streaming DICOM Slices...</span>
+            <span style={{ marginTop: 8, fontSize: 13, fontWeight: 700 }}>Streaming DICOM Canvas...</span>
           </div>
         ) : (
           <div className="viewport-wrapper" onWheel={(e) => setZoom(z => Math.max(0.5, Math.min(5, z + (e.deltaY < 0 ? 0.1 : -0.1))))}>
@@ -502,48 +525,60 @@ const MobileLiteViewer = () => {
                 }}
               />
             ) : (
-              <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this slice.</div>
+              <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this instance.</div>
             )}
 
-            {/* Live Gesture Feedback Overlay Pill */}
+            {/* 💬 Live Touch Mode Gesture Feedback Pill */}
             <div className="gesture-feedback-pill">
-              {touchMode === "SCROLL" && <span>📜 Drag ↕ to Scroll Slices • Slice {currentIndex + 1}/{currentInstances.length}</span>}
+              {touchMode === "SCROLL" && <span>📜 Drag ↕ to Scroll • Slice {currentIndex + 1}/{currentInstances.length}</span>}
               {touchMode === "WL" && <span>🌗 Touch W/L • B: {(brightness * 100).toFixed(0)}% | C: {(contrast * 100).toFixed(0)}%</span>}
               {touchMode === "PAN" && <span>🔍 Pinch & Pan • Zoom: {(zoom * 100).toFixed(0)}%</span>}
             </div>
 
-            {/* Diagnostic On-Screen DICOM Header Overlay (4 Corners) */}
-            <div className="overlay-info top-left">
-              <div className="overlay-line font-bold text-cyan-300">{studyMeta?.patientName || "Patient"}</div>
-              <div className="overlay-line text-slate-300">ID: {studyMeta?.patientId || "N/A"}</div>
-              <div className="overlay-line text-slate-400">{studyMeta?.studyDescription || activeSeries?.seriesDescription || "DICOM Study"}</div>
-            </div>
+            {/* 🎯 Toggleable Corner DICOM Overlay Info */}
+            {showOverlayInfo && (
+              <>
+                <div className="overlay-info top-left">
+                  <div className="overlay-line font-bold text-cyan-300">{studyMeta?.patientName || "Patient"}</div>
+                  <div className="overlay-line text-slate-300">ID: {studyMeta?.patientId || "PACS Direct"}</div>
+                  <div className="overlay-line text-slate-400">{studyMeta?.studyDescription || activeSeries?.seriesDescription || "DICOM Study"}</div>
+                </div>
 
-            <div className="overlay-info top-right">
-              <div className="overlay-line text-amber-300 font-semibold">[{studyMeta?.modality || "CR"}] {studyMeta?.studyDate || ""}</div>
-              <div className="overlay-line text-slate-300">Acc: {studyMeta?.accession || "N/A"}</div>
-              <div className="overlay-line text-cyan-400 font-mono">Slice: {currentIndex + 1} / {currentInstances.length}</div>
-            </div>
+                <div className="overlay-info top-right">
+                  <div className="overlay-line text-amber-300 font-semibold">[{modalityKey}] {studyMeta?.studyDate || ""}</div>
+                  <div className="overlay-line text-slate-300">Acc: {studyMeta?.accession || "N/A"}</div>
+                  <div className="overlay-line text-cyan-400 font-mono">Slice: {currentIndex + 1} / {currentInstances.length}</div>
+                </div>
 
-            <div className="overlay-info bottom-left">
-              <div className="overlay-line text-indigo-300">Zoom: {(zoom * 100).toFixed(0)}%</div>
-              <div className="overlay-line text-slate-300">Pan: {panPosition.x.toFixed(0)}, {panPosition.y.toFixed(0)}</div>
-              <div className="overlay-line text-slate-400">Mode: {touchMode}</div>
-            </div>
+                <div className="overlay-info bottom-left">
+                  <div className="overlay-line text-indigo-300">Zoom: {(zoom * 100).toFixed(0)}%</div>
+                  <div className="overlay-line text-slate-300">Pan: {panPosition.x.toFixed(0)}, {panPosition.y.toFixed(0)}</div>
+                </div>
 
-            <div className="overlay-info bottom-right">
-              <div className="overlay-line text-emerald-300 font-mono">W: {(contrast * 400).toFixed(0)} L: {(brightness * 40).toFixed(0)}</div>
-              <div className="overlay-line text-slate-300">Rot: {rotation}°</div>
-            </div>
+                <div className="overlay-info bottom-right">
+                  <div className="overlay-line text-emerald-300 font-mono">W: {(contrast * 400).toFixed(0)} L: {(brightness * 40).toFixed(0)}</div>
+                  <div className="overlay-line text-slate-300">Rot: {rotation}°</div>
+                </div>
+              </>
+            )}
+
+            {/* Toggle Overlay Eye Button */}
+            <button 
+              className="toggle-overlay-btn"
+              onClick={() => setShowOverlayInfo(!showOverlayInfo)}
+              title="Toggle DICOM Overlays"
+            >
+              {showOverlayInfo ? <Eye size={16} /> : <EyeOff size={16} />}
+            </button>
           </div>
         )}
       </main>
 
-      {/* Fast Slice Scrubber Slider Bar */}
+      {/* 🎞️ INTEGRATED SLICE SCRUBBER (Only rendered when > 1 slice) */}
       {currentInstances.length > 1 && (
-        <div className="scrubber-bar">
+        <div className="scrubber-floating-bar">
           <button className="cine-btn" onClick={() => setIsPlaying(!isPlaying)} title={isPlaying ? "Pause Cine" : "Play Cine"}>
-            {isPlaying ? <Pause size={18} className="text-amber-400" /> : <Play size={18} className="text-emerald-400" />}
+            {isPlaying ? <Pause size={16} className="text-amber-400" /> : <Play size={16} className="text-emerald-400" />}
           </button>
           <input 
             type="range"
@@ -557,51 +592,53 @@ const MobileLiteViewer = () => {
         </div>
       )}
 
-      {/* Footer Quick Diagnostic Toolbar */}
-      <footer className="lite-viewer-footer">
-        <div className="tool-row scroll-x">
-          <button className="tool-btn" onClick={prevImage} disabled={currentIndex === 0} title="Previous Slice">
-            <ChevronLeft size={20} />
+      {/* 🛸 STREAMLINED FLOATING GLASS TOUCH DOCK */}
+      <footer className="lite-viewer-floating-dock">
+        {/* Segmented Mode Selector */}
+        <div className="segmented-touch-modes">
+          {currentInstances.length > 1 && (
+            <button
+              className={`mode-seg-btn ${touchMode === "SCROLL" ? "active" : ""}`}
+              onClick={() => setTouchMode("SCROLL")}
+              title="Scroll Slices"
+            >
+              📜 Scroll
+            </button>
+          )}
+          <button
+            className={`mode-seg-btn ${touchMode === "WL" ? "active" : ""}`}
+            onClick={() => setTouchMode("WL")}
+            title="Touch Window / Level"
+          >
+            🌗 W / L
           </button>
-          
-          <div className="divider" />
-          
-          <button className="tool-btn" onClick={() => setZoom(z => Math.min(6, z + 0.25))} title="Zoom In">
-            <ZoomIn size={20} />
+          <button
+            className={`mode-seg-btn ${touchMode === "PAN" ? "active" : ""}`}
+            onClick={() => setTouchMode("PAN")}
+            title="Pinch Zoom & Pan"
+          >
+            🔍 Pan/Zoom
           </button>
-          <button className="tool-btn" onClick={() => setZoom(z => Math.max(0.5, z - 0.25))} title="Zoom Out">
-            <ZoomOut size={20} />
-          </button>
-          <button className="tool-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
-            <RotateCw size={20} />
-          </button>
-          
-          <div className="divider" />
-          
-          <button className="tool-btn" onClick={() => setBrightness(b => b >= 2.0 ? 0.6 : b + 0.2)} title="Brightness W/L">
-            <Sun size={20} />
-          </button>
-          <button className="tool-btn" onClick={() => setContrast(c => c >= 2.0 ? 0.6 : c + 0.2)} title="Contrast W/W">
-            <Maximize size={20} />
-          </button>
-          <button className={`tool-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Monochrome">
-            <Sliders size={20} />
-          </button>
-          
-          <div className="divider" />
+        </div>
 
-          <button className="tool-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image Snapshot">
-            <Camera size={20} />
-          </button>
-          
-          <button className="tool-btn reset" onClick={resetTools} title="Reset All Transformations">
-            RESET
-          </button>
-          
-          <div className="divider" />
+        <div className="dock-divider" />
 
-          <button className="tool-btn" onClick={nextImage} disabled={currentIndex === currentInstances.length - 1} title="Next Slice">
-            <ChevronRight size={20} />
+        {/* Essential Action Buttons */}
+        <div className="dock-actions">
+          <button className="dock-icon-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
+            <RotateCw size={18} />
+          </button>
+          
+          <button className={`dock-icon-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Colors">
+            ☯️
+          </button>
+
+          <button className="dock-icon-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image">
+            <Camera size={18} />
+          </button>
+
+          <button className="dock-icon-btn reset" onClick={resetTools} title="Reset Canvas">
+            <RotateCcw size={18} />
           </button>
         </div>
       </footer>
