@@ -581,201 +581,203 @@ function PatientList() {
             Synchronizing Patient Directory & PACS Database...
           </div>
         ) : (
-          <div className="table-wrapper">
-            <table className="patient-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 40 }}>#</th>
-                  <th>MRN / Patient ID</th>
-                  <th>Patient Name</th>
-                  <th>Gender</th>
-                  <th>DOB / Age</th>
-                  <th>Registration / Study Date</th>
-                  <th>Referring Doctor</th>
-                  <th>Visit Type</th>
-                  <th>Modality</th>
-                  <th>Study Description</th>
-                  <th>Status</th>
-                  <th style={{ textAlign: "center" }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPatients.length === 0 ? (
+          <>
+            <div className="table-wrapper">
+              <table className="patient-table">
+                <thead>
                   <tr>
-                    <td colSpan={12} className="no-data">
-                      No matching patient records found for the selected date range and filter criteria.
-                    </td>
+                    <th style={{ width: 40 }}>#</th>
+                    <th>MRN / Patient ID</th>
+                    <th>Patient Name</th>
+                    <th>Gender</th>
+                    <th>DOB / Age</th>
+                    <th>Registration / Study Date</th>
+                    <th>Referring Doctor</th>
+                    <th>Visit Type</th>
+                    <th>Modality</th>
+                    <th>Study Description</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: "center" }}>Actions</th>
                   </tr>
-                ) : (
-                  filteredPatients.map((p, idx) => (
-                    <tr key={p.uhid || p.patient_id || idx}>
-                      <td>{idx + 1}</td>
-                      <td>
-                        <span className="pl-mrn-badge">{p.uhid || p.patient_id}</span>
-                      </td>
-                      <td>
-                        <div className="pl-patient-cell">
-                          <div className="pl-avatar">
-                            {getInitials(
-                              `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.patient_name
-                            )}
-                          </div>
-                          <span className="pl-patient-name">
-                            {`${p.first_name || ""} ${p.last_name || ""}`.trim() ||
-                              p.full_name ||
-                              p.patient_name ||
-                              p.name ||
-                              "-"}
-                          </span>
-                        </div>
-                      </td>
-                      <td>{p.gender || "O"}</td>
-                      <td>
-                        {(() => {
-                          if (p?.age) return p.age;
-                          if (!p?.dob) return "-";
-                          const d = new Date(p.dob);
-                          return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
-                        })()}
-                      </td>
-
-                      <td style={{ fontWeight: 600, color: "#0f172a" }}>
-                        {formatDisplayDateTime(p.created_at || p.study_date, p.study_time)}
-                      </td>
-
-                      <td>{p.referring_doctor || "-"}</td>
-                      <td>{p.visit_type || "-"}</td>
-                      <td>
-                        <span className={`pl-mod-badge mod-${(p.modality || "cr").toLowerCase()}`}>
-                          {p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "-")}
-                        </span>
-                      </td>
-                      <td>{p.study_type || p.indication_for_scan || "-"}</td>
-                      <td>
-                        <div className="status-grid">
-                          <span className={`status-badge ${p.billing_status === 'PAID' ? 'billing-paid' : p.billing_status ? 'billing-pending' : 'status-na'}`} title="Billing Status">
-                            {p.billing_status || "No Bill"}
-                          </span>
-                          <span className={`status-badge ${p.report_status === 'Final' ? 'report-final' : p.report_status === 'Draft' ? 'report-draft' : 'status-na'}`} title="Report Status">
-                            {p.report_status || "No Report"}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        {(() => {
-                          const scheduleKey = getPatientScheduleKey(p);
-                          const isScheduled = scheduleKey && scheduledPatientIds.includes(scheduleKey);
-                          return (
-                            <div className="action-wrap">
-                              <button
-                                className={`schedule-btn ${isScheduled ? "scheduled" : "not-scheduled"}`}
-                                onClick={() => handleSchedule(p)}
-                                title={isScheduled ? "Scheduled" : "Schedule"}
-                                aria-label={isScheduled ? "Scheduled" : "Schedule"}
-                              ><CalendarDays size={14} /></button>
-                              <button
-                                className="schedule-btn edit-action"
-                                onClick={() => handleEdit(p)}
-                                title="Edit Record"
-                                aria-label="Edit Record"
-                              ><SquarePen size={14} /></button>
-                              <button
-                                className="schedule-btn print-action"
-                                onClick={() => handlePrint(p)}
-                                title="Print Patient Slip PDF"
-                                aria-label="Print Patient Slip PDF"
-                              ><Printer size={14} /></button>
-                              <button
-                                className="schedule-btn inv-action"
-                                onClick={() => handlePrintInvoice(p)}
-                                title="Print Billing Receipt PDF"
-                                aria-label="Print Billing Receipt PDF"
-                              ><Receipt size={14} /></button>
-                              <button
-                                className="schedule-btn delete-action"
-                                onClick={() => handleDelete(p)}
-                                title="Delete Record"
-                                aria-label="Delete Record"
-                              ><Trash2 size={14} /></button>
-                            </div>
-                          );
-                        })()}
+                </thead>
+                <tbody>
+                  {filteredPatients.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="no-data">
+                        No matching patient records found for the selected date range and filter criteria.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    filteredPatients.map((p, idx) => (
+                      <tr key={p.uhid || p.patient_id || idx}>
+                        <td>{idx + 1}</td>
+                        <td>
+                          <span className="pl-mrn-badge">{p.uhid || p.patient_id}</span>
+                        </td>
+                        <td>
+                          <div className="pl-patient-cell">
+                            <div className="pl-avatar">
+                              {getInitials(
+                                `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.patient_name
+                              )}
+                            </div>
+                            <span className="pl-patient-name">
+                              {`${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+                                p.full_name ||
+                                p.patient_name ||
+                                p.name ||
+                                "-"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{p.gender || "O"}</td>
+                        <td>
+                          {(() => {
+                            if (p?.age) return p.age;
+                            if (!p?.dob) return "-";
+                            const d = new Date(p.dob);
+                            return isNaN(d.getTime()) ? "-" : d.toLocaleDateString();
+                          })()}
+                        </td>
 
-          {/* DEDICATED MOBILE PATIENT CARDS VIEW */}
-          <div className="pl-mobile-card-list">
-            {filteredPatients.length === 0 ? (
-              <div className="no-data">
-                No matching patient records found for the selected filter criteria.
-              </div>
-            ) : (
-              filteredPatients.map((p, idx) => {
-                const pName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
-                const pId = p.uhid || p.patient_id || p.mrn || p.id || "-";
-                const mod = p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "CR");
-                const uid = p.study_uid || p.StudyInstanceUID;
+                        <td style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {formatDisplayDateTime(p.created_at || p.study_date, p.study_time)}
+                        </td>
 
-                return (
-                  <div key={pId || idx} className="pl-mobile-card">
-                    <div className="plmc-header">
-                      <div className="plmc-user">
-                        <div className="pl-avatar">{getInitials(pName)}</div>
-                        <div>
-                          <span className="plmc-name">{pName}</span>
-                          <span className="plmc-sub">ID: {pId} • {p.gender || "O"} ({p.age || "N/A"})</span>
+                        <td>{p.referring_doctor || "-"}</td>
+                        <td>{p.visit_type || "-"}</td>
+                        <td>
+                          <span className={`pl-mod-badge mod-${(p.modality || "cr").toLowerCase()}`}>
+                            {p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "-")}
+                          </span>
+                        </td>
+                        <td>{p.study_type || p.indication_for_scan || "-"}</td>
+                        <td>
+                          <div className="status-grid">
+                            <span className={`status-badge ${p.billing_status === 'PAID' ? 'billing-paid' : p.billing_status ? 'billing-pending' : 'status-na'}`} title="Billing Status">
+                              {p.billing_status || "No Bill"}
+                            </span>
+                            <span className={`status-badge ${p.report_status === 'Final' ? 'report-final' : p.report_status === 'Draft' ? 'report-draft' : 'status-na'}`} title="Report Status">
+                              {p.report_status || "No Report"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          {(() => {
+                            const scheduleKey = getPatientScheduleKey(p);
+                            const isScheduled = scheduleKey && scheduledPatientIds.includes(scheduleKey);
+                            return (
+                              <div className="action-wrap">
+                                <button
+                                  className={`schedule-btn ${isScheduled ? "scheduled" : "not-scheduled"}`}
+                                  onClick={() => handleSchedule(p)}
+                                  title={isScheduled ? "Scheduled" : "Schedule"}
+                                  aria-label={isScheduled ? "Scheduled" : "Schedule"}
+                                ><CalendarDays size={14} /></button>
+                                <button
+                                  className="schedule-btn edit-action"
+                                  onClick={() => handleEdit(p)}
+                                  title="Edit Record"
+                                  aria-label="Edit Record"
+                                ><SquarePen size={14} /></button>
+                                <button
+                                  className="schedule-btn print-action"
+                                  onClick={() => handlePrint(p)}
+                                  title="Print Patient Slip PDF"
+                                  aria-label="Print Patient Slip PDF"
+                                ><Printer size={14} /></button>
+                                <button
+                                  className="schedule-btn inv-action"
+                                  onClick={() => handlePrintInvoice(p)}
+                                  title="Print Billing Receipt PDF"
+                                  aria-label="Print Billing Receipt PDF"
+                                ><Receipt size={14} /></button>
+                                <button
+                                  className="schedule-btn delete-action"
+                                  onClick={() => handleDelete(p)}
+                                  title="Delete Record"
+                                  aria-label="Delete Record"
+                                ><Trash2 size={14} /></button>
+                              </div>
+                            );
+                          })()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* DEDICATED MOBILE PATIENT CARDS VIEW */}
+            <div className="pl-mobile-card-list">
+              {filteredPatients.length === 0 ? (
+                <div className="no-data">
+                  No matching patient records found for the selected filter criteria.
+                </div>
+              ) : (
+                filteredPatients.map((p, idx) => {
+                  const pName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
+                  const pId = p.uhid || p.patient_id || p.mrn || p.id || "-";
+                  const mod = p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "CR");
+                  const uid = p.study_uid || p.StudyInstanceUID;
+
+                  return (
+                    <div key={pId || idx} className="pl-mobile-card">
+                      <div className="plmc-header">
+                        <div className="plmc-user">
+                          <div className="pl-avatar">{getInitials(pName)}</div>
+                          <div>
+                            <span className="plmc-name">{pName}</span>
+                            <span className="plmc-sub">ID: {pId} • {p.gender || "O"} ({p.age || "N/A"})</span>
+                          </div>
+                        </div>
+                        <span className={`pl-mod-badge mod-${String(mod).toLowerCase()}`}>
+                          {mod}
+                        </span>
+                      </div>
+
+                      <div className="plmc-grid">
+                        <div className="plmc-field">
+                          <span className="plmc-lbl">Ref Doctor</span>
+                          <span className="plmc-val">{p.referring_doctor || "-"}</span>
+                        </div>
+                        <div className="plmc-field">
+                          <span className="plmc-lbl">Date</span>
+                          <span className="plmc-val">{formatDisplayDateTime(p.created_at || p.study_date, p.study_time)}</span>
                         </div>
                       </div>
-                      <span className={`pl-mod-badge mod-${String(mod).toLowerCase()}`}>
-                        {mod}
-                      </span>
-                    </div>
 
-                    <div className="plmc-grid">
-                      <div className="plmc-field">
-                        <span className="plmc-lbl">Ref Doctor</span>
-                        <span className="plmc-val">{p.referring_doctor || "-"}</span>
-                      </div>
-                      <div className="plmc-field">
-                        <span className="plmc-lbl">Date</span>
-                        <span className="plmc-val">{formatDisplayDateTime(p.created_at || p.study_date, p.study_time)}</span>
-                      </div>
-                    </div>
+                      <div className="plmc-actions">
+                        {uid ? (
+                          <button
+                            onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
+                            className="plmc-btn primary"
+                          >
+                            <Smartphone size={15} /> Mobile Viewer
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleSchedule(p)}
+                            className="plmc-btn primary"
+                          >
+                            <CalendarDays size={15} /> Schedule
+                          </button>
+                        )}
 
-                    <div className="plmc-actions">
-                      {uid ? (
                         <button
-                          onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
-                          className="plmc-btn primary"
+                          onClick={() => handleEdit(p)}
+                          className="plmc-btn secondary"
                         >
-                          <Smartphone size={15} /> Mobile Viewer
+                          <SquarePen size={15} /> Edit
                         </button>
-                      ) : (
-                        <button
-                          onClick={() => handleSchedule(p)}
-                          className="plmc-btn primary"
-                        >
-                          <CalendarDays size={15} /> Schedule
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => handleEdit(p)}
-                        className="plmc-btn secondary"
-                      >
-                        <SquarePen size={15} /> Edit
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                  );
+                })
+              )}
+            </div>
+          </>
         )}
       </div>
     </MainLayout>

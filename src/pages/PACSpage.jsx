@@ -175,9 +175,6 @@ export default function PACSpage() {
   };
 
   async function loadStudies(pacs) {
-    if (!pacs) return;
-
-  async function loadStudies(pacs) {
     const targetPacs = pacs || { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
     setActivePacs(targetPacs);
     sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
