@@ -21,6 +21,10 @@ const PUBLIC_PREFIX_PATTERNS = [
   /^\/api\/public\//,
   /^\/public\//,
   /^\/api\/pacs\/instance-preview\//,
+  /^\/api\/pacs\/instance-tags\//,
+  /^\/api\/pacs\/dicom-tags\//,
+  /^\/api\/pacs\/mobile-study\//,
+  /^\/api\/pacs\/study-series-instances\//,
   /^\/api\/pacs\/export\//,
 ];
 

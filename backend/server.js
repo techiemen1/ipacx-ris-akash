@@ -88,15 +88,22 @@ app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/sign
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication
 try {
   const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
-  const orthancTarget = (process.env.ORTHANC_URL || "http://localhost:8042").replace(/\/$/, "");
+  const { getOrthancUrl } = require("./utils/orthancHelper");
+  
   const orthancUser = process.env.ORTHANC_USER || "orthanc";
   const orthancPass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
   const authHeader = "Basic " + Buffer.from(`${orthancUser}:${orthancPass}`).toString("base64");
 
+  const getDynamicTarget = async () => {
+    const url = await getOrthancUrl();
+    return url.replace(/\/$/, "");
+  };
+
   app.use(
     "/ohif-proxy",
     createProxyMiddleware({
-      target: orthancTarget,
+      target: "http://Orthanc:8042",
+      router: getDynamicTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
       onProxyReq: (proxyReq) => {
@@ -108,7 +115,8 @@ try {
   app.use(
     "/viewer",
     createProxyMiddleware({
-      target: orthancTarget,
+      target: "http://Orthanc:8042",
+      router: getDynamicTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
@@ -124,7 +132,8 @@ try {
   app.use(
     "/ohif",
     createProxyMiddleware({
-      target: orthancTarget,
+      target: "http://Orthanc:8042",
+      router: getDynamicTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
@@ -140,7 +149,8 @@ try {
   app.use(
     "/dicom-web",
     createProxyMiddleware({
-      target: orthancTarget,
+      target: "http://Orthanc:8042",
+      router: getDynamicTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
@@ -155,7 +165,8 @@ try {
             return body
               .replace(/http:\/\/localhost:8042\/dicom-web/g, "/dicom-web")
               .replace(/http:\/\/127\.0\.0\.1:8042\/dicom-web/g, "/dicom-web")
-              .replace(/http:\/\/host\.docker\.internal:8042\/dicom-web/g, "/dicom-web");
+              .replace(/http:\/\/host\.docker\.internal:8042\/dicom-web/g, "/dicom-web")
+              .replace(/http:\/\/Orthanc:8042\/dicom-web/g, "/dicom-web");
           }
           return responseBuffer;
         }),
@@ -169,7 +180,8 @@ try {
   app.use(
     ["/wado", "/instances", "/series", "/studies"],
     createProxyMiddleware({
-      target: orthancTarget,
+      target: "http://Orthanc:8042",
+      router: getDynamicTarget,
       changeOrigin: true,
       auth: `${orthancUser}:${orthancPass}`,
       onProxyReq: (proxyReq) => {

@@ -1,49 +1,7 @@
 const axios = require("axios");
 const pool = require("../db");
 
-const ORTHANC_USER = process.env.ORTHANC_USER;
-const ORTHANC_PASS = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS;
-
-const orthancAuthConfig = () => {
-  if (ORTHANC_USER && ORTHANC_PASS) {
-    return {
-      auth: {
-        username: ORTHANC_USER,
-        password: ORTHANC_PASS
-      }
-    };
-  }
-  return {};
-};
-
-let cachedWorkingOrthancUrl = null;
-
-async function getOrthancUrl() {
-  if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
-
-  const candidates = [
-    process.env.ORTHANC_URL,
-    "http://host.docker.internal:8042/",
-    "http://172.17.0.1:8042/",
-    "http://172.21.0.1:8042/",
-    "http://localhost:8042/"
-  ].filter(Boolean);
-
-  for (const rawUrl of candidates) {
-    const url = rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
-    try {
-      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 1500 });
-      cachedWorkingOrthancUrl = url;
-      console.log(`[PACS Gateway] Connected to live Orthanc instance at ${url}`);
-      return url;
-    } catch (e) {
-      // try next candidate
-    }
-  }
-
-  const fallback = (process.env.ORTHANC_URL || "http://host.docker.internal:8042/").replace(/\/?$/, "/");
-  return fallback;
-}
+const { getOrthancUrl, orthancAuthConfig } = require("../utils/orthancHelper");
 
 /**
  * Universal Multi-PACS DICOM Tag Gateway
@@ -115,7 +73,7 @@ class PacsGateway {
 
         if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
           const firstInstId = seriesData.Instances[0];
-          const { data: instRes } = await axios.get(`${orthancUrl}instances/${firstInstId}/content/tags`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+          const { data: instRes } = await axios.get(`${orthancUrl}instances/${firstInstId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
           instanceData = instRes;
         }
       }

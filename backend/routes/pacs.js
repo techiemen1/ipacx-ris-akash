@@ -13,46 +13,7 @@ const asyncHandler = require("../middleware/asyncHandler");
 
 const pacsService = new PacsService(pool);
 
-/* ======================================================
-   ORTHANC CONFIG & DYNAMIC DISCOVERY
-====================================================== */
-let cachedWorkingOrthancUrl = null;
-
-async function getOrthancUrl() {
-  if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
-  const candidates = [
-    process.env.ORTHANC_URL,
-    "http://host.docker.internal:8042/",
-    "http://172.17.0.1:8042/",
-    "http://172.21.0.1:8042/",
-    "http://localhost:8042/"
-  ].filter(Boolean);
-
-  for (const rawUrl of candidates) {
-    const url = rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
-    try {
-      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 1500 });
-      cachedWorkingOrthancUrl = url;
-      return url;
-    } catch (e) {}
-  }
-  return (process.env.ORTHANC_URL || "http://host.docker.internal:8042/").replace(/\/?$/, "/");
-}
-
-const ORTHANC_USER = process.env.ORTHANC_USER;
-const ORTHANC_PASS = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS;
-
-if (!ORTHANC_USER || !String(ORTHANC_USER).trim()) {
-  throw new Error("FATAL CONFIGURATION ERROR: ORTHANC_USER environment variable is missing or empty.");
-}
-
-if (!ORTHANC_PASS || !String(ORTHANC_PASS).trim()) {
-  throw new Error("FATAL CONFIGURATION ERROR: ORTHANC_PASSWORD / ORTHANC_PASS environment variable is missing or empty.");
-}
-
-function orthancAuthConfig() {
-  return { auth: { username: String(ORTHANC_USER).trim(), password: String(ORTHANC_PASS) } };
-}
+const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId } = require("../utils/orthancHelper");
 
 async function findOrthancStudy(studyUID) {
   const orthancUrl = await getOrthancUrl();
@@ -296,7 +257,7 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
 });
 
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
-  const { instanceId } = req.params;
+  const instanceId = extractCleanInstanceId(req.params.instanceId);
   const orthancUrl = await getOrthancUrl();
   try {
     const previewStream = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
@@ -307,13 +268,13 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=86400");
     previewStream.data.pipe(res);
   } catch (err) {
-    console.error(`[PACS Proxy] Failed fetching instance preview ${instanceId}:`, err.message);
+    console.error(`[PACS Proxy] Failed fetching instance preview for ${instanceId}:`, err.message);
     res.status(404).send("Preview unavailable");
   }
 }));
 
 router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
-  const { instanceId } = req.params;
+  const instanceId = extractCleanInstanceId(req.params.instanceId);
   const orthancUrl = await getOrthancUrl();
   try {
     const { data: tags } = await axios.get(`${orthancUrl}instances/${instanceId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 });
@@ -359,7 +320,7 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
           const { data: slicesData } = await axios.get(`${orthancUrl}series/${sId}/ordered-slices`, { ...orthancAuthConfig(), timeout: 3000 });
           if (slicesData && Array.isArray(slicesData.Slices) && slicesData.Slices.length > 0) {
             orderedInstances = slicesData.Slices.map((slice, iIdx) => {
-              const instId = typeof slice === "string" ? slice : (slice.Path ? slice.Path.replace("/instances/", "") : slice.ID);
+              const instId = extractCleanInstanceId(slice);
               return {
                 id: instId,
                 instanceNumber: iIdx + 1,
@@ -381,22 +342,28 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
                 const numB = parseInt(b.MainDicomTags?.InstanceNumber || '0', 10);
                 return numA - numB;
               });
-              orderedInstances = expInstances.map((inst, iIdx) => ({
-                id: inst.ID,
-                instanceNumber: parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10),
-                previewUrl: `/api/pacs/instance-preview/${inst.ID}`
-              }));
+              orderedInstances = expInstances.map((inst, iIdx) => {
+                const instId = extractCleanInstanceId(inst.ID || inst);
+                return {
+                  id: instId,
+                  instanceNumber: parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10),
+                  previewUrl: `/api/pacs/instance-preview/${instId}`
+                };
+              });
             }
           } catch (e) {}
         }
 
         if (orderedInstances.length === 0 && Array.isArray(sData.Instances)) {
           // Final fallback
-          orderedInstances = sData.Instances.map((instId, iIdx) => ({
-            id: instId,
-            instanceNumber: iIdx + 1,
-            previewUrl: `/api/pacs/instance-preview/${instId}`
-          }));
+          orderedInstances = sData.Instances.map((instItem, iIdx) => {
+            const instId = extractCleanInstanceId(instItem);
+            return {
+              id: instId,
+              instanceNumber: iIdx + 1,
+              previewUrl: `/api/pacs/instance-preview/${instId}`
+            };
+          });
         }
 
         seriesList.push({

@@ -1,33 +1,26 @@
 const axios = require("axios");
-
-const ORTHANC_URL = (process.env.ORTHANC_URL || "http://localhost:8042/").replace(/\/?$/, "/");
-const ORTHANC_USER = process.env.ORTHANC_USER || "";
-const ORTHANC_PASS = process.env.ORTHANC_PASS || "";
-
-function authConfig() {
-  if (!ORTHANC_USER || !ORTHANC_PASS) return {};
-  return { auth: { username: ORTHANC_USER, password: ORTHANC_PASS } };
-}
+const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId } = require("../utils/orthancHelper");
 
 class DicomWebService {
   /**
    * QIDO-RS: Search Studies via DICOMweb /dicom-web/studies or Orthanc fallback
    */
   async searchStudies(queryParams = {}) {
+    const orthancUrl = await getOrthancUrl();
     try {
-      const dicomWebUrl = `${ORTHANC_URL}dicom-web/studies`;
+      const dicomWebUrl = `${orthancUrl}dicom-web/studies`;
       const response = await axios.get(dicomWebUrl, {
         params: queryParams,
         headers: { Accept: "application/dicom+json" },
-        ...authConfig(),
+        ...orthancAuthConfig(),
       });
       return response.data;
     } catch (err) {
       console.warn("[DICOMweb] QIDO-RS fallback to Orthanc tools/find:", err.message);
       // Fallback to Orthanc tools/find
       const payload = { Level: "Study", Query: queryParams, Limit: 100 };
-      const { data: ids } = await axios.post(`${ORTHANC_URL}tools/find`, payload, authConfig());
-      return Promise.all(ids.map((id) => axios.get(`${ORTHANC_URL}studies/${id}`, authConfig()).then((r) => r.data)));
+      const { data: ids } = await axios.post(`${orthancUrl}tools/find`, payload, orthancAuthConfig());
+      return Promise.all(ids.map((id) => axios.get(`${orthancUrl}studies/${id}`, orthancAuthConfig()).then((r) => r.data)));
     }
   }
 
@@ -35,19 +28,20 @@ class DicomWebService {
    * WADO-RS: Retrieve Study Metadata /dicom-web/studies/{studyUID}/metadata
    */
   async getStudyMetadata(studyUID) {
-    const dicomWebUrl = `${ORTHANC_URL}dicom-web/studies/${studyUID}/metadata`;
+    const orthancUrl = await getOrthancUrl();
+    const dicomWebUrl = `${orthancUrl}dicom-web/studies/${studyUID}/metadata`;
     try {
       const response = await axios.get(dicomWebUrl, {
         headers: { Accept: "application/dicom+json" },
-        ...authConfig(),
+        ...orthancAuthConfig(),
       });
       return response.data;
     } catch (err) {
       console.warn("[DICOMweb] WADO-RS Metadata fallback:", err.message);
-      const findRes = await axios.post(`${ORTHANC_URL}tools/find`, { Level: "Study", Query: { StudyInstanceUID: studyUID } }, authConfig());
+      const findRes = await axios.post(`${orthancUrl}tools/find`, { Level: "Study", Query: { StudyInstanceUID: studyUID } }, orthancAuthConfig());
       if (!findRes.data.length) throw new Error("Study not found");
       const studyId = findRes.data[0];
-      const res = await axios.get(`${ORTHANC_URL}studies/${studyId}`, authConfig());
+      const res = await axios.get(`${orthancUrl}studies/${studyId}`, orthancAuthConfig());
       return res.data;
     }
   }
@@ -56,9 +50,10 @@ class DicomWebService {
    * STOW-RS: Store DICOM instance file directly to Orthanc
    */
   async storeDicomInstance(buffer, contentType = "application/dicom") {
-    const response = await axios.post(`${ORTHANC_URL}instances`, buffer, {
+    const orthancUrl = await getOrthancUrl();
+    const response = await axios.post(`${orthancUrl}instances`, buffer, {
       headers: { "Content-Type": contentType },
-      ...authConfig(),
+      ...orthancAuthConfig(),
     });
     return response.data;
   }
@@ -67,19 +62,20 @@ class DicomWebService {
    * QIDO-RS / WADO-RS: Retrieve Study Instances list
    */
   async getStudyInstances(studyUID) {
+    const orthancUrl = await getOrthancUrl();
     try {
-      const dicomWebUrl = `${ORTHANC_URL}dicom-web/studies/${studyUID}/instances`;
+      const dicomWebUrl = `${orthancUrl}dicom-web/studies/${studyUID}/instances`;
       const response = await axios.get(dicomWebUrl, {
         headers: { Accept: "application/dicom+json" },
-        ...authConfig(),
+        ...orthancAuthConfig(),
       });
       return response.data;
     } catch (err) {
       console.warn("[DICOMweb] Fallback for getStudyInstances:", err.message);
-      const findRes = await axios.post(`${ORTHANC_URL}tools/find`, { Level: "Study", Query: { StudyInstanceUID: studyUID } }, authConfig());
+      const findRes = await axios.post(`${orthancUrl}tools/find`, { Level: "Study", Query: { StudyInstanceUID: studyUID } }, orthancAuthConfig());
       if (!findRes.data.length) return [];
       const studyId = findRes.data[0];
-      const res = await axios.get(`${ORTHANC_URL}studies/${studyId}/instances`, authConfig());
+      const res = await axios.get(`${orthancUrl}studies/${studyId}/instances`, orthancAuthConfig());
       return (res.data || []).map((inst, idx) => ({
         "00080018": { Value: [inst.MainDicomTags?.SOPInstanceUID || inst.ID] },
         "0020000E": { Value: [inst.ParentSeries || "series-1"] },
@@ -92,9 +88,11 @@ class DicomWebService {
    * WADO-RS: Rendered JPEG Instance Stream
    */
   async getRenderedInstance(instanceId) {
-    const response = await axios.get(`${ORTHANC_URL}instances/${instanceId}/preview`, {
+    const cleanId = extractCleanInstanceId(instanceId);
+    const orthancUrl = await getOrthancUrl();
+    const response = await axios.get(`${orthancUrl}instances/${cleanId}/preview`, {
       responseType: "stream",
-      ...authConfig(),
+      ...orthancAuthConfig(),
     });
     return response.data;
   }
