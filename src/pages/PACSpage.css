@@ -640,9 +640,12 @@
    ========================================================= */
 @media (max-width: 1024px) {
   .pacs-container {
-    padding: 6px;
+    padding: 6px 6px 80px 6px;
     max-width: 100vw;
     overflow-x: hidden;
+    overflow-y: visible !important;
+    height: auto !important;
+    touch-action: pan-y !important;
   }
 
   .pacs-header-compact {
