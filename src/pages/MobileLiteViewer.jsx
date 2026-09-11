@@ -297,14 +297,14 @@ const MobileLiteViewer = () => {
         <button
           className={`touch-mode-btn ${touchMode === "SCROLL" ? "active" : ""}`}
           onClick={() => setTouchMode("SCROLL")}
-          title="1-Finger Drag to Scroll DICOM Slices"
+          title="1-Finger Drag Up/Down to Scroll Slices"
         >
           📜 Slice Scroll
         </button>
         <button
           className={`touch-mode-btn ${touchMode === "WL" ? "active" : ""}`}
           onClick={() => setTouchMode("WL")}
-          title="1-Finger Drag Up/Down for Window Level, Left/Right for Window Width"
+          title="1-Finger Drag Up/Down for Brightness, Left/Right for Contrast"
         >
           🌗 Touch W/L
         </button>
@@ -316,6 +316,45 @@ const MobileLiteViewer = () => {
           🔍 Pinch & Pan
         </button>
       </div>
+
+      {/* W/L Quick Preset Bar */}
+      <div className="wl-preset-bar scroll-x">
+        <span className="wl-preset-label">Presets:</span>
+        <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); }} title="Soft Tissue Window">
+          🟢 Soft Tissue
+        </button>
+        <button className="wl-preset-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); }} title="Bone Window">
+          🦴 Bone
+        </button>
+        <button className="wl-preset-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); }} title="Lung Window">
+          🫁 Lung
+        </button>
+        <button className="wl-preset-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); }} title="Brain Window">
+          🧠 Brain
+        </button>
+        <button className="wl-preset-btn reset" onClick={() => { setBrightness(1.0); setContrast(1.0); setZoom(1); setPanPosition({ x: 0, y: 0 }); }} title="Reset W/L & Zoom">
+          ⚡ Reset
+        </button>
+      </div>
+
+      {/* Quick Series Selector Strip (For CT/MR Multi-Series) */}
+      {seriesList.length > 1 && (
+        <div className="quick-series-bar scroll-x">
+          <span className="qs-label">Series:</span>
+          {seriesList.map((s, sIdx) => (
+            <button
+              key={s.seriesId || sIdx}
+              className={`qs-chip ${sIdx === activeSeriesIndex ? "active" : ""}`}
+              onClick={() => {
+                setActiveSeriesIndex(sIdx);
+                setCurrentIndex(0);
+              }}
+            >
+              {s.seriesDescription || `Series ${sIdx + 1}`} ({s.totalSlices || s.instances?.length || 0})
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* DICOM Tags Inspector Modal */}
       {showTagsModal && (
@@ -429,6 +468,13 @@ const MobileLiteViewer = () => {
             ) : (
               <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this slice.</div>
             )}
+
+            {/* Live Gesture Feedback Overlay Pill */}
+            <div className="gesture-feedback-pill">
+              {touchMode === "SCROLL" && <span>📜 Drag ↕ to Scroll Slices • Slice {currentIndex + 1}/{currentInstances.length}</span>}
+              {touchMode === "WL" && <span>🌗 Touch W/L • B: {(brightness * 100).toFixed(0)}% | C: {(contrast * 100).toFixed(0)}%</span>}
+              {touchMode === "PAN" && <span>🔍 Pinch & Pan • Zoom: {(zoom * 100).toFixed(0)}%</span>}
+            </div>
 
             {/* Diagnostic On-Screen DICOM Header Overlay (4 Corners) */}
             <div className="overlay-info top-left">

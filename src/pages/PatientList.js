@@ -128,6 +128,12 @@ function PatientList() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedModality, dateQuickFilter, fromDate, toDate]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -314,6 +320,11 @@ function PatientList() {
 
     return result;
   }, [patients, searchTerm, selectedModality, dateQuickFilter, fromDate, toDate]);
+
+  const pagedPatients = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    return filteredPatients.slice(start, start + rowsPerPage);
+  }, [filteredPatients, currentPage]);
 
   const buildPatientPayload = (data) => {
     const payload = new FormData();
@@ -674,9 +685,9 @@ function PatientList() {
                       </td>
                     </tr>
                   ) : (
-                    filteredPatients.map((p, idx) => (
+                    pagedPatients.map((p, idx) => (
                       <tr key={p.uhid || p.patient_id || idx}>
-                        <td>{idx + 1}</td>
+                        <td>{(currentPage - 1) * rowsPerPage + idx + 1}</td>
                         <td>
                           <span className="pl-mrn-badge">{p.uhid || p.patient_id}</span>
                         </td>
@@ -782,7 +793,7 @@ function PatientList() {
                   No matching patient records found for the selected filter criteria.
                 </div>
               ) : (
-                filteredPatients.map((p, idx) => {
+                pagedPatients.map((p, idx) => {
                   const rawPName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.full_name || p.patient_name || p.name || "Patient";
                   const pName = formatPatientName(rawPName);
                   const pId = p.uhid || p.patient_id || p.mrn || p.id || "-";
@@ -843,6 +854,34 @@ function PatientList() {
                   );
                 })
               )}
+            </div>
+
+            {/* PAGINATION BAR FOR PATIENT DIRECTORY */}
+            <div className="pacs-pagination-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#fff', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 12px 12px' }}>
+              <div style={{ fontSize: 13, color: '#64748b' }}>
+                Showing <strong>{filteredPatients.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
+                <strong>{Math.min(currentPage * rowsPerPage, filteredPatients.length)}</strong> of{" "}
+                <strong>{filteredPatients.length}</strong> patients
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: currentPage === 1 ? '#f1f5f9' : '#fff', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}
+                >
+                  ◀ Previous
+                </button>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', padding: '0 4px' }}>
+                  Page {currentPage} of {Math.ceil(filteredPatients.length / rowsPerPage) || 1}
+                </span>
+                <button
+                  disabled={currentPage >= Math.ceil(filteredPatients.length / rowsPerPage)}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                  style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #cbd5e1', background: currentPage >= Math.ceil(filteredPatients.length / rowsPerPage) ? '#f1f5f9' : '#fff', cursor: currentPage >= Math.ceil(filteredPatients.length / rowsPerPage) ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}
+                >
+                  Next ▶
+                </button>
+              </div>
             </div>
           </>
         )}
