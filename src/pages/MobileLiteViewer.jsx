@@ -317,22 +317,58 @@ const MobileLiteViewer = () => {
         </button>
       </div>
 
-      {/* W/L Quick Preset Bar */}
+      {/* Modality-Aware W/L Quick Preset Bar */}
       <div className="wl-preset-bar scroll-x">
-        <span className="wl-preset-label">Presets:</span>
-        <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); }} title="Soft Tissue Window">
-          🟢 Soft Tissue
-        </button>
-        <button className="wl-preset-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); }} title="Bone Window">
-          🦴 Bone
-        </button>
-        <button className="wl-preset-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); }} title="Lung Window">
-          🫁 Lung
-        </button>
-        <button className="wl-preset-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); }} title="Brain Window">
-          🧠 Brain
-        </button>
-        <button className="wl-preset-btn reset" onClick={() => { setBrightness(1.0); setContrast(1.0); setZoom(1); setPanPosition({ x: 0, y: 0 }); }} title="Reset W/L & Zoom">
+        <span className="wl-preset-label">Presets ({studyMeta?.modality || "CR"}):</span>
+        {studyMeta?.modality === "CT" ? (
+          <>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); }} title="CT Soft Tissue Window (W:400 L:50)">
+              🟢 Soft Tissue
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); }} title="CT Bone Window (W:2000 L:500)">
+              🦴 Bone
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); }} title="CT Lung Window (W:1500 L:-600)">
+              🫁 Lung
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); }} title="CT Brain Window (W:80 L:40)">
+              🧠 Brain
+            </button>
+          </>
+        ) : studyMeta?.modality === "MR" ? (
+          <>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(1.0); setContrast(1.2); }} title="MR Soft Tissue Contrast">
+              🧠 T1/T2 Brain
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(0.9); setContrast(1.65); }} title="MR Musculoskeletal Detail">
+              🦴 Spine / Joint
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(1.15); setContrast(1.7); }} title="MR Contrast Enhancement">
+              🩸 Contrast Enhanced
+            </button>
+          </>
+        ) : studyMeta?.modality === "US" ? (
+          <>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(0.9); setContrast(1.5); }} title="Ultrasound High Contrast">
+              🌊 High Contrast
+            </button>
+          </>
+        ) : (
+          <>
+            {/* X-Ray / CR / DX Radiography Presets */}
+            <button className="wl-preset-btn" onClick={() => { setBrightness(1.05); setContrast(1.25); }} title="Chest X-Ray Soft Tissue">
+              🫁 Chest Radiograph
+            </button>
+            <button className="wl-preset-btn" onClick={() => { setBrightness(0.85); setContrast(1.85); }} title="Bone Radiograph Detail">
+              🦴 Bone Radiograph
+            </button>
+            <button className={`wl-preset-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Monochrome Radiograph">
+              🔄 {isInverted ? "Inverted (White)" : "Invert (Black)"}
+            </button>
+          </>
+        )}
+
+        <button className="wl-preset-btn reset" onClick={() => { setBrightness(1.0); setContrast(1.0); setZoom(1); setPanPosition({ x: 0, y: 0 }); setIsInverted(false); }} title="Reset All Transformations">
           ⚡ Reset
         </button>
       </div>
