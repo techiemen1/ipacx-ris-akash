@@ -607,7 +607,7 @@ export default function ReportingPage() {
                   </div>
                 ) : (
                   pagedWorklist.map((item, idx) => (
-                    <div key={item.study_uid || idx} className={`rp-mobile-card ${item.isSTAT ? 'row-stat' : ''}`}>
+                    <div key={`rp-card-${item.study_uid || ''}-${idx}`} className={`rp-mobile-card ${item.isSTAT ? 'row-stat' : ''}`}>
                       <div className="rpmc-header">
                         <div>
                           <div className="rpmc-name-row">

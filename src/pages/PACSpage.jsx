@@ -888,7 +888,7 @@ export default function PACSpage() {
                     const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
 
                     return (
-                      <div key={uid || idx} className="pacs-mobile-card">
+                      <div key={`pacs-card-${uid || ''}-${idx}`} className="pacs-mobile-card">
                         <div className="pmc-header">
                           <div>
                             <span className="pmc-name">{pName}</span>
