@@ -1455,9 +1455,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             </>
           ) : (
             <>
-              <button onClick={handleShare7DayLink} className="rs-btn" style={{ background: '#e0e7ff', color: '#3730a3', border: '1px solid #c7d2fe' }} title="Generate and copy 7-day temporary viewer link">
-                🔗 Share 7-Day Link
-              </button>
               <button onClick={() => handleSaveReport("Draft")} className="rs-btn rs-btn-outline">
                 <Save size={16} /> Save Draft
               </button>
@@ -1843,16 +1840,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </div>
         </div>
       )}
-
-      <ShareReportModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        studyUID={studyUID}
-        patientID={study.PatientID}
-        patientName={study.PatientName}
-        accessionNumber={study.AccessionNumber}
-        userRole={userRole}
-      />
     </div>
   );
 }

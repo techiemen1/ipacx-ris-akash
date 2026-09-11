@@ -692,13 +692,6 @@ function PatientList() {
                                 aria-label="Print Billing Receipt PDF"
                               ><Receipt size={14} /></button>
                               <button
-                                className="schedule-btn print-action"
-                                onClick={() => setShareModalPatient(p)}
-                                title="Share 7-Day DICOM Viewer Link"
-                                aria-label="Share 7-Day DICOM Viewer Link"
-                                style={{ background: "#4f46e5", color: "#ffffff" }}
-                              ><Share2 size={14} /></button>
-                              <button
                                 className="schedule-btn delete-action"
                                 onClick={() => handleDelete(p)}
                                 title="Delete Record"
@@ -716,15 +709,6 @@ function PatientList() {
           </div>
         )}
       </div>
-
-      <ShareReportModal
-        isOpen={Boolean(shareModalPatient)}
-        onClose={() => setShareModalPatient(null)}
-        studyUID={shareModalPatient?.study_instance_uid || shareModalPatient?.study_uid}
-        patientID={shareModalPatient?.patient_id || shareModalPatient?.patientid}
-        patientName={shareModalPatient?.patient_name || shareModalPatient?.full_name || shareModalPatient?.patientname}
-        accessionNumber={shareModalPatient?.accession_number || shareModalPatient?.accessionnumber}
-      />
     </MainLayout>
   );
 }

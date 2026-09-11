@@ -114,6 +114,17 @@ export default function PACSpage() {
   const [exportingUid, setExportingUid] = useState(null);
   const [_exportType, setExportType] = useState(null);
 
+  const openStudyViewer = (studyUID) => {
+    const isMobile = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (isMobile) {
+      navigate(`/mobile-viewer?study=${encodeURIComponent(studyUID)}`);
+    } else {
+      const currentOrigin = window.location.origin;
+      const path = `/viewer?url=/dicom-web/studies/${encodeURIComponent(studyUID)}/metadata`;
+      window.open(currentOrigin + path, "_blank", "noopener,noreferrer");
+    }
+  };
+
   // Close export dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {

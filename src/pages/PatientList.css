@@ -443,3 +443,84 @@
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
   padding: 24px;
 }
+
+/* =========================================================
+   RESPONSIVE SMARTPHONE & TABLET CARD LAYOUT (ZERO HORIZONTAL SCROLL)
+   ========================================================= */
+@media (max-width: 768px) {
+  .patient-page {
+    padding: 6px;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .patient-header {
+    padding: 10px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pl-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pl-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .table-wrapper {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  .patient-table {
+    display: block;
+    width: 100%;
+  }
+
+  .patient-table thead {
+    display: none;
+  }
+
+  .patient-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .patient-table tbody tr {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  }
+
+  .patient-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px dashed #f1f5f9;
+  }
+
+  .patient-table td:last-child {
+    border-bottom: none;
+    padding-top: 10px;
+    justify-content: center;
+  }
+
+  .action-wrap {
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .schedule-btn {
+    width: 32px;
+    height: 32px;
+  }
+}

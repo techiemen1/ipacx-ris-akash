@@ -567,8 +567,10 @@
 
   .ris-content {
     margin-top: 60px;
-    padding: 16px;
-    overflow-x: auto;
+    padding: 8px;
+    overflow-x: hidden;
+    max-width: 100vw;
+    box-sizing: border-box;
   }
   
   .ris-toggle-btn {

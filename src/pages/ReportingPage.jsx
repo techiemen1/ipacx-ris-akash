@@ -528,14 +528,6 @@ export default function ReportingPage() {
                               >
                                 <FileText size={13} /> Report
                               </button>
-
-                              <button
-                                onClick={() => setShareItem(item)}
-                                className="rp-btn-action share"
-                                title="Share Report & Viewer Link"
-                              >
-                                <Share2 size={13} /> Share
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -585,17 +577,6 @@ export default function ReportingPage() {
             onClose={() => setActiveWorkstationItem(null)}
           />
         )}
-
-        {/* VENDOR-GRADE PATIENT & PHYSICIAN SHARE MODAL */}
-        <ShareReportModal
-          isOpen={Boolean(shareItem)}
-          onClose={() => setShareItem(null)}
-          studyUID={shareItem?.study_uid}
-          patientID={shareItem?.patient_id}
-          patientName={shareItem?.patient_name}
-          accessionNumber={shareItem?.accession_number}
-          reportID={shareItem?.id}
-        />
       </div>
     </MainLayout>
   );
