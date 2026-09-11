@@ -56,6 +56,7 @@ const MobileLiteViewer = () => {
   const touchLastPos = useRef({ x: 0, y: 0 });
   const touchDeltaAccumulator = useRef({ x: 0, y: 0 });
   const lastTapTime = useRef(0);
+  const isDragging = useRef(false);
 
   const fetchStudyData = useCallback(async () => {
     if (!studyUID) return;
@@ -171,15 +172,14 @@ const MobileLiteViewer = () => {
 
   // MULTI-TOUCH GESTURE ENGINE (PINCH TO ZOOM + TOUCH SLICE SCROLL + TOUCH W/L + PAN)
   const handleTouchStart = (e) => {
+    isDragging.current = true;
     const now = Date.now();
     if (now - lastTapTime.current < 300) {
-      // Double tap reset
       resetTools();
     }
     lastTapTime.current = now;
 
     if (e.touches.length === 2) {
-      // 2-Finger Pinch Start
       const x1 = e.touches[0].clientX;
       const y1 = e.touches[0].clientY;
       const x2 = e.touches[1].clientX;
@@ -187,15 +187,14 @@ const MobileLiteViewer = () => {
       initialPinchDist.current = Math.hypot(x2 - x1, y2 - y1);
       initialPinchZoom.current = zoom;
     } else if (e.touches.length === 1) {
-      // 1-Finger Touch Start
       touchLastPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       touchDeltaAccumulator.current = { x: 0, y: 0 };
     }
   };
 
   const handleTouchMove = (e) => {
+    isDragging.current = true;
     if (e.touches.length === 2 && initialPinchDist.current) {
-      // 2-Finger Pinch Zooming
       const x1 = e.touches[0].clientX;
       const y1 = e.touches[0].clientY;
       const x2 = e.touches[1].clientX;
@@ -214,13 +213,11 @@ const MobileLiteViewer = () => {
       if (touchMode === "PAN") {
         setPanPosition(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       } else if (touchMode === "WL") {
-        // Vertical drag -> Brightness/Level; Horizontal drag -> Contrast/Width
         setBrightness(b => Math.max(0.2, Math.min(3, parseFloat((b - dy * 0.008).toFixed(2)))));
         setContrast(c => Math.max(0.2, Math.min(3, parseFloat((c + dx * 0.008).toFixed(2)))));
       } else if (touchMode === "SCROLL") {
-        // Continuous touch drag for fast slice scrolling
         touchDeltaAccumulator.current.y += dy;
-        const threshold = 14; // pixels to trigger slice step
+        const threshold = 14;
         if (touchDeltaAccumulator.current.y <= -threshold) {
           nextImage();
           touchDeltaAccumulator.current.y = 0;
@@ -233,6 +230,7 @@ const MobileLiteViewer = () => {
   };
 
   const handleTouchEnd = () => {
+    isDragging.current = false;
     initialPinchDist.current = null;
     touchDeltaAccumulator.current = { x: 0, y: 0 };
   };
