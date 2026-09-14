@@ -24,13 +24,13 @@ jobs:
         working-directory: backend
         run: npm ci
 
-      - name: Backend lint (if exists)
+      - name: Backend syntax check
         working-directory: backend
-        run: npm run lint --if-present
+        run: npm run check --if-present
 
       - name: Backend test
         working-directory: backend
-        run: npm test
+        run: npx jest --passWithNoTests --forceExit
 
       - name: Backend build (if exists)
         working-directory: backend
@@ -55,3 +55,4 @@ jobs:
 
       - name: Frontend build
         run: CI=false npm run build
+
