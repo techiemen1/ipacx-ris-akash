@@ -1001,17 +1001,33 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
         setConclusion(reportContent.conclusion || "");
       }
 
-      // 4️⃣ Load key images if present
-      if (Array.isArray(reportData?.images) && reportData.images.length > 0) {
-        const loadedImages = reportData.images.map(img =>
-          img.image_path
-        );
-        setKeyImages(loadedImages);
-        setShowKeyImages(true);
-      } else {
-        setKeyImages([]);
-        setShowKeyImages(false);
+      // 4️⃣ Load key images if present (check report_content.snapshots, reportData.images, and local key_images)
+      let loadedImages = [];
+      const rawSnapshots = reportData?.report_content?.snapshots || reportData?.snapshots;
+      if (Array.isArray(rawSnapshots) && rawSnapshots.length > 0) {
+        loadedImages = rawSnapshots.map(s => typeof s === "string" ? s : (s.preview_url || s.url || s.previewUrl)).filter(Boolean);
+      } else if (Array.isArray(reportData?.images) && reportData.images.length > 0) {
+        loadedImages = reportData.images.map(img =>
+          typeof img === "string" ? img : (img.image_path || img.path || img.url || "")
+        ).filter(Boolean);
       }
+
+      // Merge local key images captured from mobile/desktop viewer
+      try {
+        const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+        if (localStr) {
+          const parsed = JSON.parse(localStr);
+          if (Array.isArray(parsed)) {
+            const localUrls = parsed.map(img => typeof img === "string" ? img : (img.previewUrl || img.preview_url || img.url)).filter(Boolean);
+            loadedImages = Array.from(new Set([...loadedImages, ...localUrls]));
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to parse local key images:", e);
+      }
+
+      setKeyImages(loadedImages);
+      setShowKeyImages(loadedImages.length > 0);
 
     } catch (err) {
       console.error("Failed to load study/report", err);

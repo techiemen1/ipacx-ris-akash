@@ -109,6 +109,9 @@ router.post("/resequence-ids", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const patients = await patientService.getAllPatients(req);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     return res.json({
       success: true,
       count: patients.length,

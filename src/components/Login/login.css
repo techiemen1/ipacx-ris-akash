@@ -357,26 +357,112 @@
   opacity: 0.9;
 }
 
-/* Auto Role Config Notice Footer */
-.auto-role-notice {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
-  text-align: center;
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
+/* Repositioned Forgot Password Link Below Input */
+.forgot-password-below {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
-@media (max-width: 900px) {
+.forgot-link-under {
+  font-size: 12px;
+  color: #4338ca;
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.forgot-link-under:hover {
+  color: #312e81;
+  text-decoration: underline;
+}
+
+/* Mobile Brand Header - Hidden on Desktop */
+.mobile-brand-header {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.mobile-logo-circle {
+  width: 56px;
+  height: 56px;
+  background: #e0e7ff;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  border: 1px solid #c7d2fe;
+}
+
+.mobile-brand-header h2 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  line-height: 1.3;
+}
+
+.mobile-brand-sub {
+  font-size: 12px;
+  color: #6366f1;
+  font-weight: 700;
+}
+
+/* RESPONSIVE SMARTPHONE & TABLET LOGIN INTERFACE */
+@media (max-width: 768px) {
+  .login-container-pro {
+    padding: 16px;
+    align-items: center;
+  }
+
   .login-card-pro {
     flex-direction: column;
+    max-width: 440px;
+    min-height: auto;
+    border-radius: 20px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
   }
+
+  /* Hide heavy desktop left hero banner on mobile devices */
   .login-left-pro {
-    padding: 30px;
+    display: none;
   }
+
+  .mobile-brand-header {
+    display: flex;
+  }
+
   .login-right-pro {
-    padding: 30px;
+    padding: 24px 20px;
+  }
+
+  .form-header-pro {
+    text-align: center;
+  }
+
+  .form-header-pro h2 {
+    font-size: 22px;
+  }
+
+  .form-header-pro p {
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+
+  .input-field-wrapper input {
+    padding: 12px 14px 12px 42px;
+    font-size: 14px;
+  }
+
+  .login-submit-btn {
+    padding: 13px;
+    font-size: 14px;
   }
 }
 

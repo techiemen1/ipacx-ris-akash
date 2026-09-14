@@ -197,6 +197,22 @@
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
+.rp-filter-row-secondary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.rp-date-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
 /* QUICK DATE PILLS */
 .rp-date-pills {
   display: flex;
@@ -564,12 +580,16 @@
   flex: 1;
 }
 
+.rp-mobile-card-list {
+  display: none;
+}
+
 /* =========================================================
    RESPONSIVE SMARTPHONE & TABLET CARD LAYOUT (ZERO HORIZONTAL SCROLL)
    ========================================================= */
 @media (max-width: 1024px) {
   .rp-container {
-    padding: 6px 6px 80px 6px;
+    padding: 6px 6px max(115px, calc(95px + env(safe-area-inset-bottom))) 6px;
     max-width: 100vw;
     overflow-x: hidden;
     overflow-y: visible !important;
@@ -783,9 +803,81 @@
     box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
   }
 
+  .rpmc-btn.canvas-mpr {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+  }
+
   .rpmc-btn.secondary {
     background: #f1f5f9;
     color: #334155;
     border: 1px solid #cbd5e1;
+  }
+}
+
+/* =========================================================
+   AUTO RESPONSIVE DENSITY SCALING FOR LAPTOP SCREENS (100% ZOOM)
+   ========================================================= */
+@media screen and (min-width: 1025px) {
+  .rp-container {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+  .rp-header-compact {
+    padding: 6px 12px;
+  }
+  .rp-filter-bar {
+    padding: 6px 12px;
+  }
+  .rp-table th {
+    padding: 6px 10px;
+    font-size: 10.5px;
+  }
+  .rp-table td {
+    padding: 5px 10px;
+    font-size: 11.5px;
+  }
+  .table-responsive {
+    max-height: calc(100vh - 210px);
+    overflow-y: auto;
+  }
+}
+
+@media screen and (max-height: 900px) and (min-width: 1025px) {
+  .rp-container {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .rp-title {
+    font-size: 16px;
+  }
+  .rp-header-compact {
+    padding: 4px 10px;
+  }
+  .rp-filter-bar {
+    padding: 5px 10px;
+  }
+  .rp-table th {
+    padding: 5px 8px;
+    font-size: 10px;
+  }
+  .rp-table td {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .rp-patient-name {
+    font-size: 11.5px;
+  }
+  .rp-patient-id {
+    font-size: 10px;
+  }
+  .rp-btn-action {
+    padding: 3px 7px;
+    font-size: 10.5px;
+  }
+  .table-responsive {
+    max-height: calc(100vh - 190px);
+    overflow-y: auto;
   }
 }

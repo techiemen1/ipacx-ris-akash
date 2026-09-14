@@ -1,25 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/axios";
+import MobileMPRViewer from "../components/DICOMViewer/MobileMPRViewer";
 import { 
   ChevronLeft, 
-  ChevronRight, 
-  RotateCw, 
-  Sun, 
-  Moon,
   Layers,
   FileText,
   RefreshCw,
   X,
   Play,
   Pause,
-  Tag,
   Camera,
   SlidersHorizontal,
   Eye,
   EyeOff,
   RotateCcw,
-  Sparkles
+  Ruler,
+  Activity
 } from "lucide-react";
 import "./MobileLiteViewer.css";
 
@@ -32,27 +29,43 @@ const MobileLiteViewer = () => {
   const [seriesList, setSeriesList] = useState([]);
   const [activeSeriesIndex, setActiveSeriesIndex] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [showMPRModal, setShowMPRModal] = useState(false);
   
   const [showSeriesDrawer, setShowSeriesDrawer] = useState(false);
-  const [showTagsModal, setShowTagsModal] = useState(false);
   const [showPresetsMenu, setShowPresetsMenu] = useState(false);
   const [showOverlayInfo, setShowOverlayInfo] = useState(true);
-  const [tagsData, setTagsData] = useState(null);
-  const [loadingTags, setLoadingTags] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [brightness, setBrightness] = useState(1);
   const [contrast, setContrast] = useState(1);
   const [isInverted, setIsInverted] = useState(false);
+  const [flipH, setFlipH] = useState(false);
   const [rotation, setRotation] = useState(0);
-  const [isDarkMode, setIsDarkMode] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // TOUCH GESTURE ENGINE STATE ("SCROLL" | "WL" | "PAN")
-  const [touchMode, setTouchMode] = useState("PAN");
+  // iOS Safari URL bar collapse & Fullscreen engine
+  useEffect(() => {
+    const collapseIOSUrlBar = () => {
+      window.scrollTo(0, 1);
+    };
+    collapseIOSUrlBar();
+    window.addEventListener("touchstart", collapseIOSUrlBar, { once: true });
+    return () => {
+      window.removeEventListener("touchstart", collapseIOSUrlBar);
+    };
+  }, []);
+
+
+
+  // TOUCH GESTURE & MEASUREMENT ENGINE
+  const [touchMode, setTouchMode] = useState("PAN"); // "SCROLL" | "WL" | "PAN" | "MEASURE"
   const [panPosition, setPanPosition] = useState({ x: 0, y: 0 });
-  const [tagSearchText, setTagSearchText] = useState("");
+  const [measurements, setMeasurements] = useState([]);
+  const [activeMeasure, setActiveMeasure] = useState(null);
+  const measureStartRef = useRef(null);
+
+
 
   const initialPinchDist = useRef(null);
   const initialPinchZoom = useRef(1);
@@ -61,11 +74,25 @@ const MobileLiteViewer = () => {
   const lastTapTime = useRef(0);
   const isDragging = useRef(false);
 
+  // Save active series & slice state to sessionStorage and localStorage whenever it changes
+  useEffect(() => {
+    if (studyUID) {
+      const stateObj = JSON.stringify({
+        seriesIndex: activeSeriesIndex,
+        sliceIndex: currentIndex,
+        updatedAt: Date.now()
+      });
+      sessionStorage.setItem(`viewer_state_${studyUID}`, stateObj);
+      localStorage.setItem(`viewer_state_${studyUID}`, stateObj);
+    }
+  }, [studyUID, activeSeriesIndex, currentIndex]);
+
   const fetchStudyData = useCallback(async () => {
     if (!studyUID) return;
     setLoading(true);
     try {
       const res = await api.get(`/api/pacs/mobile-study/${encodeURIComponent(studyUID)}`).catch(() => null);
+      let fetchedSeries = [];
       if (res?.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
         setStudyMeta({
           patientName: res.data.patientName,
@@ -75,7 +102,9 @@ const MobileLiteViewer = () => {
           studyDate: res.data.studyDate,
           studyDescription: res.data.studyDescription
         });
-        setSeriesList(res.data.series);
+        fetchedSeries = res.data.series;
+        setSeriesList(fetchedSeries);
+
         // Default touch mode: CR/DX -> PAN/ZOOM, CT/MR -> SCROLL
         const mod = String(res.data.modality || "").toUpperCase();
         if (mod === "CT" || mod === "MR") {
@@ -83,30 +112,48 @@ const MobileLiteViewer = () => {
         } else {
           setTouchMode("PAN");
         }
-        setLoading(false);
-        return;
+      } else {
+        const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
+        if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
+          fetchedSeries = resFallback.data.series.map(s => ({
+            seriesId: s.series_id,
+            seriesDescription: s.series_description,
+            totalSlices: s.total_slices,
+            instances: (s.instances || []).map((inst, i) => ({
+              id: inst.instance_id,
+              instanceNumber: inst.slice_number || i + 1,
+              previewUrl: inst.preview_url
+            }))
+          }));
+          setSeriesList(fetchedSeries);
+        }
       }
 
-      const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
-      if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
-        const formatted = resFallback.data.series.map(s => ({
-          seriesId: s.series_id,
-          seriesDescription: s.series_description,
-          totalSlices: s.total_slices,
-          instances: (s.instances || []).map((inst, i) => ({
-            id: inst.instance_id,
-            instanceNumber: inst.slice_number || i + 1,
-            previewUrl: inst.preview_url
-          }))
-        }));
-        setSeriesList(formatted);
+      // Restore active series and slice state if available
+      const paramSeries = searchParams.get("series");
+      const paramSlice = searchParams.get("slice");
+      try {
+        const savedStateStr = sessionStorage.getItem(`viewer_state_${studyUID}`) || localStorage.getItem(`viewer_state_${studyUID}`);
+        const savedState = savedStateStr ? JSON.parse(savedStateStr) : null;
+        const targetSeries = paramSeries !== null ? parseInt(paramSeries, 10) : (savedState?.seriesIndex ?? 0);
+        const targetSlice = paramSlice !== null ? parseInt(paramSlice, 10) : (savedState?.sliceIndex ?? 0);
+
+        const seriesIdxValid = !isNaN(targetSeries) && targetSeries >= 0 && targetSeries < (fetchedSeries.length || 1) ? targetSeries : 0;
+        setActiveSeriesIndex(seriesIdxValid);
+
+        const targetSeriesObj = fetchedSeries[seriesIdxValid] || fetchedSeries[0];
+        const instancesCount = targetSeriesObj?.instances?.length || targetSeriesObj?.totalSlices || 1;
+        const sliceIdxValid = !isNaN(targetSlice) && targetSlice >= 0 ? Math.min(targetSlice, instancesCount - 1) : 0;
+        setCurrentIndex(sliceIdxValid >= 0 ? sliceIdxValid : 0);
+      } catch (e) {
+        console.warn("Failed to restore viewer state", e);
       }
     } catch (error) {
       console.error("Failed to load DICOM study for mobile viewer", error);
     } finally {
       setLoading(false);
     }
-  }, [studyUID]);
+  }, [studyUID, searchParams]);
 
   useEffect(() => {
     fetchStudyData();
@@ -117,34 +164,74 @@ const MobileLiteViewer = () => {
   const currentInstance = currentInstances[currentIndex];
 
   const imageUrl = currentInstance 
-    ? (currentInstance.previewUrl || `/api/pacs/instance-preview/${currentInstance.id}`)
+    ? (currentInstance.previewUrl || currentInstance.preview_url || `/api/pacs/instance-preview/${currentInstance.id || currentInstance.instance_id}`)
     : "";
 
-  const fetchInstanceTags = useCallback(async () => {
-    if (!currentInstance?.id) return;
-    setLoadingTags(true);
-    try {
-      const res = await api.get(`/api/pacs/instance-tags/${currentInstance.id}`).catch(() => null);
-      if (res?.data?.success && res.data.tags) {
-        setTagsData(res.data.tags);
-      } else {
-        const resStudy = await api.get(`/api/pacs/dicom-tags/${encodeURIComponent(studyUID)}`).catch(() => null);
-        if (resStudy?.data?.data) {
-          setTagsData(resStudy.data.data);
+  const mainCanvasRef = useRef(null);
+
+  // Render High-Definition DICOM Slice to 2D Canvas with Calibrated Pixel LUT
+  const render2DFrame = useCallback(() => {
+    const canvas = mainCanvasRef.current;
+    if (!canvas || !imageUrl) return;
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const W = img.naturalWidth || 512;
+      const H = img.naturalHeight || 512;
+      canvas.width = W;
+      canvas.height = H;
+
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      if (rotation !== 0) ctx.rotate((rotation * Math.PI) / 180);
+      if (flipH) ctx.scale(-1, 1);
+      ctx.translate(-W / 2, -H / 2);
+
+      // Draw original DICOM frame at native 1:1 pixel resolution
+      ctx.drawImage(img, 0, 0, W, H);
+      ctx.restore();
+
+      // Apply calibrated Window/Level & Invert directly to pixel data for 100% original DICOM clarity
+      if (brightness !== 1 || contrast !== 1 || isInverted) {
+        const imgData = ctx.getImageData(0, 0, W, H);
+        const data = imgData.data;
+        const len = data.length;
+
+        const cFactor = Math.max(0.1, contrast);
+        const bOffset = (brightness - 1) * 128;
+
+        for (let i = 0; i < len; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+
+          let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          lum = (lum - 128) * cFactor + 128 + bOffset;
+
+          if (isInverted) lum = 255 - lum;
+
+          const finalVal = Math.round(Math.min(255, Math.max(0, lum)));
+          data[i] = finalVal;
+          data[i + 1] = finalVal;
+          data[i + 2] = finalVal;
         }
+        ctx.putImageData(imgData, 0, 0);
       }
-    } catch (err) {
-      console.error("Failed to fetch DICOM tags:", err);
-    } finally {
-      setLoadingTags(false);
-    }
-  }, [currentInstance?.id, studyUID]);
+    };
+    img.src = imageUrl;
+  }, [imageUrl, brightness, contrast, isInverted, rotation, flipH]);
 
   useEffect(() => {
-    if (showTagsModal) {
-      fetchInstanceTags();
-    }
-  }, [showTagsModal, fetchInstanceTags]);
+    render2DFrame();
+  }, [render2DFrame]);
 
   useEffect(() => {
     let timer = null;
@@ -176,11 +263,14 @@ const MobileLiteViewer = () => {
     setBrightness(1);
     setContrast(1);
     setIsInverted(false);
+    setFlipH(false);
     setRotation(0);
     setIsPlaying(false);
+    setMeasurements([]);
+    setActiveMeasure(null);
   };
 
-  // MULTI-TOUCH GESTURE ENGINE (PINCH TO ZOOM + TOUCH SLICE SCROLL + TOUCH W/L + PAN)
+  // MULTI-TOUCH GESTURE ENGINE (PINCH ZOOM + TOUCH SCROLL + W/L + PAN + MEASURE)
   const handleTouchStart = (e) => {
     isDragging.current = true;
     const now = Date.now();
@@ -188,6 +278,15 @@ const MobileLiteViewer = () => {
       resetTools();
     }
     lastTapTime.current = now;
+
+    if (touchMode === "MEASURE" && e.touches.length === 1 && e.currentTarget) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.touches[0].clientX - rect.left;
+      const y = e.touches[0].clientY - rect.top;
+      measureStartRef.current = { x, y };
+      setActiveMeasure({ start: { x, y }, end: { x, y } });
+      return;
+    }
 
     if (e.touches.length === 2) {
       const x1 = e.touches[0].clientX;
@@ -204,6 +303,15 @@ const MobileLiteViewer = () => {
 
   const handleTouchMove = (e) => {
     isDragging.current = true;
+
+    if (touchMode === "MEASURE" && measureStartRef.current && e.touches.length === 1 && e.currentTarget) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.touches[0].clientX - rect.left;
+      const y = e.touches[0].clientY - rect.top;
+      setActiveMeasure({ start: measureStartRef.current, end: { x, y } });
+      return;
+    }
+
     if (e.touches.length === 2 && initialPinchDist.current) {
       const x1 = e.touches[0].clientX;
       const y1 = e.touches[0].clientY;
@@ -241,22 +349,57 @@ const MobileLiteViewer = () => {
 
   const handleTouchEnd = () => {
     isDragging.current = false;
+
+    if (touchMode === "MEASURE" && activeMeasure) {
+      const dx = activeMeasure.end.x - activeMeasure.start.x;
+      const dy = activeMeasure.end.y - activeMeasure.start.y;
+      if (Math.hypot(dx, dy) > 8) {
+        setMeasurements(prev => [...prev, activeMeasure]);
+      }
+      measureStartRef.current = null;
+      setActiveMeasure(null);
+    }
+
     initialPinchDist.current = null;
     touchDeltaAccumulator.current = { x: 0, y: 0 };
   };
 
-  const captureSnapshot = () => {
+  const captureSnapshot = async () => {
     if (!imageUrl) return;
+    const snapId = `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const snapshotObj = {
-      id: currentInstance?.id || Date.now(),
+      id: snapId,
+      instance_id: currentInstance?.id || snapId,
       previewUrl: imageUrl,
+      preview_url: imageUrl,
+      url: imageUrl,
+      dataUrl: imageUrl,
       sliceNumber: currentIndex + 1,
-      seriesDesc: activeSeries.seriesDescription || "Series",
+      slice_number: currentIndex + 1,
+      seriesDesc: activeSeries?.seriesDescription || "Series",
+      series_desc: activeSeries?.seriesDescription || "Series",
+      caption: `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`,
+      studyUID: studyUID,
       capturedAt: new Date().toISOString()
     };
+
     const saved = JSON.parse(localStorage.getItem("key_images") || "[]");
-    localStorage.setItem("key_images", JSON.stringify([snapshotObj, ...saved]));
-    alert(`📸 Key Image Captured (Slice ${currentIndex + 1})! Attached to Report Studio.`);
+    const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== imageUrl)];
+    localStorage.setItem("key_images", JSON.stringify(updated));
+    if (studyUID) {
+      localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated.filter(s => typeof s !== "object" || !s.studyUID || s.studyUID === studyUID)));
+    }
+
+    try {
+      await api.post(`/api/studies/${encodeURIComponent(studyUID)}/key-images`, {
+        keyImages: [snapshotObj],
+        snapshots: [snapshotObj]
+      });
+    } catch (e) {
+      console.warn("Could not sync key image to backend:", e);
+    }
+
+    alert(`📸 Key Image Captured (${activeSeries?.seriesDescription || "Series"} - Slice ${currentIndex + 1})! Attached to Report Studio.`);
   };
 
   if (!studyUID) {
@@ -272,7 +415,7 @@ const MobileLiteViewer = () => {
   const modalityKey = String(studyMeta?.modality || "CR").toUpperCase();
 
   return (
-    <div className={`lite-viewer-container ${isDarkMode ? "dark" : "light"}`}>
+    <div className="lite-viewer-container dark">
       {/* 🌟 ULTRA-SLEEK GLASSMOPHISM HEADER */}
       <header className="lite-viewer-header">
         <button className="icon-btn-glass" onClick={() => navigate(-1)} title="Back to Worklist">
@@ -308,13 +451,6 @@ const MobileLiteViewer = () => {
             </button>
           )}
 
-          <button 
-            className={`icon-btn-glass ${showTagsModal ? "active-glow" : ""}`} 
-            onClick={() => setShowTagsModal(true)} 
-            title="DICOM Tags Inspector"
-          >
-            <Tag size={18} />
-          </button>
 
           <button 
             className="icon-btn-glass action-report" 
@@ -322,10 +458,6 @@ const MobileLiteViewer = () => {
             title="Open Radiology Report Editor"
           >
             <FileText size={18} />
-          </button>
-
-          <button className="icon-btn-glass" onClick={() => setIsDarkMode(!isDarkMode)}>
-            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
         </div>
       </header>
@@ -349,41 +481,41 @@ const MobileLiteViewer = () => {
             <div className="presets-grid">
               {modalityKey === "CT" ? (
                 <>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.15); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🟢</span>
                     <div className="p-text"><span className="p-name">Soft Tissue</span><span className="p-val">W:400 L:50</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.7); setContrast(2.2); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🦴</span>
                     <div className="p-text"><span className="p-name">Bone Window</span><span className="p-val">W:2000 L:500</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.45); setContrast(1.8); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🫁</span>
                     <div className="p-text"><span className="p-name">Lung Window</span><span className="p-val">W:1500 L:-600</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.95); setContrast(1.4); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🧠</span>
                     <div className="p-text"><span className="p-name">Brain Window</span><span className="p-val">W:80 L:40</span></div>
                   </button>
                 </>
               ) : modalityKey === "MR" ? (
                 <>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.2); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.0); setContrast(1.2); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🧠</span>
                     <div className="p-text"><span className="p-name">T1/T2 Brain</span><span className="p-val">Neuro Detail</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.65); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.65); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🦴</span>
                     <div className="p-text"><span className="p-name">Spine / Joint</span><span className="p-val">MSK High Contrast</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(1.15); setContrast(1.7); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.15); setContrast(1.7); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🩸</span>
                     <div className="p-text"><span className="p-name">Contrast Enhanced</span><span className="p-val">Vascular Detail</span></div>
                   </button>
                 </>
               ) : modalityKey === "US" ? (
                 <>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.5); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.9); setContrast(1.5); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🌊</span>
                     <div className="p-text"><span className="p-name">High Contrast</span><span className="p-val">Ultrasound Gray</span></div>
                   </button>
@@ -391,11 +523,11 @@ const MobileLiteViewer = () => {
               ) : (
                 <>
                   {/* CR / DX Radiography Presets */}
-                  <button className="preset-card-btn" onClick={() => { setBrightness(1.05); setContrast(1.25); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(1.05); setContrast(1.25); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🫁</span>
                     <div className="p-text"><span className="p-name">Chest Radiograph</span><span className="p-val">Soft Tissue PA</span></div>
                   </button>
-                  <button className="preset-card-btn" onClick={() => { setBrightness(0.85); setContrast(1.85); setShowPresetsMenu(false); }}>
+                  <button className="preset-card-btn" onClick={() => { setBrightness(0.85); setContrast(1.85); setIsInverted(false); setShowPresetsMenu(false); }}>
                     <span className="p-icon">🦴</span>
                     <div className="p-text"><span className="p-name">Bone Radiograph</span><span className="p-val">Fracture Detail</span></div>
                   </button>
@@ -415,60 +547,6 @@ const MobileLiteViewer = () => {
         </div>
       )}
 
-      {/* 🏷️ DICOM TAGS INSPECTOR MODAL */}
-      {showTagsModal && (
-        <div className="tags-modal-backdrop" onClick={() => setShowTagsModal(false)}>
-          <div className="tags-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="tags-modal-header">
-              <div className="flex items-center gap-2">
-                <Tag className="text-cyan-400" size={18} />
-                <span className="font-bold text-white text-base">DICOM Tags Header</span>
-              </div>
-              <button className="close-btn" onClick={() => setShowTagsModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="tags-modal-search">
-              <input
-                type="text"
-                placeholder="Search DICOM attribute or tag..."
-                value={tagSearchText}
-                onChange={(e) => setTagSearchText(e.target.value)}
-                className="tags-search-input"
-              />
-            </div>
-            
-            <div className="tags-modal-body scroll-y">
-              {loadingTags ? (
-                <div className="flex items-center justify-center p-8 gap-3 text-slate-300">
-                  <RefreshCw className="animate-spin text-cyan-400" size={20} />
-                  <span>Parsing DICOM Header Tags...</span>
-                </div>
-              ) : tagsData ? (
-                <div className="tags-grid">
-                  {Object.entries(tagsData)
-                    .filter(([k, v]) => {
-                      if (!tagSearchText) return true;
-                      const q = tagSearchText.toLowerCase();
-                      return String(k).toLowerCase().includes(q) || String(v).toLowerCase().includes(q);
-                    })
-                    .map(([key, val]) => (
-                      <div key={key} className="tag-row">
-                        <span className="tag-key">{key}</span>
-                        <span className="tag-val">{typeof val === "object" ? JSON.stringify(val) : String(val)}</span>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <div className="text-center p-6 text-slate-400 text-sm">
-                  No DICOM header tags available for this instance.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 📚 SERIES SELECTION DRAWER */}
       <div className={`lite-instance-list ${showSeriesDrawer ? "open" : ""}`}>
@@ -514,32 +592,53 @@ const MobileLiteViewer = () => {
         ) : (
           <div className="viewport-wrapper" onWheel={(e) => setZoom(z => Math.max(0.5, Math.min(5, z + (e.deltaY < 0 ? 0.1 : -0.1))))}>
             {imageUrl ? (
-              <img 
-                src={imageUrl} 
-                alt="DICOM Slice"
-                className="main-image"
+              <canvas 
+                ref={mainCanvasRef}
+                className="main-image-canvas"
                 style={{
-                  transform: `translate(${panPosition.x}px, ${panPosition.y}px) scale(${zoom}) rotate(${rotation}deg)`,
-                  filter: `brightness(${brightness}) contrast(${contrast}) ${isInverted ? "invert(1)" : ""}`,
-                  transition: isDragging.current ? "none" : "transform 0.08s ease-out, filter 0.08s ease-out"
+                  transform: `translate(${panPosition.x}px, ${panPosition.y}px) scale(${zoom})`,
+                  transition: isDragging.current ? "none" : "transform 0.08s ease-out"
                 }}
               />
             ) : (
               <div style={{ color: "#94a3b8", fontSize: 13 }}>No preview frame available for this instance.</div>
             )}
 
-            {/* 💬 Live Touch Mode Gesture Feedback Pill */}
-            <div className="gesture-feedback-pill">
-              {touchMode === "SCROLL" && <span>📜 Drag ↕ to Scroll • Slice {currentIndex + 1}/{currentInstances.length}</span>}
-              {touchMode === "WL" && <span>🌗 Touch W/L • B: {(brightness * 100).toFixed(0)}% | C: {(contrast * 100).toFixed(0)}%</span>}
-              {touchMode === "PAN" && <span>🔍 Pinch & Pan • Zoom: {(zoom * 100).toFixed(0)}%</span>}
-            </div>
+            {/* 📏 LIVE DICOM TOUCH MEASUREMENTS OVERLAY */}
+            <svg className="measurement-svg-layer">
+              {[...measurements, activeMeasure].filter(Boolean).map((m, idx) => {
+                const dx = m.end.x - m.start.x;
+                const dy = m.end.y - m.start.y;
+                const distPx = Math.hypot(dx, dy);
+                const distMm = (distPx * 0.22).toFixed(1);
+                const midX = (m.start.x + m.end.x) / 2;
+                const midY = (m.start.y + m.end.y) / 2;
+                return (
+                  <g key={idx}>
+                    <line x1={m.start.x} y1={m.start.y} x2={m.end.x} y2={m.end.y} stroke="#06b6d4" strokeWidth="2.5" strokeDasharray="4 2" />
+                    <circle cx={m.start.x} cy={m.start.y} r="4" fill="#06b6d4" stroke="#ffffff" strokeWidth="1" />
+                    <circle cx={m.end.x} cy={m.end.y} r="4" fill="#06b6d4" stroke="#ffffff" strokeWidth="1" />
+                    <rect x={midX - 28} y={midY - 14} width="56" height="20" rx="5" fill="rgba(15, 23, 42, 0.9)" stroke="#06b6d4" strokeWidth="1" />
+                    <text x={midX} y={midY + 1} fill="#38bdf8" fontSize="11" fontWeight="bold" textAnchor="middle" dominantBaseline="middle">{distMm} mm</text>
+                  </g>
+                );
+              })}
+            </svg>
 
-            {/* 🎯 Toggleable Corner DICOM Overlay Info */}
+            {/* 🎯 TOP CORNER DICOM OVERLAYS */}
             {showOverlayInfo && (
               <>
                 <div className="overlay-info top-left">
-                  <div className="overlay-line font-bold text-cyan-300">{studyMeta?.patientName || "Patient"}</div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <button 
+                      className="toggle-overlay-btn-inline"
+                      onClick={() => setShowOverlayInfo(!showOverlayInfo)}
+                      title="Hide DICOM Overlays"
+                    >
+                      <Eye size={13} />
+                    </button>
+                    <span className="overlay-line font-bold text-cyan-300">{studyMeta?.patientName || "Patient"}</span>
+                  </div>
                   <div className="overlay-line text-slate-300">ID: {studyMeta?.patientId || "PACS Direct"}</div>
                   <div className="overlay-line text-slate-400">{studyMeta?.studyDescription || activeSeries?.seriesDescription || "DICOM Study"}</div>
                 </div>
@@ -549,27 +648,19 @@ const MobileLiteViewer = () => {
                   <div className="overlay-line text-slate-300">Acc: {studyMeta?.accession || "N/A"}</div>
                   <div className="overlay-line text-cyan-400 font-mono">Slice: {currentIndex + 1} / {currentInstances.length}</div>
                 </div>
-
-                <div className="overlay-info bottom-left">
-                  <div className="overlay-line text-indigo-300">Zoom: {(zoom * 100).toFixed(0)}%</div>
-                  <div className="overlay-line text-slate-300">Pan: {panPosition.x.toFixed(0)}, {panPosition.y.toFixed(0)}</div>
-                </div>
-
-                <div className="overlay-info bottom-right">
-                  <div className="overlay-line text-emerald-300 font-mono">W: {(contrast * 400).toFixed(0)} L: {(brightness * 40).toFixed(0)}</div>
-                  <div className="overlay-line text-slate-300">Rot: {rotation}°</div>
-                </div>
               </>
             )}
 
-            {/* Toggle Overlay Eye Button */}
-            <button 
-              className="toggle-overlay-btn"
-              onClick={() => setShowOverlayInfo(!showOverlayInfo)}
-              title="Toggle DICOM Overlays"
-            >
-              {showOverlayInfo ? <Eye size={16} /> : <EyeOff size={16} />}
-            </button>
+            {/* If overlay hidden, show floating eye button in top-left to restore */}
+            {!showOverlayInfo && (
+              <button 
+                className="toggle-overlay-btn top-left-restore"
+                onClick={() => setShowOverlayInfo(true)}
+                title="Show DICOM Overlays"
+              >
+                <EyeOff size={15} />
+              </button>
+            )}
           </div>
         )}
       </main>
@@ -578,7 +669,7 @@ const MobileLiteViewer = () => {
       {currentInstances.length > 1 && (
         <div className="scrubber-floating-bar">
           <button className="cine-btn" onClick={() => setIsPlaying(!isPlaying)} title={isPlaying ? "Pause Cine" : "Play Cine"}>
-            {isPlaying ? <Pause size={16} className="text-amber-400" /> : <Play size={16} className="text-emerald-400" />}
+            {isPlaying ? <Pause size={15} className="text-amber-400" /> : <Play size={15} className="text-emerald-400" />}
           </button>
           <input 
             type="range"
@@ -619,29 +710,61 @@ const MobileLiteViewer = () => {
           >
             🔍 Pan/Zoom
           </button>
+          <button
+            className={`mode-seg-btn ${touchMode === "MEASURE" ? "active" : ""}`}
+            onClick={() => setTouchMode("MEASURE")}
+            title="Touch Linear Distance Ruler (mm)"
+          >
+            📏 Measure
+          </button>
+          <button
+            className={`mode-seg-btn ${showMPRModal ? "active" : ""}`}
+            onClick={() => setShowMPRModal(true)}
+            title="3D Multiplanar Reconstruction (MPR) & MIP Viewer"
+          >
+            📐 MPR / MIP
+          </button>
         </div>
 
         <div className="dock-divider" />
 
         {/* Essential Action Buttons */}
         <div className="dock-actions">
-          <button className="dock-icon-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
-            <RotateCw size={18} />
-          </button>
-          
-          <button className={`dock-icon-btn ${isInverted ? "active" : ""}`} onClick={() => setIsInverted(!isInverted)} title="Invert Colors">
-            ☯️
+          <button 
+            className={`dock-icon-btn ${showMPRModal ? "active" : "text-sky-400"}`} 
+            onClick={() => setShowMPRModal(!showMPRModal)} 
+            title="Toggle 3D MPR / MIP Viewer"
+          >
+            <Activity size={16} />
           </button>
 
           <button className="dock-icon-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image">
-            <Camera size={18} />
+            <Camera size={16} />
           </button>
 
-          <button className="dock-icon-btn reset" onClick={resetTools} title="Reset Canvas">
-            <RotateCcw size={18} />
+          <button className="dock-icon-btn reset" onClick={resetTools} title="Reset All Tools & Measurements">
+            <RotateCcw size={16} />
           </button>
         </div>
       </footer>
+
+      {/* 📐 LIGHTWEIGHT 3D MPR / MIP RECONSTRUCTION OVERLAY */}
+      {showMPRModal && (
+        <div className="mpr-full-overlay">
+          <div className="mpr-overlay-header">
+            <span className="mpr-overlay-title">📐 3D Multiplanar Reconstruction (MPR & MIP)</span>
+            <button className="mpr-close-btn" onClick={() => setShowMPRModal(false)} title="Close MPR Viewer">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="mpr-overlay-body">
+            <MobileMPRViewer
+              studyInstanceUID={studyUID}
+              imageIds={currentInstances.map(inst => inst.previewUrl || inst.preview_url || `/api/pacs/instance-preview/${inst.id || inst.instance_id}`)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

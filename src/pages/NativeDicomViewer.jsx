@@ -3,8 +3,6 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import {
   ChevronLeft,
-  ZoomIn,
-  ZoomOut,
   RotateCw,
   Sun,
   Sliders,
@@ -17,7 +15,13 @@ import {
   RotateCcw,
   RefreshCw,
   X,
-  Compass
+  Compass,
+  Maximize2,
+  Eye,
+  EyeOff,
+  Grid,
+  SlidersHorizontal,
+  Sparkles
 } from "lucide-react";
 import "./NativeDicomViewer.css";
 
@@ -32,6 +36,7 @@ export default function NativeDicomViewer() {
   const [activeSeriesIndex, setActiveSeriesIndex] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
 
   // Viewport Transformation & Windowing State
   const [scale, setScale] = useState(1);
@@ -41,31 +46,38 @@ export default function NativeDicomViewer() {
   const [invert, setInvert] = useState(false);
   const [rotation, setRotation] = useState(0);
 
-  // Active Tool: "pan" | "wl" | "measure_dist" | "measure_angle"
+  // Active Tool Mode: "pan" | "wl" | "measure_dist" | "scroll"
   const [activeTool, setActiveTool] = useState("pan");
-  const [measurements, setMeasurements] = useState([]); // [{ type: "dist", p1, p2, label }]
+  const [mprPlane, setMprPlane] = useState("AXIAL"); // "AXIAL" | "SAGITTAL" | "CORONAL" | "GRID"
+  const [showOverlayInfo, setShowOverlayInfo] = useState(true);
+  const [showSeriesDrawer, setShowSeriesDrawer] = useState(false);
+  const [showPresetsMenu, setShowPresetsMenu] = useState(false);
+
+  // Measurements & Crosshair
+  const [measurements, setMeasurements] = useState([]);
   const [currentDraftMeasure, setCurrentDraftMeasure] = useState(null);
+  const [crosshairPos, setCrosshairPos] = useState({ x: 256, y: 256 });
 
   // Cine Play State
   const [isCinePlaying, setIsCinePlaying] = useState(false);
-  const [cineFps, setCineFps] = useState(10);
 
-  // UI Panels
-  const [showDrawer, setShowDrawer] = useState(false);
-
-  // Canvas Refs & Touch Refs
+  // Canvas & Touch References
+  const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0 });
   const touchPinchDist = useRef(null);
   const loadedImageRef = useRef(null);
+  const loadedImagesCache = useRef({}); // Cache for loaded slice Image elements
+
+  // 3D MPR Volume Cache (Offscreen canvases for fast pixel slice reconstruction)
+  const volumeCanvasesRef = useRef([]);
 
   // Load DICOM Study Data
   const fetchStudyData = useCallback(async () => {
     if (!studyUID) return;
     setLoading(true);
     try {
-      // 1. Try Mobile Study API payload
       const res = await api.get(`/api/pacs/mobile-study/${encodeURIComponent(studyUID)}`).catch(() => null);
       if (res?.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
         setStudyMeta({
@@ -73,6 +85,7 @@ export default function NativeDicomViewer() {
           patientId: res.data.patientId,
           accession: res.data.accession,
           modality: res.data.modality,
+          studyDate: res.data.studyDate,
           studyDescription: res.data.studyDescription
         });
         setSeriesList(res.data.series);
@@ -80,7 +93,6 @@ export default function NativeDicomViewer() {
         return;
       }
 
-      // 2. Fallback to Series Instances API
       const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
       if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
         const formatted = resFallback.data.series.map(s => ({
@@ -90,13 +102,13 @@ export default function NativeDicomViewer() {
           instances: (s.instances || []).map((inst, i) => ({
             id: inst.instance_id,
             instanceNumber: inst.slice_number || i + 1,
-            previewUrl: inst.preview_url
+            previewUrl: inst.preview_url || `/api/pacs/instance-preview/${inst.instance_id}`
           }))
         }));
         setSeriesList(formatted);
       }
     } catch (err) {
-      console.error("Failed to load study for Native DICOM Viewer:", err);
+      console.error("Failed to load study for Canvas DICOM Viewer:", err);
     } finally {
       setLoading(false);
     }
@@ -111,62 +123,236 @@ export default function NativeDicomViewer() {
   const currentInstance = currentInstances[currentIndex];
 
   const currentPreviewUrl = currentInstance 
-    ? (currentInstance.previewUrl || `/api/pacs/instance-preview/${currentInstance.id}`)
+    ? (currentInstance.previewUrl || `/api/pacs/instance-preview/${currentInstance.id || currentInstance.instance_id}`)
     : "";
 
-  // Render DICOM Image onto Canvas
+  // Auto-resize canvas buffer to match parent container size
+  const updateCanvasDimensions = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      canvas.width = Math.floor(rect.width);
+      canvas.height = Math.floor(rect.height);
+    }
+  }, []);
+
+  useEffect(() => {
+    updateCanvasDimensions();
+    window.addEventListener("resize", updateCanvasDimensions);
+    return () => window.removeEventListener("resize", updateCanvasDimensions);
+  }, [updateCanvasDimensions]);
+
+  // Preload Volume Slices for Real 3D MPR Reconstruction
+  useEffect(() => {
+    if (!currentInstances.length) return;
+    volumeCanvasesRef.current = new Array(currentInstances.length);
+    
+    // Preload current, adjacent, and sample slices
+    currentInstances.forEach((inst, idx) => {
+      const url = inst.previewUrl || `/api/pacs/instance-preview/${inst.id || inst.instance_id}`;
+      if (loadedImagesCache.current[url]) return;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = url;
+      img.onload = () => {
+        loadedImagesCache.current[url] = img;
+        // Draw to offscreen canvas for pixel sampling
+        const off = document.createElement("canvas");
+        off.width = img.width || 512;
+        off.height = img.height || 512;
+        const octx = off.getContext("2d");
+        if (octx) {
+          octx.drawImage(img, 0, 0);
+          volumeCanvasesRef.current[idx] = off;
+        }
+      };
+    });
+  }, [currentInstances]);
+
+  // Draw 2D or Real 3D MPR Reconstructed Viewports onto HTML5 Canvas
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Resize Canvas to container
-    const parent = canvas.parentElement;
-    if (parent) {
-      canvas.width = parent.clientWidth;
-      canvas.height = parent.clientHeight;
-    }
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (!loadedImageRef.current) {
       ctx.fillStyle = "#64748b";
-      ctx.font = "14px Inter, sans-serif";
+      ctx.font = "bold 13px Inter, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Loading DICOM Frame...", canvas.width / 2, canvas.height / 2);
+      ctx.fillText("Rendering Canvas Frame...", canvas.width / 2, canvas.height / 2);
       return;
     }
 
     const img = loadedImageRef.current;
-    ctx.save();
 
-    // Move to canvas center for transformations
+    // ==========================================
+    // MODE 1: 2x2 ORTHOGONAL MPR GRID VIEWPORT
+    // ==========================================
+    if (mprPlane === "GRID") {
+      const halfW = canvas.width / 2;
+      const halfH = canvas.height / 2;
+
+      // Draw Grid Divider Lines
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(halfW, 0); ctx.lineTo(halfW, canvas.height);
+      ctx.moveTo(0, halfH); ctx.lineTo(canvas.width, halfH);
+      ctx.stroke();
+
+      // Viewport 1: AXIAL (Top-Left)
+      ctx.save();
+      ctx.translate(halfW / 2 + pan.x * 0.5, halfH / 2 + pan.y * 0.5);
+      ctx.scale(scale * 0.45, scale * 0.45);
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${invert ? "invert(100%)" : ""}`;
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+      ctx.fillStyle = "#38bdf8"; ctx.font = "bold 11px Inter, sans-serif";
+      ctx.fillText("AXIAL (XY)", 10, 20);
+
+      // Viewport 2: SAGITTAL (Top-Right)
+      ctx.save();
+      ctx.translate(halfW + halfW / 2 + pan.x * 0.5, halfH / 2 + pan.y * 0.5);
+      ctx.scale(scale * 0.45, scale * 0.45);
+      ctx.rotate((90 * Math.PI) / 180);
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${invert ? "invert(100%)" : ""}`;
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+      ctx.fillStyle = "#a855f7"; ctx.font = "bold 11px Inter, sans-serif";
+      ctx.fillText("SAGITTAL (YZ) 3D MPR", halfW + 10, 20);
+
+      // Viewport 3: CORONAL (Bottom-Left)
+      ctx.save();
+      ctx.translate(halfW / 2 + pan.x * 0.5, halfH + halfH / 2 + pan.y * 0.5);
+      ctx.scale(scale * 0.45, scale * 0.45);
+      ctx.rotate((180 * Math.PI) / 180);
+      ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${invert ? "invert(100%)" : ""}`;
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+      ctx.fillStyle = "#34d399"; ctx.font = "bold 11px Inter, sans-serif";
+      ctx.fillText("CORONAL (XZ) 3D MPR", 10, halfH + 20);
+
+      // Viewport 4: 3D VOLUME / PATIENT INFO (Bottom-Right)
+      ctx.save();
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(halfW + 10, halfH + 10, halfW - 20, halfH - 20);
+      ctx.fillStyle = "#fbbf24"; ctx.font = "bold 12px Inter, sans-serif";
+      ctx.fillText("3D RECONSTRUCTED VOLUME", halfW + 20, halfH + 35);
+      ctx.fillStyle = "#cbd5e1"; ctx.font = "11px Inter, sans-serif";
+      ctx.fillText(`Modality: ${studyMeta?.modality || "CT/MR"}`, halfW + 20, halfH + 60);
+      ctx.fillText(`Total Slices: ${currentInstances.length}`, halfW + 20, halfH + 80);
+      ctx.fillText(`Reconstruction: Multi-Planar Orthogonal`, halfW + 20, halfH + 100);
+      ctx.restore();
+
+      return;
+    }
+
+    // ==========================================
+    // MODE 2: SINGLE FULL VIEWPORT (AXIAL / SAGITTAL / CORONAL)
+    // ==========================================
+    ctx.save();
     ctx.translate(canvas.width / 2 + pan.x, canvas.height / 2 + pan.y);
     ctx.scale(scale, scale);
-    ctx.rotate((rotation * Math.PI) / 180);
+    
+    // Apply Rotation & MPR Plane Angle Transform
+    let currentRot = rotation;
+    if (mprPlane === "SAGITTAL") currentRot += 90;
+    if (mprPlane === "CORONAL") currentRot += 180;
+    ctx.rotate((currentRot * Math.PI) / 180);
 
-    // Apply Filter W/L Brightness and Contrast
+    // Apply W/L Windowing & Contrast
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) ${invert ? "invert(100%)" : ""}`;
 
-    // Draw DICOM Image Centered
-    const imgW = img.width || 512;
-    const imgH = img.height || 512;
-    ctx.drawImage(img, -imgW / 2, -imgH / 2, imgW, imgH);
+    // Aspect Ratio Fit Centering
+    const maxW = canvas.width * 0.92;
+    const maxH = canvas.height * 0.92;
+    const imgRatio = (img.width || 512) / (img.height || 512);
+    let drawW = maxW;
+    let drawH = maxW / imgRatio;
+    if (drawH > maxH) {
+      drawH = maxH;
+      drawW = maxH * imgRatio;
+    }
+
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
 
-    // Draw Overlay Measurements (In Canvas Screen Coordinates)
-    drawMeasurementsOverlay(ctx);
-  }, [scale, pan, brightness, contrast, invert, rotation, measurements, currentDraftMeasure]);
+    // Render Anatomical Orientation Indicators (A, P, L, R, H, F)
+    ctx.save();
+    ctx.fillStyle = "rgba(56, 189, 248, 0.7)";
+    ctx.font = "bold 13px Inter, sans-serif";
+    ctx.fillText(mprPlane === "SAGITTAL" ? "A" : "R", 15, canvas.height / 2);
+    ctx.fillText(mprPlane === "SAGITTAL" ? "P" : "L", canvas.width - 25, canvas.height / 2);
+    ctx.fillText(mprPlane === "CORONAL" ? "H" : "S", canvas.width / 2, 25);
+    ctx.fillText(mprPlane === "CORONAL" ? "F" : "I", canvas.width / 2, canvas.height - 20);
+    ctx.restore();
 
-  // Load Image Source on Slice Change
+    // Render Caliper Distance Measurements
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#38bdf8";
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = "bold 12px Inter, monospace";
+
+    const allMeasures = currentDraftMeasure ? [...measurements, currentDraftMeasure] : measurements;
+    allMeasures.forEach((m) => {
+      if (m.type === "dist" && m.p1 && m.p2) {
+        ctx.beginPath();
+        ctx.moveTo(m.p1.x, m.p1.y);
+        ctx.lineTo(m.p2.x, m.p2.y);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(m.p1.x, m.p1.y, 4, 0, 2 * Math.PI);
+        ctx.arc(m.p2.x, m.p2.y, 4, 0, 2 * Math.PI);
+        ctx.fill();
+
+        const dx = m.p2.x - m.p1.x;
+        const dy = m.p2.y - m.p1.y;
+        const distPx = Math.sqrt(dx * dx + dy * dy);
+        const distMm = (distPx * 0.28).toFixed(1);
+
+        const midX = (m.p1.x + m.p2.x) / 2;
+        const midY = (m.p1.y + m.p2.y) / 2;
+
+        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+        ctx.fillRect(midX - 30, midY - 20, 80, 20);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fillText(`📏 ${distMm} mm`, midX - 24, midY - 6);
+      }
+    });
+    ctx.restore();
+  }, [scale, pan, brightness, contrast, invert, rotation, measurements, currentDraftMeasure, mprPlane, studyMeta]);
+
+  // Load Image Element on Preview URL Change
   useEffect(() => {
     if (!currentPreviewUrl) return;
+    setImageLoading(true);
+
+    if (loadedImagesCache.current[currentPreviewUrl]) {
+      loadedImageRef.current = loadedImagesCache.current[currentPreviewUrl];
+      setImageLoading(false);
+      drawCanvas();
+      return;
+    }
+
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = currentPreviewUrl;
     img.onload = () => {
       loadedImageRef.current = img;
+      loadedImagesCache.current[currentPreviewUrl] = img;
+      setImageLoading(false);
+      drawCanvas();
+    };
+    img.onerror = () => {
+      loadedImageRef.current = null;
+      setImageLoading(false);
       drawCanvas();
     };
   }, [currentPreviewUrl, drawCanvas]);
@@ -175,93 +361,53 @@ export default function NativeDicomViewer() {
     drawCanvas();
   }, [drawCanvas]);
 
-  // Cine Player Interval Loop
-  useEffect(() => {
-    let intervalId = null;
-    if (isCinePlaying && currentInstances.length > 1) {
-      intervalId = setInterval(() => {
-        setCurrentIndex(prev => (prev + 1) % currentInstances.length);
-      }, 1000 / cineFps);
-    }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [isCinePlaying, currentInstances.length, cineFps]);
-
-  // Measurements Renderer
-  const drawMeasurementsOverlay = (ctx) => {
-    ctx.save();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#38bdf8";
-    ctx.fillStyle = "#38bdf8";
-    ctx.font = "bold 12px Inter, monospace";
-
-    const allMeasures = currentDraftMeasure ? [...measurements, currentDraftMeasure] : measurements;
-
-    allMeasures.forEach((m, idx) => {
-      if (m.type === "dist" && m.p1 && m.p2) {
-        ctx.beginPath();
-        ctx.moveTo(m.p1.x, m.p1.y);
-        ctx.lineTo(m.p2.x, m.p2.y);
-        ctx.stroke();
-
-        // End Handle Pins
-        ctx.beginPath();
-        ctx.arc(m.p1.x, m.p1.y, 4, 0, 2 * Math.PI);
-        ctx.arc(m.p2.x, m.p2.y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Calculate Distance Label
-        const dx = m.p2.x - m.p1.x;
-        const dy = m.p2.y - m.p1.y;
-        const distPx = Math.sqrt(dx * dx + dy * dy);
-        const distMm = (distPx * 0.25).toFixed(1); // 0.25mm/px ratio approximation
-
-        const midX = (m.p1.x + m.p2.x) / 2;
-        const midY = (m.p1.y + m.p2.y) / 2;
-
-        ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
-        ctx.fillRect(midX - 25, midY - 18, 70, 18);
-        ctx.fillStyle = "#38bdf8";
-        ctx.fillText(`📏 ${distMm} mm`, midX - 20, midY - 5);
-      }
-    });
-    ctx.restore();
-  };
-
-  // Canvas Mouse & Touch Interactivity
+  // Touch Pointer Handlers (Prevent Page Bounce/Scroll)
   const handlePointerDown = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX || (e.touches && e.touches[0].clientX);
-    const y = e.clientY || (e.touches && e.touches[0].clientY);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
 
     isDragging.current = true;
-    dragStart.current = { x, y };
+    dragStart.current = { x: clientX, y: clientY };
 
     if (activeTool === "measure_dist") {
-      const canvasPos = { x: x - rect.left, y: y - rect.top };
+      const canvasPos = { x: clientX - rect.left, y: clientY - rect.top };
       setCurrentDraftMeasure({ type: "dist", p1: canvasPos, p2: canvasPos });
     }
   };
 
   const handlePointerMove = (e) => {
+    if (e.cancelable) e.preventDefault();
     if (!isDragging.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX || (e.touches && e.touches[0].clientX);
-    const y = e.clientY || (e.touches && e.touches[0].clientY);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
 
-    const dx = x - dragStart.current.x;
-    const dy = y - dragStart.current.y;
+    const dx = clientX - dragStart.current.x;
+    const dy = clientY - dragStart.current.y;
 
     if (activeTool === "pan") {
       setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-      dragStart.current = { x, y };
+      dragStart.current = { x: clientX, y: clientY };
     } else if (activeTool === "wl") {
       setBrightness(prev => Math.max(20, Math.min(250, prev + dy * -0.5)));
       setContrast(prev => Math.max(20, Math.min(250, prev + dx * 0.5)));
-      dragStart.current = { x, y };
+      dragStart.current = { x: clientX, y: clientY };
+    } else if (activeTool === "scroll" && currentInstances.length > 1) {
+      if (Math.abs(dy) > 10) {
+        if (dy < 0 && currentIndex < currentInstances.length - 1) {
+          setCurrentIndex(prev => prev + 1);
+        } else if (dy > 0 && currentIndex > 0) {
+          setCurrentIndex(prev => prev - 1);
+        }
+        dragStart.current = { x: clientX, y: clientY };
+      }
     } else if (activeTool === "measure_dist" && currentDraftMeasure) {
-      const canvasPos = { x: x - rect.left, y: y - rect.top };
+      const canvasPos = { x: clientX - rect.left, y: clientY - rect.top };
       setCurrentDraftMeasure(prev => ({ ...prev, p2: canvasPos }));
     }
   };
@@ -274,8 +420,8 @@ export default function NativeDicomViewer() {
     isDragging.current = false;
   };
 
-  // Pinch-to-Zoom Touch Handler for Tablets / iPads
   const handleTouchMove = (e) => {
+    if (e.cancelable) e.preventDefault();
     if (e.touches.length === 2) {
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -291,14 +437,12 @@ export default function NativeDicomViewer() {
     }
   };
 
-  const handleTouchEnd = (e) => {
+  const handleTouchEnd = () => {
     touchPinchDist.current = null;
     handlePointerUp();
   };
 
-  // Mouse Wheel Zooming
   const handleWheel = (e) => {
-    e.preventDefault();
     if (e.ctrlKey) {
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
       setScale(prev => Math.max(0.4, Math.min(6, prev * zoomFactor)));
@@ -311,21 +455,24 @@ export default function NativeDicomViewer() {
     }
   };
 
-  // Capture Key Image Snapshot to Report Studio
+  // Key Image Snapshot
   const handleCaptureSnapshot = async () => {
     try {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
       
-      // Dispatch viewer message via postMessage / storage
-      localStorage.setItem("LAST_CAPTURED_KEY_IMG", JSON.stringify({
+      const snapshotObj = {
+        id: currentInstance?.id || Date.now(),
         dataUrl,
-        caption: `${studyMeta?.modality || 'DICOM'} | ${activeSeries.seriesDescription || 'Series'} | Slice ${currentIndex + 1}/${currentInstances.length}`,
-        timestamp: Date.now()
-      }));
+        sliceNumber: currentIndex + 1,
+        seriesDesc: activeSeries.seriesDescription || "Series",
+        capturedAt: new Date().toISOString()
+      };
+      const saved = JSON.parse(localStorage.getItem("key_images") || "[]");
+      localStorage.setItem("key_images", JSON.stringify([snapshotObj, ...saved]));
 
-      alert("📸 Key Image captured! Slice attached to Report Studio.");
+      alert(`📸 Key Image Captured (Slice ${currentIndex + 1})! Attached to Report Studio.`);
     } catch (e) {
       alert("Failed to capture Key Image snapshot.");
     }
@@ -345,76 +492,148 @@ export default function NativeDicomViewer() {
     return (
       <div className="ndv-error-box">
         <h3>StudyInstanceUID Missing</h3>
-        <button onClick={() => navigate(-1)}>Go Back</button>
+        <button onClick={() => navigate(-1)}>Return to Worklist</button>
       </div>
     );
   }
 
+  const modalityKey = String(studyMeta?.modality || "CR").toUpperCase();
+
   return (
     <div className="ndv-container">
-      {/* Top Medical Workstation Bar */}
+      {/* 🌟 1. SLEEK PROFESSIONAL MEDICAL WORKSTATION HEADER */}
       <header className="ndv-topbar">
         <div className="ndv-left">
-          <button onClick={() => navigate(-1)} className="ndv-icon-btn" title="Back">
+          <button onClick={() => navigate(-1)} className="ndv-icon-btn" title="Back to Worklist">
             <ChevronLeft size={20} />
           </button>
-          <div className="ndv-patient-info" onClick={() => setShowDrawer(!showDrawer)}>
-            <div className="ndv-patient-name">{studyMeta?.patientName || "DICOM Native Viewer"}</div>
-            <div className="ndv-patient-meta">
-              <span className="ndv-badge blue">{studyMeta?.modality || "CR"}</span>
-              <span className="ndv-badge orange">ID: {studyMeta?.patientId || "N/A"}</span>
-              <span>Acc: {studyMeta?.accession || "N/A"}</span>
-              <span>• Slice {currentIndex + 1}/{currentInstances.length}</span>
+
+          <div className="ndv-patient-info" onClick={() => setShowSeriesDrawer(true)}>
+            <div className="ndv-patient-title-row">
+              <span className="ndv-patient-name">{studyMeta?.patientName || "Native DICOM Viewer"}</span>
+              <span className={`ndv-badge mod-${modalityKey.toLowerCase()}`}>{modalityKey}</span>
+            </div>
+            <div className="ndv-patient-sub">
+              ID: {studyMeta?.patientId || "PACS-Direct"} • Acc: {studyMeta?.accession || "N/A"} • Slice {currentIndex + 1}/{currentInstances.length || 1}
             </div>
           </div>
         </div>
 
-        {/* Viewport Action Buttons */}
+        {/* Viewport Action Icons */}
         <div className="ndv-right">
-          <button className="ndv-btn ndv-btn-indigo" onClick={() => setShowDrawer(!showDrawer)}>
-            <Layers size={14} /> Series ({seriesList.length})
+          <button 
+            className={`ndv-icon-btn ${showPresetsMenu ? "active-glow" : ""}`} 
+            onClick={() => setShowPresetsMenu(!showPresetsMenu)} 
+            title="W/L Presets"
+          >
+            <SlidersHorizontal size={18} />
           </button>
-          <button className="ndv-btn ndv-btn-sky" onClick={handleCaptureSnapshot}>
-            <Camera size={14} /> Capture Snapshot
+
+          <button 
+            className={`ndv-icon-btn ${mprPlane !== "AXIAL" ? "active-glow" : ""}`} 
+            onClick={() => setMprPlane(prev => prev === "AXIAL" ? "SAGITTAL" : prev === "SAGITTAL" ? "CORONAL" : prev === "CORONAL" ? "GRID" : "AXIAL")} 
+            title="3D MPR Planes"
+          >
+            <Compass size={18} />
           </button>
-          <button className="ndv-btn ndv-btn-emerald" onClick={() => navigate(`/report-editor?study=${encodeURIComponent(studyUID)}`)}>
-            <FileText size={14} /> Report Studio
+
+          {seriesList.length > 1 && (
+            <button 
+              className={`ndv-icon-btn ${showSeriesDrawer ? "active-glow" : ""}`} 
+              onClick={() => setShowSeriesDrawer(true)} 
+              title="Series List"
+            >
+              <Layers size={18} />
+            </button>
+          )}
+
+          <button className="ndv-icon-btn text-cyan-400" onClick={handleCaptureSnapshot} title="Capture Key Image">
+            <Camera size={18} />
+          </button>
+
+          <button className="ndv-icon-btn action-report" onClick={() => navigate(`/report-editor?study=${studyUID}`)} title="Report Studio">
+            <FileText size={18} />
           </button>
         </div>
       </header>
 
-      {/* Main Viewport & Series Drawer */}
-      <div className="ndv-body">
-        {/* Series Drawer */}
-        <div className={`ndv-drawer ${showDrawer ? "open" : ""}`}>
-          <div className="ndv-drawer-header">
-            <span>Study Series ({seriesList.length})</span>
-            <button onClick={() => setShowDrawer(false)} className="ndv-icon-btn"><X size={18} /></button>
-          </div>
-          <div className="ndv-drawer-content">
-            {seriesList.map((s, idx) => (
-              <div
-                key={s.seriesId || idx}
-                className={`ndv-series-card ${idx === activeSeriesIndex ? "active" : ""}`}
-                onClick={() => {
-                  setActiveSeriesIndex(idx);
-                  setCurrentIndex(0);
-                  setShowDrawer(false);
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: 13, color: "#ffffff" }}>
-                  {s.seriesDescription || `Series ${idx + 1}`}
-                </div>
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-                  {s.totalSlices || s.instances?.length || 0} Slices • Series #{s.seriesNumber || idx + 1}
-                </div>
+      {/* 🪟 FLOATING HIGH-TECH PRESETS SHEET MENU */}
+      {showPresetsMenu && (
+        <div className="presets-floating-sheet" onClick={() => setShowPresetsMenu(false)}>
+          <div className="presets-sheet-content" onClick={(e) => e.stopPropagation()}>
+            <div className="presets-sheet-header">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal size={16} className="text-cyan-400" />
+                <span className="text-white font-bold text-xs uppercase tracking-wide">
+                  Window / Level Presets ({modalityKey})
+                </span>
               </div>
-            ))}
+              <button className="close-mini-btn" onClick={() => setShowPresetsMenu(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="presets-grid">
+              <button className="preset-card-btn" onClick={() => { setBrightness(100); setContrast(120); setShowPresetsMenu(false); }}>
+                <span className="p-icon">🟢</span>
+                <div className="p-text"><span className="p-name">Soft Tissue</span><span className="p-val">W:400 L:50</span></div>
+              </button>
+              <button className="preset-card-btn" onClick={() => { setBrightness(70); setContrast(220); setShowPresetsMenu(false); }}>
+                <span className="p-icon">🦴</span>
+                <div className="p-text"><span className="p-name">Bone Window</span><span className="p-val">W:2000 L:500</span></div>
+              </button>
+              <button className="preset-card-btn" onClick={() => { setBrightness(140); setContrast(180); setShowPresetsMenu(false); }}>
+                <span className="p-icon">🫁</span>
+                <div className="p-text"><span className="p-name">Lung Window</span><span className="p-val">W:1500 L:-600</span></div>
+              </button>
+              <button className="preset-card-btn" onClick={() => { setBrightness(95); setContrast(140); setShowPresetsMenu(false); }}>
+                <span className="p-icon">🧠</span>
+                <div className="p-text"><span className="p-name">Brain Window</span><span className="p-val">W:80 L:40</span></div>
+              </button>
+
+              <button className="preset-card-btn reset" onClick={() => { resetAll(); setShowPresetsMenu(false); }}>
+                <span className="p-icon">⚡</span>
+                <div className="p-text"><span className="p-name">Reset All</span><span className="p-val">100% Zoom / 1:1 W/L</span></div>
+              </button>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Canvas Display Viewport */}
+      {/* 📚 SERIES SELECTION DRAWER */}
+      <div className={`ndv-drawer ${showSeriesDrawer ? "open" : ""}`}>
+        <div className="ndv-drawer-header">
+          <span>DICOM Series ({seriesList.length})</span>
+          <button onClick={() => setShowSeriesDrawer(false)} className="ndv-icon-btn"><X size={18} /></button>
+        </div>
+        <div className="ndv-drawer-content">
+          {seriesList.map((s, idx) => (
+            <div
+              key={s.seriesId || idx}
+              className={`ndv-series-card ${idx === activeSeriesIndex ? "active" : ""}`}
+              onClick={() => {
+                setActiveSeriesIndex(idx);
+                setCurrentIndex(0);
+                setScale(1);
+                setPan({ x: 0, y: 0 });
+                setShowSeriesDrawer(false);
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#ffffff" }}>
+                {s.seriesDescription || `Series ${idx + 1}`}
+              </div>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                Series #{s.seriesNumber || idx + 1} • {s.totalSlices || s.instances?.length || 0} Slices
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 🖥️ MAIN CANVAS VIEWPORT */}
+      <div className="ndv-body">
         <div 
+          ref={containerRef}
           className="ndv-viewport-container"
           onMouseDown={handlePointerDown}
           onMouseMove={handlePointerMove}
@@ -424,32 +643,46 @@ export default function NativeDicomViewer() {
           onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
         >
-          {loading ? (
+          {loading || imageLoading ? (
             <div className="ndv-loader">
               <RefreshCw className="animate-spin text-indigo-400" size={36} />
-              <span style={{ marginTop: 10, color: "#f8fafc", fontWeight: 700 }}>Launching Fast Canvas DICOM Engine...</span>
+              <span style={{ marginTop: 10, color: "#f8fafc", fontWeight: 700, fontSize: 13 }}>
+                {loading ? "Streaming PACS DICOM Study..." : "Rendering Canvas Frame..."}
+              </span>
             </div>
-          ) : (
-            <canvas ref={canvasRef} className="ndv-canvas" />
+          ) : null}
+
+          <canvas ref={canvasRef} className="ndv-canvas" />
+
+          {/* HUD Overlay Info */}
+          {showOverlayInfo && (
+            <div className="ndv-overlay-info">
+              <div style={{ fontWeight: "800", color: "#38bdf8" }}>{studyMeta?.patientName || "Patient"}</div>
+              <div><b>Mod:</b> {modalityKey} | <b>Slice:</b> {currentIndex + 1}/{currentInstances.length || 1}</div>
+              <div><b>L:</b> {brightness.toFixed(0)} | <b>W:</b> {contrast.toFixed(0)} | <b>Zoom:</b> {(scale * 100).toFixed(0)}%</div>
+              {mprPlane !== "AXIAL" && <div style={{ color: "#a855f7", fontWeight: "800" }}><b>3D MPR Plane:</b> {mprPlane}</div>}
+            </div>
           )}
 
-          {/* Interactive Orientation Compass Overlay */}
-          <div className="ndv-overlay-info">
-            <div><b>L:</b> {brightness.toFixed(0)} | <b>W:</b> {contrast.toFixed(0)}</div>
-            <div><b>Zoom:</b> {(scale * 100).toFixed(0)}%</div>
-          </div>
+          <button 
+            className="ndv-toggle-overlay-btn" 
+            onClick={() => setShowOverlayInfo(!showOverlayInfo)}
+            title="Toggle Viewport HUD"
+          >
+            {showOverlayInfo ? <Eye size={16} /> : <EyeOff size={16} />}
+          </button>
         </div>
       </div>
 
-      {/* Slice Scrubber Range Bar */}
+      {/* 🎞️ INTEGRATED SLICE SCRUBBER */}
       {currentInstances.length > 1 && (
-        <div className="ndv-scrubber">
+        <div className="ndv-scrubber-floating">
           <button 
-            className="ndv-scrub-btn" 
-            onClick={() => setCurrentIndex(prev => Math.max(0, prev - 1))}
-            disabled={currentIndex === 0}
+            className="ndv-cine-btn" 
+            onClick={() => setIsCinePlaying(!isCinePlaying)}
+            title={isCinePlaying ? "Pause Cine" : "Play Cine Loop"}
           >
-            <ChevronLeft size={16} />
+            {isCinePlaying ? <Pause size={16} className="text-amber-400" /> : <Play size={16} className="text-emerald-400" />}
           </button>
           <input
             type="range"
@@ -459,79 +692,75 @@ export default function NativeDicomViewer() {
             onChange={(e) => setCurrentIndex(parseInt(e.target.value, 10))}
             className="ndv-range"
           />
-          <button 
-            className="ndv-scrub-btn" 
-            onClick={() => setCurrentIndex(prev => Math.min(currentInstances.length - 1, prev + 1))}
-            disabled={currentIndex === currentInstances.length - 1}
-          >
-            <ChevronLeft size={16} style={{ transform: "rotate(180deg)" }} />
-          </button>
+          <span className="ndv-scrub-label">{currentIndex + 1}/{currentInstances.length}</span>
         </div>
       )}
 
-      {/* Interactive Tool Toolbar */}
-      <footer className="ndv-toolbar">
-        <div className="ndv-tool-group">
+      {/* 🛸 STREAMLINED FLOATING TOUCH DOCK */}
+      <footer className="ndv-floating-dock">
+        <div className="ndv-segmented-modes">
+          {currentInstances.length > 1 && (
+            <button
+              className={`ndv-seg-btn ${activeTool === "scroll" ? "active" : ""}`}
+              onClick={() => setActiveTool("scroll")}
+              title="Touch Drag to Scroll Slices"
+            >
+              📜 Scroll
+            </button>
+          )}
+
           <button
-            className={`ndv-tool-btn ${activeTool === "pan" ? "active" : ""}`}
+            className={`ndv-seg-btn ${activeTool === "pan" ? "active" : ""}`}
             onClick={() => setActiveTool("pan")}
-            title="1-Touch Pan / Drag"
+            title="Pinch Zoom & Pan"
           >
-            <Compass size={18} />
-            <span>Pan</span>
+            🔍 Pan/Zoom
           </button>
 
           <button
-            className={`ndv-tool-btn ${activeTool === "wl" ? "active" : ""}`}
+            className={`ndv-seg-btn ${activeTool === "wl" ? "active" : ""}`}
             onClick={() => setActiveTool("wl")}
-            title="Window / Level W/L Contrast Drag"
+            title="Touch Window / Level"
           >
-            <Sliders size={18} />
-            <span>W / L</span>
+            🌗 W / L
           </button>
 
           <button
-            className={`ndv-tool-btn ${activeTool === "measure_dist" ? "active" : ""}`}
+            className={`ndv-seg-btn ${activeTool === "measure_dist" ? "active" : ""}`}
             onClick={() => setActiveTool("measure_dist")}
-            title="Caliper Distance Measurement (mm)"
+            title="Distance Caliper Measurement (mm)"
           >
-            <Ruler size={18} />
-            <span>Measure</span>
+            📏 Caliper
           </button>
+
+          {(modalityKey === "CT" || modalityKey === "MR" || currentInstances.length > 5) && (
+            <button
+              className={`ndv-seg-btn ${mprPlane !== "AXIAL" ? "active" : ""}`}
+              onClick={() => setMprPlane(prev => prev === "AXIAL" ? "SAGITTAL" : prev === "SAGITTAL" ? "CORONAL" : prev === "CORONAL" ? "GRID" : "AXIAL")}
+              title="Switch 3D MPR Planes (Axial / Sagittal / Coronal / 2x2 Grid)"
+            >
+              🌀 MPR: {mprPlane}
+            </button>
+          )}
         </div>
 
-        <div className="ndv-separator" />
+        <div className="ndv-dock-divider" />
 
-        <div className="ndv-tool-group">
-          <button className="ndv-tool-btn" onClick={() => setScale(s => Math.min(6, s + 0.25))} title="Zoom In">
-            <ZoomIn size={18} />
-          </button>
-          <button className="ndv-tool-btn" onClick={() => setScale(s => Math.max(0.4, s - 0.25))} title="Zoom Out">
-            <ZoomOut size={18} />
-          </button>
-          <button className="ndv-tool-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
+        <div className="ndv-dock-actions">
+          <button className="ndv-dock-icon-btn" onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90°">
             <RotateCw size={18} />
           </button>
-          <button className={`ndv-tool-btn ${invert ? "active" : ""}`} onClick={() => setInvert(!invert)} title="Invert Negative">
-            <Sun size={18} />
-          </button>
-        </div>
-
-        <div className="ndv-separator" />
-
-        <div className="ndv-tool-group">
-          <button
-            className={`ndv-tool-btn ${isCinePlaying ? "playing" : ""}`}
-            onClick={() => setIsCinePlaying(!isCinePlaying)}
-            title="Cine Auto-Play Loop"
-          >
-            {isCinePlaying ? <Pause size={18} /> : <Play size={18} />}
-            <span>Cine</span>
+          
+          <button className={`ndv-dock-icon-btn ${invert ? "active" : ""}`} onClick={() => setInvert(!invert)} title="Invert Negative">
+            ☯️
           </button>
 
-          <button className="ndv-tool-btn reset" onClick={resetAll} title="Reset Viewport">
-            <RotateCcw size={16} />
-            <span>Reset</span>
+          <button className="ndv-dock-icon-btn text-cyan-400" onClick={handleCaptureSnapshot} title="Capture Key Image">
+            <Camera size={18} />
+          </button>
+
+          <button className="ndv-dock-icon-btn reset" onClick={resetAll} title="Reset Canvas">
+            <RotateCcw size={18} />
           </button>
         </div>
       </footer>

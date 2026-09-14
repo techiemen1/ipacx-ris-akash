@@ -203,11 +203,13 @@ export default function ReportingPage() {
 
   const filteredWorklist = useMemo(() => {
     return mergedWorklist.filter(item => {
+      const q = searchText.toLowerCase().trim();
       const matchSearch =
-        !searchText ||
-        item.patient_name.toLowerCase().includes(searchText.toLowerCase()) ||
-        item.patient_id.toLowerCase().includes(searchText.toLowerCase()) ||
-        item.accession_number.toLowerCase().includes(searchText.toLowerCase());
+        !q ||
+        item.patient_name.toLowerCase().includes(q) ||
+        item.patient_id.toLowerCase().includes(q) ||
+        item.accession_number.toLowerCase().includes(q) ||
+        (item.study_description || "").toLowerCase().includes(q);
 
       const matchModality = !filterModality ||
         (filterModality === "CR" ? (item.modality === "CR" || item.modality === "DX" || item.modality === "XR") : item.modality === filterModality);
@@ -323,15 +325,15 @@ export default function ReportingPage() {
           </div>
         </header>
 
-        {/* UNIFIED SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
+        {/* UNIFIED SINGLE-LINE SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
         <div className="rp-filter-bar">
           <div className="rp-filter-row-primary">
-            {/* SEARCH BOX */}
+            {/* SEARCH BOX (SEARCHES PATIENT NAME, MRN, ACCESSION NO, PATIENT/EXAM DESCRIPTION) */}
             <div className="rp-search-box">
               <Search size={15} />
               <input
                 type="text"
-                placeholder="Search by Patient Name, ID/MRN, Accession No..."
+                placeholder="Search Patient Name, MRN, Accession No, Exam/Patient Description..."
                 value={searchText}
                 onChange={(e) => {
                   setSearchText(e.target.value);
@@ -340,19 +342,6 @@ export default function ReportingPage() {
               />
             </div>
 
-            {/* MOBILE FILTER ACCORDION TOGGLE BUTTON */}
-            <button
-              className="rp-mobile-filter-toggle"
-              onClick={() => setShowMobileFilters(!showMobileFilters)}
-              title="Toggle Advanced Filters"
-            >
-              <SlidersHorizontal size={14} />
-              <span>Filters</span>
-              {activeFilterCount > 0 && <span className="rp-filter-badge-count">{activeFilterCount}</span>}
-            </button>
-          </div>
-
-          <div className={`rp-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
             {/* MODALITY FILTER */}
             <select
               value={filterModality}
@@ -387,27 +376,28 @@ export default function ReportingPage() {
               <option value="Final">Final ({stats.final})</option>
             </select>
 
-            {/* QUICK DATE PILLS */}
-            <div className="rp-date-pills">
-              {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
-                <button
-                  key={quickKey}
-                  onClick={() => {
-                    setDateQuickFilter(quickKey);
-                    setCurrentPage(1);
-                    if (quickKey !== "CUSTOM") {
-                      setFromDate("");
-                      setToDate("");
-                    }
-                  }}
-                  className={`rp-date-pill ${dateQuickFilter === quickKey ? "active" : ""}`}
-                >
-                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "7 Days" : "30 Days"}
-                </button>
-              ))}
-            </div>
+            {/* QUICK DATE DROPDOWN MENU */}
+            <select
+              value={dateQuickFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDateQuickFilter(val);
+                setCurrentPage(1);
+                if (val !== "CUSTOM") {
+                  setFromDate("");
+                  setToDate("");
+                }
+              }}
+              className="rp-select"
+            >
+              <option value="ALL">📅 All Time</option>
+              <option value="TODAY">Today</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="7DAYS">Last 7 Days</option>
+              <option value="30DAYS">Last 30 Days</option>
+            </select>
 
-            {/* FROM - TO DATE INPUTS */}
+            {/* INLINE DATE RANGE (FROM - TO) */}
             <div className="rp-date-range">
               <input
                 type="date"
@@ -445,6 +435,17 @@ export default function ReportingPage() {
                 </button>
               )}
             </div>
+
+            {/* MOBILE FILTER ACCORDION TOGGLE BUTTON */}
+            <button
+              className="rp-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="rp-filter-badge-count">{activeFilterCount}</span>}
+            </button>
           </div>
         </div>
 
@@ -457,37 +458,6 @@ export default function ReportingPage() {
             </div>
           ) : (
             <>
-              {/* TOP PAGINATION BAR (Desktop & Mobile) */}
-              {filteredWorklist.length > 0 && (
-                <div className="rp-pagination rp-pagination-top">
-                  <span className="rp-pag-info">
-                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
-                    <strong>{Math.min(currentPage * rowsPerPage, filteredWorklist.length)}</strong> of{" "}
-                    <strong>{filteredWorklist.length}</strong> studies
-                  </span>
-
-                  <div className="rp-pag-controls">
-                    <button
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      className="rp-pag-btn"
-                    >
-                      Prev
-                    </button>
-                    <span className="rp-pag-page">
-                      Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredWorklist.length / rowsPerPage) || 1}</strong>
-                    </span>
-                    <button
-                      disabled={currentPage >= Math.ceil(filteredWorklist.length / rowsPerPage)}
-                      onClick={() => setCurrentPage((p) => p + 1)}
-                      className="rp-pag-btn"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <div className="table-responsive">
                 <table className="rp-table">
                   <thead>
@@ -566,15 +536,6 @@ export default function ReportingPage() {
                               </button>
 
                               <button
-                                onClick={() => navigate(`/native-viewer?study=${encodeURIComponent(item.study_uid)}`)}
-                                className="rp-btn-action ghost"
-                                style={{ color: "#a855f7", borderColor: "#9333ea" }}
-                                title="Open Ultra-Fast Native Canvas DICOM Viewer (<20ms)"
-                              >
-                                <Compass size={13} /> Canvas
-                              </button>
-
-                              <button
                                 onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
                                 className="rp-btn-action ghost"
                                 style={{ color: "#38bdf8", borderColor: "#0284c7" }}
@@ -645,15 +606,17 @@ export default function ReportingPage() {
                         <button
                           onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
                           className="rpmc-btn primary"
+                          title="Open Portable Mobile DICOM Viewer"
                         >
-                          <Smartphone size={15} /> Mobile Viewer
+                          <Smartphone size={14} /> Mobile Viewer
                         </button>
 
                         <button
                           onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(item.study_uid)}`)}
                           className="rpmc-btn secondary"
+                          title="Open Radiology Report Studio"
                         >
-                          <FileText size={15} /> Report
+                          <FileText size={14} /> Report
                         </button>
                       </div>
                     </div>

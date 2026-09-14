@@ -305,14 +305,6 @@ export default function DoctorPortal() {
                               <Eye size={13} /> OHIF Viewer
                             </button>
 
-                            <button
-                              onClick={() => window.open(`/native-viewer?study=${encodeURIComponent(s.study_uid)}`, "_blank")}
-                              className="dp-action-btn dicom"
-                              style={{ background: "#f3e8ff", color: "#7e22ce", borderColor: "#d8b4fe" }}
-                              title="Open Native HTML5 Canvas DICOM Viewer (<20ms)"
-                            >
-                              <Compass size={13} /> Canvas DICOM
-                            </button>
 
                             <button
                               onClick={() => window.open(`/mobile-viewer?study=${encodeURIComponent(s.study_uid)}`, "_blank")}

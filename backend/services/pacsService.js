@@ -38,27 +38,38 @@ class PacsService {
     return updated;
   }
 
-  async listActiveStudies({ startDate, endDate }) {
-    const cacheKey = `pacs:studies:${startDate || "any"}:${endDate || "any"}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached && Array.isArray(cached) && cached.length > 0) return cached;
+  async listActiveStudies({ startDate, endDate, pacsId, forceRefresh } = {}) {
+    const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}`;
+    
+    if (forceRefresh) {
+      await cacheService.del("pacs:*").catch(() => {});
+    } else {
+      const cached = await cacheService.get(cacheKey);
+      if (cached && Array.isArray(cached) && cached.length > 0) return cached;
+    }
 
     const activePacs = await this.repository.findActive().catch(() => []);
     const allStudies = [];
 
-    for (const pacs of activePacs) {
+    // Filter by specific PACS ID if provided and valid
+    let targetNodes = activePacs;
+    if (pacsId && pacsId !== "all" && pacsId !== "orthanc") {
+      const filtered = activePacs.filter(p => String(p.id) === String(pacsId) || p.ae_title === pacsId);
+      if (filtered.length > 0) targetNodes = filtered;
+    }
+
+    for (const pacs of targetNodes) {
       try {
-        if (pacs.pacs_type === "ORTHANC") {
+        const pacsTypeUpper = String(pacs.pacs_type || "").toUpperCase().trim();
+        if (pacsTypeUpper === "ORTHANC") {
           const studies = await this.fetchOrthancStudies(pacs, { startDate, endDate });
           allStudies.push(...studies);
-        }
-
-        if (pacs.pacs_type === "DCM4CHEE") {
+        } else if (pacsTypeUpper === "DCM4CHEE") {
           const studies = await this.fetchDcm4cheeStudies(pacs, { startDate, endDate });
           allStudies.push(...studies);
         }
       } catch (err) {
-        console.error(`${pacs.pacs_type} (${pacs.ip_address}) fetch failed:`, err.message);
+        console.error(`[PacsService] Node ${pacs.pacs_name || pacs.ae_title} (${pacs.ip_address}) fetch failed:`, err.message);
       }
     }
 
@@ -93,12 +104,18 @@ class PacsService {
     if (pacs.ip_address === "localhost" || pacs.ip_address === "127.0.0.1") {
       serverUrl = await getOrthancUrl();
     }
-    return this.fetchOrthancFromUrl(serverUrl, { startDate, endDate });
+    try {
+      return await this.fetchOrthancFromUrl(serverUrl, { startDate, endDate });
+    } catch (err) {
+      console.warn(`[PacsService] Failed to fetch from ${serverUrl}, falling back to dynamic Orthanc URL:`, err.message);
+      const fallbackUrl = await getOrthancUrl();
+      return this.fetchOrthancFromUrl(fallbackUrl, { startDate, endDate });
+    }
   }
 
   async fetchOrthancFromUrl(serverUrl, { startDate, endDate }) {
     const config = orthancAuthConfig();
-    const payload = { Level: "Study", Query: {}, Limit: 200 };
+    const payload = { Level: "Study", Query: {}, Limit: 500 };
     if (startDate && endDate) payload.Query.StudyDate = `${startDate}-${endDate}`;
 
     const { data: ids } = await axios.post(`${serverUrl}tools/find`, payload, config);

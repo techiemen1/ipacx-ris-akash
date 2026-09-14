@@ -188,7 +188,7 @@ function PatientList() {
 
       let pacsStudies = [];
       try {
-        const pRes = await api.get("/api/pacs/studies");
+        const pRes = await api.get("/api/pacs/studies", { params: { refresh: "true" } });
         if (Array.isArray(pRes.data)) pacsStudies = pRes.data;
       } catch (pErr) {
         console.warn("Could not fetch PACS studies for PatientList:", pErr.message);
@@ -268,7 +268,8 @@ function PatientList() {
         const idStr = `${p.uhid || ""} ${p.patient_id || ""} ${p.mrn || ""}`.toLowerCase();
         const phone = String(p.phone || p.mobile || "").toLowerCase();
         const doc = String(p.referring_doctor || "").toLowerCase();
-        return name.includes(q) || idStr.includes(q) || phone.includes(q) || doc.includes(q);
+        const desc = `${p.study_description || ""} ${p.indication_for_scan || ""} ${p.exam_description || ""} ${p.patient_description || ""} ${p.accession_number || ""}`.toLowerCase();
+        return name.includes(q) || idStr.includes(q) || phone.includes(q) || doc.includes(q) || desc.includes(q);
       });
     }
 
@@ -532,36 +533,32 @@ function PatientList() {
           </div>
         </div>
 
-        {/* SEARCH & ADVANCED DATE RANGE FILTER TOOLBAR */}
+        {/* UNIFIED SINGLE-LINE SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
         <div className="pl-filter-card">
           <div className="pl-filter-row">
+            {/* SEARCH BOX */}
             <div className="pl-search-box">
               <Search size={16} className="pl-search-icon" />
               <input
                 type="text"
                 className="pl-search-input"
-                placeholder="Search by MRN / UHID, Patient Name, Mobile, Doctor..."
+                placeholder="Search MRN/ID, Patient Name, Mobile, Doctor, Exam/Patient Description..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
               />
             </div>
 
-            <button
-              className="pl-mobile-filter-toggle"
-              onClick={() => setShowMobileFilters(!showMobileFilters)}
-              title="Toggle Advanced Filters"
-            >
-              <SlidersHorizontal size={14} />
-              <span>Filters</span>
-              {activeFilterCount > 0 && <span className="pl-filter-badge-count">{activeFilterCount}</span>}
-            </button>
-          </div>
-
-          <div className={`pl-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
+            {/* MODALITY SELECTOR */}
             <select
               className="pl-modality-select"
               value={selectedModality}
-              onChange={(e) => setSelectedModality(e.target.value)}
+              onChange={(e) => {
+                setSelectedModality(e.target.value);
+                setCurrentPage(1);
+              }}
             >
               <option value="ALL">🌐 All Modalities</option>
               <option value="CT">📡 CT Scan</option>
@@ -572,66 +569,76 @@ function PatientList() {
               <option value="MG">🎀 Mammography</option>
             </select>
 
-            <div className="pl-date-bar">
-              <div className="pl-quick-dates">
-                <span className="pl-quick-label">📅 Quick Date:</span>
-                {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
-                  <button
-                    key={quickKey}
-                    onClick={() => {
-                      setDateQuickFilter(quickKey);
-                      if (quickKey !== "CUSTOM") {
-                        setFromDate("");
-                        setToDate("");
-                      }
-                    }}
-                    className={`pl-quick-btn ${dateQuickFilter === quickKey ? "active" : ""}`}
-                  >
-                    {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "Last 7 Days" : "Last 30 Days"}
-                  </button>
-                ))}
-              </div>
+            {/* QUICK DATE DROPDOWN MENU */}
+            <select
+              value={dateQuickFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDateQuickFilter(val);
+                setCurrentPage(1);
+                if (val !== "CUSTOM") {
+                  setFromDate("");
+                  setToDate("");
+                }
+              }}
+              className="pl-modality-select"
+            >
+              <option value="ALL">📅 All Time</option>
+              <option value="TODAY">Today</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="7DAYS">Last 7 Days</option>
+              <option value="30DAYS">Last 30 Days</option>
+            </select>
 
-              <div className="pl-custom-dates">
-                <div className="pl-date-field">
-                  <label>From:</label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => {
-                      setFromDate(e.target.value);
-                      setDateQuickFilter("CUSTOM");
-                    }}
-                  />
-                </div>
-
-                <div className="pl-date-field">
-                  <label>To:</label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => {
-                      setToDate(e.target.value);
-                      setDateQuickFilter("CUSTOM");
-                    }}
-                  />
-                </div>
-
-                {(fromDate || toDate || dateQuickFilter !== "ALL") && (
-                  <button
-                    onClick={() => {
-                      setDateQuickFilter("ALL");
-                      setFromDate("");
-                      setToDate("");
-                    }}
-                    className="pl-quick-btn"
-                    style={{ color: '#ef4444', borderColor: '#fca5a5' }}
-                  >
-                    Reset
-                  </button>
-                )}
-              </div>
+            {/* INLINE DATE RANGE (FROM - TO) */}
+            <div className="pl-date-range">
+              <input
+                type="date"
+                value={fromDate}
+                title="From Date"
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
+              <span className="pl-date-sep">to</span>
+              <input
+                type="date"
+                value={toDate}
+                title="To Date"
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setDateQuickFilter("CUSTOM");
+                  setCurrentPage(1);
+                }}
+              />
+              {(fromDate || toDate || dateQuickFilter !== "ALL") && (
+                <button
+                  onClick={() => {
+                    setDateQuickFilter("ALL");
+                    setFromDate("");
+                    setToDate("");
+                    setCurrentPage(1);
+                  }}
+                  className="pl-date-reset"
+                  title="Reset date filter"
+                >
+                  Reset
+                </button>
+              )}
             </div>
+
+            {/* MOBILE FILTER ACCORDION TOGGLE BUTTON */}
+            <button
+              className="pl-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="pl-filter-badge-count">{activeFilterCount}</span>}
+            </button>
           </div>
         </div>
 
@@ -659,36 +666,6 @@ function PatientList() {
           </div>
         ) : (
           <>
-            {/* TOP PAGINATION BAR (Desktop & Mobile) */}
-            {filteredPatients.length > 0 && (
-              <div className="pacs-pagination-bar pacs-pagination-top">
-                <div className="pacs-pag-info">
-                  Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
-                  <strong>{Math.min(currentPage * rowsPerPage, filteredPatients.length)}</strong> of{" "}
-                  <strong>{filteredPatients.length}</strong> patients
-                </div>
-                <div className="pacs-pag-controls">
-                  <button
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="pacs-pag-btn"
-                  >
-                    ◀ Previous
-                  </button>
-                  <span className="pacs-pag-page">
-                    Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredPatients.length / rowsPerPage) || 1}</strong>
-                  </span>
-                  <button
-                    disabled={currentPage >= Math.ceil(filteredPatients.length / rowsPerPage)}
-                    onClick={() => setCurrentPage((p) => p + 1)}
-                    className="pacs-pag-btn"
-                  >
-                    Next ▶
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="table-wrapper">
               <table className="patient-table">
                 <thead>
@@ -862,15 +839,16 @@ function PatientList() {
                           <button
                             onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
                             className="plmc-btn primary"
+                            title="Open Mobile DICOM Viewer"
                           >
-                            <Smartphone size={15} /> Mobile Viewer
+                            <Smartphone size={14} /> Mobile Viewer
                           </button>
                         ) : (
                           <button
                             onClick={() => handleSchedule(p)}
                             className="plmc-btn primary"
                           >
-                            <CalendarDays size={15} /> Schedule
+                            <CalendarDays size={14} /> Schedule
                           </button>
                         )}
 
@@ -878,7 +856,7 @@ function PatientList() {
                           onClick={() => handleEdit(p)}
                           className="plmc-btn secondary"
                         >
-                          <SquarePen size={15} /> Edit
+                          <SquarePen size={14} /> Edit
                         </button>
                       </div>
                     </div>

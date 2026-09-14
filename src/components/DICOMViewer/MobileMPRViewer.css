@@ -1,0 +1,503 @@
+/* 🌟 MOBILE & TABLET 3D MPR RECONSTRUCTION STYLES */
+.mpr-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  max-height: 100dvh;
+  background-color: #080c14;
+  color: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.mpr-container.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 99999;
+  height: 100dvh;
+  width: 100vw;
+}
+
+/* 🌟 NEAT & CLEAN 2-LINE MOBILE TOOLBAR */
+.mpr-mobile-header {
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+  z-index: 25;
+  padding: 4px 6px;
+  gap: 4px;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+.mpr-header-line-1,
+.mpr-header-line-2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.mpr-title-compact {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mpr-title-text {
+  font-size: 12px;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* Compact Select Dropdowns */
+.mpr-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 4px;
+  border-radius: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.select-icon {
+  color: #38bdf8;
+  flex-shrink: 0;
+}
+
+.mpr-compact-select {
+  background: transparent;
+  color: #e2e8f0;
+  border: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  outline: none;
+  width: 100%;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mpr-compact-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* Tool Symbols (Icon-Only Buttons) */
+.mpr-tool-symbols {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.mpr-actions-compact {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.mpr-symbol-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.mpr-symbol-btn:hover,
+.mpr-symbol-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
+/* Compact Slab Thickness Slider */
+.mpr-slab-compact {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 4px;
+  border-radius: 6px;
+  font-size: 10px;
+  color: #94a3b8;
+  flex: 1;
+  min-width: 60px;
+  max-width: 130px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mpr-slab-compact input[type="range"] {
+  width: 40px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.mpr-full-chip {
+  padding: 1px 4px;
+  background: #1e293b;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mpr-full-chip.active {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+@media (max-width: 480px) {
+  .mpr-title-text {
+    display: none;
+  }
+  .mpr-slab-compact span {
+    display: none;
+  }
+  .mpr-slab-compact input[type="range"] {
+    width: 35px;
+  }
+  .mpr-symbol-btn {
+    width: 26px;
+    height: 25px;
+  }
+}
+
+/* 📊 AUTO-ADJUSTING 3D VIEWPORT GRID */
+.mpr-grid {
+  display: grid;
+  flex: 1;
+  width: 100%;
+  height: calc(100% - 50px);
+  gap: 4px;
+  padding: 4px;
+  background: #030712;
+  overflow: hidden;
+}
+
+/* Layouts */
+.mpr-grid.mode-grid {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr;
+}
+
+.mpr-grid.mode-axial,
+.mpr-grid.mode-sagittal,
+.mpr-grid.mode-coronal {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+@media (max-width: 768px) {
+  .mpr-grid.mode-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(3, 1fr);
+  }
+}
+
+.mpr-viewport-card {
+  position: relative;
+  background: #000000;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.mpr-viewport-card.hidden-mode {
+  display: none !important;
+}
+
+.mpr-viewport-card.focused-full {
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+}
+
+.canvas-wrapper {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: #000000;
+  overflow: hidden;
+}
+
+.mpr-viewport-element {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  cursor: crosshair;
+  touch-action: none;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: high-quality;
+  image-rendering: smooth;
+}
+
+/* Minimal Bannerless Corner Overlays */
+.viewport-overlay-label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  right: 8px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.viewport-overlay-label * {
+  pointer-events: auto;
+}
+
+.overlay-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+.axial-overlay .overlay-title { color: #f43f5e; }     /* Red for Axial */
+.sagittal-overlay .overlay-title { color: #10b981; }  /* Green for Sagittal */
+.coronal-overlay .overlay-title { color: #3b82f6; }   /* Blue for Coronal */
+
+.overlay-meta {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  margin-left: 6px;
+}
+
+.reset-zoom-chip {
+  background: #0284c7;
+  color: #ffffff;
+  border: 1px solid #38bdf8;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.4);
+}
+
+.viewport-zoom-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #38bdf8;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zoom-btn:hover, .zoom-btn:active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.viewport-label span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.axial-label span { color: #f43f5e; }     /* Red for Axial */
+.sagittal-label span { color: #10b981; }  /* Green for Sagittal */
+.coronal-label span { color: #3b82f6; }   /* Blue for Coronal */
+
+.plane-sub {
+  font-size: 8.5px !important;
+  font-weight: 400 !important;
+  color: #94a3b8 !important;
+}
+
+/* ⏳ LOADING OVERLAY */
+.mpr-loading-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(8, 12, 20, 0.92);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 30;
+}
+
+.mpr-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid rgba(56, 189, 248, 0.2);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.mpr-loading-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.mpr-progress-bar {
+  width: 200px;
+  height: 5px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mpr-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+  transition: width 0.2s ease;
+}
+
+.mpr-loading-text small {
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+/* 🎛️ DICOM W/L PRESET POPUP STYLES */
+.mpr-preset-popup {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 40;
+  width: 220px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.preset-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+}
+
+.preset-popup-header button {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.preset-popup-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 4px;
+}
+
+.preset-item-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-item-btn small {
+  font-size: 9.5px;
+  color: #64748b;
+}
+
+.preset-item-btn:hover,
+.preset-item-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+}
+
+.preset-item-btn.active small {
+  color: #e0f2fe;
+}

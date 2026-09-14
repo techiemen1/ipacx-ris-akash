@@ -153,9 +153,22 @@ function Login() {
 
         {/* RIGHT PANEL - CLEAN DIRECT LOGIN FORM */}
         <div className="login-right-pro">
+          {/* MOBILE ONLY BRAND HEADER */}
+          <div className="mobile-brand-header">
+            <div className="mobile-logo-circle">
+              {hospitalInfo.logo_url ? (
+                <img src={hospitalInfo.logo_url} alt="Hospital Logo" className="hospital-brand-logo-img" />
+              ) : (
+                <Stethoscope size={28} color="#6366f1" />
+              )}
+            </div>
+            <h2>{hospitalInfo.name}</h2>
+            <span className="mobile-brand-sub">iPacx Enterprise RIS & DICOM PACS</span>
+          </div>
+
           <div className="form-header-pro">
             <h2>Portal Sign In</h2>
-            <p>Enter your credentials to access your auto-assigned RIS workspace</p>
+            <p>Enter your credentials to access your assigned RIS workspace</p>
           </div>
 
           <form onSubmit={handleLogin} className="login-form-pro">
@@ -175,10 +188,7 @@ function Login() {
             </div>
 
             <div className="input-group-pro">
-              <div className="flex-label">
-                <label>Password</label>
-                <a href="#forgot" onClick={(e) => { e.preventDefault(); alert("Contact system administrator to reset credentials."); }} className="forgot-link">Forgot?</a>
-              </div>
+              <label>Password</label>
               <div className="input-field-wrapper">
                 <Lock size={18} className="field-icon" />
                 <input
@@ -198,16 +208,30 @@ function Login() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+
+              {/* FORGOT PASSWORD LINK MOVED BELOW PASSWORD ENTRY */}
+              <div className="forgot-password-below">
+                <a 
+                  href="#forgot" 
+                  onClick={(e) => { 
+                    e.preventDefault(); 
+                    alert("Contact system administrator to reset credentials."); 
+                  }} 
+                  className="forgot-link-under"
+                >
+                  Forgot Password?
+                </a>
+              </div>
             </div>
 
             <button type="submit" className="login-submit-btn" disabled={loading}>
-              {loading ? "Authenticating Session..." : "Sign In to RIS"}
+              {loading ? "Authenticating Session..." : "Sign In to RIS Workspace"}
               {!loading && <ChevronRight size={18} />}
             </button>
           </form>
 
           <div className="auto-role-notice">
-            <span>🔒 Role & Department automatically configured on sign in</span>
+            <span>🔒 Multi-clinic RBAC security and role auto-configured on sign in</span>
           </div>
         </div>
       </div>

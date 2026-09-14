@@ -275,28 +275,37 @@
   border-color: #4f46e5;
 }
 
-.pl-custom-dates {
+.pl-date-range {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.pl-date-field {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #64748b;
-}
-
-.pl-date-field input {
-  padding: 4px 6px;
+.pl-date-range input[type="date"] {
+  padding: 5px 8px;
   border-radius: 6px;
   border: 1px solid #cbd5e1;
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 600;
   outline: none;
   background: #ffffff;
+}
+
+.pl-date-sep {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.pl-date-reset {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 /* PATIENT DIRECTORY TABLE CARD (GMAIL HIGH DENSITY) */
@@ -464,7 +473,7 @@
 
 @media (max-width: 1024px) {
   .patient-page {
-    padding: 6px 6px 80px 6px;
+    padding: 6px 6px max(115px, calc(95px + env(safe-area-inset-bottom))) 6px !important;
     max-width: 100vw;
     overflow-x: hidden;
     overflow-y: visible !important;
@@ -655,6 +664,12 @@
     box-shadow: 0 2px 6px rgba(79, 70, 229, 0.25);
   }
 
+  .plmc-btn.canvas-mpr {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+  }
+
   .plmc-btn.secondary {
     background: #f1f5f9;
     color: #334155;
@@ -753,6 +768,84 @@
   .pacs-pag-controls {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* =========================================================
+   AUTO RESPONSIVE DENSITY SCALING FOR LAPTOP SCREENS (100% ZOOM)
+   ========================================================= */
+@media screen and (min-width: 1025px) {
+  .patient-page {
+    padding: 6px 12px;
+  }
+  .patient-header {
+    padding: 6px 12px;
+    margin-bottom: 6px;
+  }
+  .pl-stats-grid {
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .pl-stat-card {
+    padding: 6px 10px;
+  }
+  .pl-filter-card {
+    padding: 6px 10px;
+    margin-bottom: 6px;
+  }
+  .patient-table th {
+    padding: 6px 10px;
+    font-size: 10.5px;
+  }
+  .patient-table td {
+    padding: 5px 10px;
+    font-size: 11.5px;
+  }
+  .table-wrapper {
+    max-height: calc(100vh - 270px);
+    overflow-y: auto;
+  }
+}
+
+@media screen and (max-height: 900px) and (min-width: 1025px) {
+  .patient-page {
+    padding: 4px 8px;
+  }
+  .patient-header {
+    padding: 4px 10px;
+    margin-bottom: 4px;
+  }
+  .pl-title {
+    font-size: 15px;
+  }
+  .pl-stats-grid {
+    gap: 4px;
+    margin-bottom: 4px;
+  }
+  .pl-stat-card {
+    padding: 4px 8px;
+  }
+  .pl-stat-value {
+    font-size: 15px;
+  }
+  .pl-filter-card {
+    padding: 4px 8px;
+    margin-bottom: 4px;
+  }
+  .patient-table th {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+  .patient-table td {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+  .pl-patient-name {
+    font-size: 11.5px;
+  }
+  .table-wrapper {
+    max-height: calc(100vh - 240px);
+    overflow-y: auto;
   }
 }
 

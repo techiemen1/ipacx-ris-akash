@@ -193,7 +193,7 @@ export default function PACSpage() {
     }
   };
 
-  async function loadStudies(pacs) {
+  async function loadStudies(pacs, forceRefresh = false) {
     const targetPacs = pacs || { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
     setActivePacs(targetPacs);
     sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
@@ -201,13 +201,16 @@ export default function PACSpage() {
     setCurrentPage(1);
 
     try {
-      const res = await api.get("/api/pacs/studies", { params: { pacs_id: targetPacs.id || "orthanc" } }).catch(() => ({ data: [] }));
+      const params = { pacs_id: targetPacs.id || "orthanc" };
+      if (forceRefresh) params.refresh = "true";
+
+      const res = await api.get("/api/pacs/studies", { params }).catch(() => ({ data: [] }));
       let studiesList = Array.isArray(res.data) 
         ? res.data 
         : (Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data?.studies) ? res.data.studies : []));
 
-      if (studiesList.length === 0 && targetPacs.pacs_type !== "ORTHANC") {
-        const orthancRes = await api.get("/api/pacs/studies", { params: { pacs_id: "orthanc" } }).catch(() => ({ data: [] }));
+      if (studiesList.length === 0 && String(targetPacs.pacs_type).toUpperCase() !== "ORTHANC") {
+        const orthancRes = await api.get("/api/pacs/studies", { params: { pacs_id: "orthanc", refresh: forceRefresh ? "true" : undefined } }).catch(() => ({ data: [] }));
         const fallbackList = Array.isArray(orthancRes.data)
           ? orthancRes.data
           : (Array.isArray(orthancRes.data?.data) ? orthancRes.data.data : []);
@@ -217,7 +220,7 @@ export default function PACSpage() {
       }
 
       if (studiesList.length === 0) {
-        const allRes = await api.get("/api/pacs/studies").catch(() => ({ data: [] }));
+        const allRes = await api.get("/api/pacs/studies", { params: { refresh: forceRefresh ? "true" : undefined } }).catch(() => ({ data: [] }));
         const allList = Array.isArray(allRes.data)
           ? allRes.data
           : (Array.isArray(allRes.data?.data) ? allRes.data.data : []);
@@ -260,18 +263,20 @@ export default function PACSpage() {
         }
 
         if (!initialPacs && list.length > 0) {
-          initialPacs = list.find((s) => s.is_default) || list[0];
+          initialPacs = list.find((s) => String(s.pacs_type).toUpperCase() === "ORTHANC") ||
+                        list.find((s) => s.is_default) ||
+                        list[0];
         }
 
         if (!initialPacs) {
           initialPacs = { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
         }
 
-        loadStudies(initialPacs);
+        loadStudies(initialPacs, true);
       } catch (err) {
         console.error("Failed to init PACS servers:", err);
         const fallback = { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
-        loadStudies(fallback);
+        loadStudies(fallback, true);
       }
     }
 
@@ -384,11 +389,16 @@ export default function PACSpage() {
       const pName = String(s.PatientName || s.patient_name || "").replace(/undefined|null/gi, "").trim();
       const pId = String(s.PatientID || s.patient_id || "").replace(/undefined|null/gi, "").trim();
       const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "").trim();
+      const desc = String(s.StudyDescription || s.study_description || s.indication_for_scan || "").replace(/undefined|null/gi, "").trim();
       const mod = parseModality(s);
 
-      const matchId = !filters.patientId || safeLower(pId).includes(safeLower(filters.patientId));
-      const matchName = !filters.patientName || safeLower(pName).includes(safeLower(filters.patientName));
-      const matchAcc = !filters.accession || safeLower(acc).includes(safeLower(filters.accession));
+      const q = safeLower(filters.patientName);
+      const matchSearch = !q ||
+        safeLower(pId).includes(q) ||
+        safeLower(pName).includes(q) ||
+        safeLower(acc).includes(q) ||
+        safeLower(desc).includes(q);
+
       const matchMod = !filters.modality ||
         (filters.modality === "CR" ? (mod === "CR" || mod === "DX" || mod === "XR") : mod === filters.modality);
 
@@ -431,7 +441,7 @@ export default function PACSpage() {
         }
       }
 
-      return matchId && matchName && matchAcc && matchMod && matchDate;
+      return matchSearch && matchMod && matchDate;
     });
 
     return result.sort((a, b) => (b.raw_timestamp || 0) - (a.raw_timestamp || 0));
@@ -531,7 +541,7 @@ export default function PACSpage() {
             </div>
 
             <button
-              onClick={() => activePacs && loadStudies(activePacs)}
+              onClick={() => activePacs && loadStudies(activePacs, true)}
               disabled={loading}
               className="pacs-btn-top secondary"
             >
@@ -540,14 +550,14 @@ export default function PACSpage() {
           </div>
         </header>
 
-        {/* UNIFIED SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
+        {/* UNIFIED SINGLE-LINE SEARCH & HIGH-DENSITY FILTER CONTROL BAR */}
         <div className="pacs-filter-bar">
           <div className="pacs-filter-row">
-            {/* SEARCH BOX */}
+            {/* SEARCH BOX (SEARCHES PATIENT NAME, MRN, ACCESSION NO, AND EXAM DESCRIPTION) */}
             <div className="pacs-search-box">
               <input
                 type="text"
-                placeholder="Search Patient Name, MRN, Accession No..."
+                placeholder="Search Patient Name, MRN, Accession No, Exam Description..."
                 value={filters.patientName}
                 onChange={(e) => {
                   setFilters({ ...filters, patientName: e.target.value });
@@ -556,18 +566,6 @@ export default function PACSpage() {
               />
             </div>
 
-            <button
-              className="pacs-mobile-filter-toggle"
-              onClick={() => setShowMobileFilters(!showMobileFilters)}
-              title="Toggle Advanced Filters"
-            >
-              <SlidersHorizontal size={14} />
-              <span>Filters</span>
-              {activeFilterCount > 0 && <span className="pacs-filter-badge-count">{activeFilterCount}</span>}
-            </button>
-          </div>
-
-          <div className={`pacs-filter-controls-group ${showMobileFilters ? "show-mobile" : ""}`}>
             {/* MODALITY SELECTOR */}
             <select
               value={filters.modality}
@@ -586,27 +584,28 @@ export default function PACSpage() {
               <option value="EC">EC (ECHO)</option>
             </select>
 
-            {/* QUICK DATE PILLS */}
-            <div className="pacs-date-pills">
-              {["ALL", "TODAY", "YESTERDAY", "7DAYS", "30DAYS"].map((quickKey) => (
-                <button
-                  key={quickKey}
-                  onClick={() => {
-                    setDateQuickFilter(quickKey);
-                    setCurrentPage(1);
-                    if (quickKey !== "CUSTOM") {
-                      setFromDate("");
-                      setToDate("");
-                    }
-                  }}
-                  className={`pacs-date-pill ${dateQuickFilter === quickKey ? "active" : ""}`}
-                >
-                  {quickKey === "ALL" ? "All Time" : quickKey === "TODAY" ? "Today" : quickKey === "YESTERDAY" ? "Yesterday" : quickKey === "7DAYS" ? "7 Days" : "30 Days"}
-                </button>
-              ))}
-            </div>
+            {/* QUICK DATE DROPDOWN MENU */}
+            <select
+              value={dateQuickFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setDateQuickFilter(val);
+                setCurrentPage(1);
+                if (val !== "CUSTOM") {
+                  setFromDate("");
+                  setToDate("");
+                }
+              }}
+              className="pacs-select"
+            >
+              <option value="ALL">📅 All Time</option>
+              <option value="TODAY">Today</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="7DAYS">Last 7 Days</option>
+              <option value="30DAYS">Last 30 Days</option>
+            </select>
 
-            {/* FROM - TO DATE INPUTS */}
+            {/* INLINE DATE RANGE (FROM - TO) */}
             <div className="pacs-date-range">
               <input
                 type="date"
@@ -644,6 +643,16 @@ export default function PACSpage() {
                 </button>
               )}
             </div>
+
+            <button
+              className="pacs-mobile-filter-toggle"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              title="Toggle Advanced Filters"
+            >
+              <SlidersHorizontal size={14} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && <span className="pacs-filter-badge-count">{activeFilterCount}</span>}
+            </button>
           </div>
         </div>
 
@@ -656,37 +665,6 @@ export default function PACSpage() {
             </div>
           ) : (
             <>
-              {/* TOP PAGINATION BAR (Desktop & Mobile) */}
-              {filteredStudies.length > 0 && (
-                <div className="pacs-pagination pacs-pagination-top">
-                  <span className="pacs-pag-info">
-                    Showing <strong>{(currentPage - 1) * rowsPerPage + 1}</strong> -{" "}
-                    <strong>{Math.min(currentPage * rowsPerPage, filteredStudies.length)}</strong> of{" "}
-                    <strong>{filteredStudies.length}</strong> studies
-                  </span>
-
-                  <div className="pacs-pag-controls">
-                    <button
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      className="pacs-pag-btn"
-                    >
-                      Prev
-                    </button>
-                    <span className="pacs-pag-page">
-                      Page <strong>{currentPage}</strong> of <strong>{Math.ceil(filteredStudies.length / rowsPerPage) || 1}</strong>
-                    </span>
-                    <button
-                      disabled={currentPage >= Math.ceil(filteredStudies.length / rowsPerPage)}
-                      onClick={() => setCurrentPage((p) => p + 1)}
-                      className="pacs-pag-btn"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-
               <div className="table-responsive">
                 <table className="pacs-table">
                   <thead>
@@ -762,15 +740,6 @@ export default function PACSpage() {
                                   title="Open Full OHIF DICOM Viewer"
                                 >
                                   <Eye size={13} /> Viewer
-                                </button>
-
-                                <button
-                                  onClick={() => navigate(`/native-viewer?study=${encodeURIComponent(uid)}`)}
-                                  className="pacs-btn-action ghost"
-                                  style={{ color: "#a855f7", borderColor: "#9333ea" }}
-                                  title="Open Ultra-Fast Native Canvas DICOM Viewer (<20ms)"
-                                >
-                                  <Compass size={13} /> Canvas
                                 </button>
 
                                 <button
@@ -918,15 +887,18 @@ export default function PACSpage() {
                           <button
                             onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
                             className="pmc-btn primary"
+                            title="Open Mobile DICOM Viewer"
                           >
-                            <Smartphone size={15} /> Mobile Viewer
+                            <Smartphone size={14} /> Mobile
                           </button>
+
 
                           <button
                             onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(uid)}`)}
                             className="pmc-btn secondary"
+                            title="Open Radiology Report Editor"
                           >
-                            <FileText size={15} /> Report
+                            <FileText size={14} /> Report
                           </button>
                         </div>
                       </div>

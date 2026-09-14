@@ -212,8 +212,17 @@ router.get("/c-echo", asyncHandler(async (req, res) => {
 }));
 
 router.get("/studies", asyncHandler(async (req, res) => {
-  const { startDate, endDate } = req.query;
-  const studies = await pacsService.listActiveStudies({ startDate, endDate });
+  const { startDate, endDate, pacs_id, refresh, force } = req.query;
+  const forceRefresh = refresh === "true" || force === "true";
+  const studies = await pacsService.listActiveStudies({
+    startDate,
+    endDate,
+    pacsId: pacs_id,
+    forceRefresh
+  });
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.json(studies);
 }));
 
@@ -258,18 +267,35 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
 
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   const instanceId = extractCleanInstanceId(req.params.instanceId);
+  const frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
   const orthancUrl = await getOrthancUrl();
   try {
-    const previewStream = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
+    const renderPath = (frame !== null && frame !== "") 
+      ? `instances/${instanceId}/frames/${frame}/rendered` 
+      : `instances/${instanceId}/rendered`;
+    const previewStream = await axios.get(`${orthancUrl}${renderPath}`, {
       responseType: "stream",
       ...orthancAuthConfig(),
     });
-    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "public, max-age=86400");
     previewStream.data.pipe(res);
   } catch (err) {
-    console.error(`[PACS Proxy] Failed fetching instance preview for ${instanceId}:`, err.message);
-    res.status(404).send("Preview unavailable");
+    try {
+      const previewPath = (frame !== null && frame !== "") 
+        ? `instances/${instanceId}/frames/${frame}/preview` 
+        : `instances/${instanceId}/preview`;
+      const fbStream = await axios.get(`${orthancUrl}${previewPath}`, {
+        responseType: "stream",
+        ...orthancAuthConfig(),
+      });
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      fbStream.data.pipe(res);
+    } catch (fbErr) {
+      console.error(`[PACS Proxy] Failed fetching instance preview for ${instanceId} frame ${frame}:`, fbErr.message);
+      res.status(404).send("Preview unavailable");
+    }
   }
 }));
 
@@ -284,6 +310,130 @@ router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch DICOM tags" });
   }
 }));
+
+/**
+ * Shared High-Performance Parallel DICOM Series & Instance Retriever
+ * Handles:
+ *  - Single-frame DICOM series (sorted strictly by InstanceNumber)
+ *  - Multi-frame DICOM instances (expands frames 0..N into slices)
+ *  - Parallel non-blocking execution across all series in study
+ *  - All modalities (MR, CT, CR/DX, US, MG, EC)
+ */
+async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
+  if (!studyData || !Array.isArray(studyData.Series) || studyData.Series.length === 0) {
+    return [];
+  }
+
+  const config = orthancAuthConfig();
+
+  const seriesPromises = studyData.Series.map((seriesId, sIdx) => 
+    axios.get(`${orthancUrl}series/${seriesId}`, { ...config, timeout: 6000 })
+      .then(async (r) => {
+        if (!r.data) return null;
+        const sData = r.data;
+        const sDesc = sData.MainDicomTags?.SeriesDescription || `Series ${sIdx + 1}`;
+        const sNum = parseInt(sData.MainDicomTags?.SeriesNumber || (sIdx + 1), 10);
+        const sModality = sData.MainDicomTags?.Modality || "";
+
+        let orderedInstances = [];
+
+        // 1. Attempt expanded instances query (provides full DICOM tags for sorting)
+        try {
+          const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
+          if (Array.isArray(expInstances) && expInstances.length > 0) {
+            expInstances.sort((a, b) => {
+              const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+              const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+              return numA - numB;
+            });
+            orderedInstances = expInstances.map((inst, iIdx) => {
+              const instId = extractCleanInstanceId(inst.ID || inst);
+              const sliceNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+              return {
+                id: instId,
+                instance_id: instId,
+                slice_number: sliceNum,
+                instanceNumber: sliceNum,
+                slice_index: iIdx + 1,
+                previewUrl: `/api/pacs/instance-preview/${instId}`,
+                preview_url: `/api/pacs/instance-preview/${instId}`,
+                caption: `${sDesc} | Slice ${iIdx + 1}/${expInstances.length}`
+              };
+            });
+          }
+        } catch (e) {
+          // Fallback if expanded query times out or fails
+        }
+
+        // 2. Fallback if expansion produced empty array
+        if (orderedInstances.length === 0 && Array.isArray(sData.Instances) && sData.Instances.length > 0) {
+          orderedInstances = sData.Instances.map((instItem, iIdx) => {
+            const instId = extractCleanInstanceId(instItem);
+            return {
+              id: instId,
+              instance_id: instId,
+              slice_number: iIdx + 1,
+              instanceNumber: iIdx + 1,
+              slice_index: iIdx + 1,
+              previewUrl: `/api/pacs/instance-preview/${instId}`,
+              preview_url: `/api/pacs/instance-preview/${instId}`,
+              caption: `${sDesc} | Slice ${iIdx + 1}/${sData.Instances.length}`
+            };
+          });
+        }
+
+        // 3. Multi-frame DICOM slice expansion (crucial for MRI, CT, US multi-frame single instance files)
+        if (orderedInstances.length === 1) {
+          const singleInstId = orderedInstances[0].id;
+          try {
+            const { data: frames } = await axios.get(`${orthancUrl}instances/${singleInstId}/frames`, { ...config, timeout: 4000 });
+            if (Array.isArray(frames) && frames.length > 1) {
+              orderedInstances = frames.map((fIdx) => ({
+                id: `${singleInstId}?frame=${fIdx}`,
+                instance_id: singleInstId,
+                frame_index: fIdx,
+                slice_number: fIdx + 1,
+                instanceNumber: fIdx + 1,
+                slice_index: fIdx + 1,
+                previewUrl: `/api/pacs/instance-preview/${singleInstId}?frame=${fIdx}`,
+                preview_url: `/api/pacs/instance-preview/${singleInstId}?frame=${fIdx}`,
+                caption: `${sDesc} | Frame ${fIdx + 1}/${frames.length}`
+              }));
+            }
+          } catch (e) {
+            // Standard single frame DICOM file
+          }
+        }
+
+        const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID || seriesId;
+
+        return {
+          seriesId: sData.ID || seriesId,
+          series_id: sData.ID || seriesId,
+          orthanc_series_id: sData.ID || seriesId,
+          series_instance_uid: dicomSeriesUid,
+          seriesDescription: sDesc,
+          series_description: sDesc,
+          seriesNumber: sNum,
+          series_number: sNum,
+          modality: sModality,
+          totalSlices: orderedInstances.length,
+          total_slices: orderedInstances.length,
+          instances: orderedInstances
+        };
+      })
+      .catch((err) => {
+        console.error(`[PACS helper] Series ${seriesId} fetch failed:`, err.message);
+        return null;
+      })
+  );
+
+  const results = await Promise.all(seriesPromises);
+  const validSeries = results.filter(Boolean);
+  validSeries.sort((a, b) => (a.seriesNumber || 0) - (b.seriesNumber || 0));
+
+  return validSeries;
+}
 
 /* ======================================================
    MOBILE FAST RETRIEVAL PAYLOAD (OPTIMIZED FOR SMARTPHONES)
@@ -307,78 +457,11 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
   const studyDate = studyData.MainDicomTags?.StudyDate || "";
   const studyDescription = studyData.MainDicomTags?.StudyDescription || "";
 
-  const seriesList = [];
-  if (Array.isArray(studyData.Series)) {
-    for (let idx = 0; idx < studyData.Series.length; idx++) {
-      const sId = studyData.Series[idx];
-      try {
-        const { data: sData } = await axios.get(`${orthancUrl}series/${sId}`, { ...orthancAuthConfig(), timeout: 3000 });
-        const sDesc = sData.MainDicomTags?.SeriesDescription || `Series ${idx + 1}`;
-        if (!modality && sData.MainDicomTags?.Modality) {
-          modality = sData.MainDicomTags.Modality;
-        }
+  const seriesList = await fetchStudySeriesAndInstances(orthancUrl, studyData);
 
-        let orderedInstances = [];
-        // Try ordered-slices first for 3D spatial sorting (CT/MRI)
-        try {
-          const { data: slicesData } = await axios.get(`${orthancUrl}series/${sId}/ordered-slices`, { ...orthancAuthConfig(), timeout: 3000 });
-          if (slicesData && Array.isArray(slicesData.Slices) && slicesData.Slices.length > 0) {
-            orderedInstances = slicesData.Slices.map((slice, iIdx) => {
-              const instId = extractCleanInstanceId(slice);
-              return {
-                id: instId,
-                instanceNumber: iIdx + 1,
-                previewUrl: `/api/pacs/instance-preview/${instId}`
-              };
-            });
-          }
-        } catch (e) {
-          // Fallback if ordered-slices fails
-        }
-
-        if (orderedInstances.length === 0) {
-          // Fetch expanded instances and sort by DICOM InstanceNumber
-          try {
-            const { data: expInstances } = await axios.get(`${orthancUrl}series/${sId}/instances?expand`, { ...orthancAuthConfig(), timeout: 4000 });
-            if (Array.isArray(expInstances)) {
-              expInstances.sort((a, b) => {
-                const numA = parseInt(a.MainDicomTags?.InstanceNumber || '0', 10);
-                const numB = parseInt(b.MainDicomTags?.InstanceNumber || '0', 10);
-                return numA - numB;
-              });
-              orderedInstances = expInstances.map((inst, iIdx) => {
-                const instId = extractCleanInstanceId(inst.ID || inst);
-                return {
-                  id: instId,
-                  instanceNumber: parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10),
-                  previewUrl: `/api/pacs/instance-preview/${instId}`
-                };
-              });
-            }
-          } catch (e) {}
-        }
-
-        if (orderedInstances.length === 0 && Array.isArray(sData.Instances)) {
-          // Final fallback
-          orderedInstances = sData.Instances.map((instItem, iIdx) => {
-            const instId = extractCleanInstanceId(instItem);
-            return {
-              id: instId,
-              instanceNumber: iIdx + 1,
-              previewUrl: `/api/pacs/instance-preview/${instId}`
-            };
-          });
-        }
-
-        seriesList.push({
-          seriesId: sId,
-          seriesDescription: sDesc,
-          seriesNumber: sData.MainDicomTags?.SeriesNumber || idx + 1,
-          totalSlices: orderedInstances.length,
-          instances: orderedInstances
-        });
-      } catch (e) {}
-    }
+  if (!modality && seriesList.length > 0) {
+    const foundMod = seriesList.find(s => s.modality)?.modality;
+    if (foundMod) modality = foundMod;
   }
 
   // Fallback modality parsing if missing
@@ -524,101 +607,19 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
 
     const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
 
-    if (!studyData || !Array.isArray(studyData.Series)) {
+    if (!studyData) {
       return res.json({ success: true, series: [] });
     }
 
-    const seriesPromises = studyData.Series.map((seriesId, idx) =>
-      axios.get(`${orthancUrl}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 4000 })
-        .then(async r => {
-          if (!r.data) return null;
-          let instList = [];
-          try {
-            const { data: orderedData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...orthancAuthConfig(), timeout: 4000 });
-            if (orderedData && Array.isArray(orderedData.Slices) && orderedData.Slices.length > 0) {
-              instList = orderedData.Slices.map(sItem => {
-                let rawId = Array.isArray(sItem) ? sItem[0] : (typeof sItem === 'string' ? sItem : sItem.ID || sItem.Instance);
-                if (typeof rawId === 'string' && rawId.includes('/')) {
-                  const parts = rawId.split('/').filter(Boolean);
-                  const idx = parts.indexOf('instances');
-                  rawId = (idx !== -1 && parts[idx + 1]) ? parts[idx + 1] : parts[parts.length - 1];
-                }
-                return { ID: rawId };
-              });
-            }
-          } catch (e) {
-            // ordered-slices fallback
-          }
+    const seriesList = await fetchStudySeriesAndInstances(orthancUrl, studyData);
 
-          if (instList.length === 0) {
-            try {
-              const { data: fullInstList } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...orthancAuthConfig(), timeout: 4000 });
-              if (Array.isArray(fullInstList)) {
-                instList = fullInstList;
-                instList.sort((a, b) => {
-                  const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
-                  const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
-                  return numA - numB;
-                });
-              }
-            } catch (e) {
-              instList = (r.data.Instances || []).map(id => ({ ID: id }));
-            }
-          }
-
-          return { ...r.data, idx, sortedInstances: instList };
-        })
-        .catch(() => null)
-    );
-
-    const seriesResults = await Promise.all(seriesPromises);
-    const seriesList = [];
-
-    for (const sData of seriesResults) {
-      if (sData && Array.isArray(sData.sortedInstances)) {
-        const seriesDesc = sData.MainDicomTags?.SeriesDescription || `Series ${sData.idx + 1}`;
-        const seriesNum = sData.MainDicomTags?.SeriesNumber || (sData.idx + 1);
-
-        const instances = sData.sortedInstances.map((instObj, sliceIdx) => {
-          let instId = typeof instObj === 'string' ? instObj : instObj.ID;
-          if (typeof instId === 'string' && instId.includes('/')) {
-            const parts = instId.split('/').filter(Boolean);
-            const idx = parts.indexOf('instances');
-            instId = (idx !== -1 && parts[idx + 1]) ? parts[idx + 1] : parts[parts.length - 1];
-          }
-          const dicomSliceNum = parseInt(instObj.MainDicomTags?.InstanceNumber, 10) || (sliceIdx + 1);
-          return {
-            instance_id: instId,
-            slice_number: dicomSliceNum,
-            slice_index: sliceIdx + 1,
-            preview_url: `/api/pacs/instance-preview/${instId}`,
-            caption: `${seriesDesc} | Slice ${sliceIdx + 1}/${sData.sortedInstances.length}`
-          };
-        });
-
-        const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID;
-
-        seriesList.push({
-          series_id: sData.ID,
-          orthanc_series_id: sData.ID,
-          series_instance_uid: dicomSeriesUid,
-          series_description: seriesDesc,
-          series_number: seriesNum,
-          total_slices: instances.length,
-          instances
-        });
-      }
-    }
-
-    seriesList.sort((a, b) => {
-      const numA = parseInt(a.series_number, 10) || 0;
-      const numB = parseInt(b.series_number, 10) || 0;
-      return numA - numB;
+    res.json({
+      success: true,
+      studyUID,
+      series: seriesList
     });
-
-    res.json({ success: true, series: seriesList });
   } catch (err) {
-    console.error("Failed to fetch study series instances:", err.message);
+    console.error("Fetch study-series-instances failed:", err.message);
     res.json({ success: true, series: [] });
   }
 });

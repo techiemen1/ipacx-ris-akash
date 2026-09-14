@@ -391,11 +391,40 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
+          // Merge key images from local storage captured from mobile/desktop DICOM viewer
+          try {
+            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            if (localStr) {
+              const parsed = JSON.parse(localStr);
+              if (Array.isArray(parsed)) {
+                parsed.forEach((item, idx) => {
+                  if (typeof item === "object" && item.studyUID && item.studyUID !== studyUID) {
+                    return; // Skip images for other studies
+                  }
+                  const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url || item.dataUrl);
+                  if (url && !normalizedSnapshots.some(s => s.preview_url === url || s.dataUrl === url)) {
+                    const sliceNum = typeof item === "object" ? (item.sliceNumber || item.slice_number) : null;
+                    const seriesDesc = typeof item === "object" ? (item.seriesDesc || item.series_desc) : null;
+                    const caption = item.caption || ((sliceNum && seriesDesc) ? `${seriesDesc} | Slice ${sliceNum}` : (sliceNum ? `Slice ${sliceNum}` : `Key Image ${normalizedSnapshots.length + 1}`));
+                    normalizedSnapshots.push({
+                      id: item.id || `local_${Date.now()}_${idx}`,
+                      instance_id: item.instance_id || item.id || `inst_${Date.now()}`,
+                      preview_url: url,
+                      dataUrl: url,
+                      caption: caption
+                    });
+                  }
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse local key images:", e);
+          }
+
           const hasSavedContent =
             String(savedFindings || "").trim() !== "" ||
             String(savedConclusion || "").trim() !== "" ||
-            String(savedHistory || "").trim() !== "" ||
-            normalizedSnapshots.length > 0;
+            String(savedHistory || "").trim() !== "";
 
           if (hasSavedContent) {
             setHistory(String(savedHistory || ""));
@@ -413,11 +442,32 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             setAttachedSnapshots(normalizedSnapshots);
           } else {
             autoMatchTemplate(mod, bPart, sDesc);
-            setAttachedSnapshots([]);
+            setAttachedSnapshots(normalizedSnapshots);
           }
         } catch {
           autoMatchTemplate(mod, bPart, sDesc);
-          setAttachedSnapshots([]);
+          // Still try to restore local key images if report fetch fails
+          try {
+            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            if (localStr) {
+              const parsed = JSON.parse(localStr);
+              if (Array.isArray(parsed)) {
+                const fallbackSnaps = parsed
+                  .filter(item => typeof item !== "object" || !item.studyUID || item.studyUID === studyUID)
+                  .map((item, idx) => {
+                    const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url);
+                    return {
+                      id: `fallback_${Date.now()}_${idx}`,
+                      preview_url: url,
+                      caption: item.caption || `Key Image ${idx + 1}`
+                    };
+                  }).filter(s => !!s.preview_url);
+                setAttachedSnapshots(fallbackSnaps);
+              }
+            }
+          } catch (e) {
+            console.warn("Fallback key images error:", e);
+          }
         }
       } catch (err) {
         console.error("Failed to load study for Report Studio:", err);
