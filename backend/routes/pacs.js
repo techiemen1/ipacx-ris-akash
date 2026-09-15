@@ -644,11 +644,16 @@ router.get("/measurements/:studyUID", async (req, res) => {
       };
     });
 
+    const { SRAutoSyncService } = require("../services/dicomSrMiddleware");
+    const middlewareResult = SRAutoSyncService.processDicomStudy(metadata, dataArray);
+
     res.json({
       success: true,
       data: dataArray,
       measurements,
       metadata,
+      middleware_sr: middlewareResult,
+      table_html: middlewareResult.table_html,
       extracted_at: new Date().toISOString()
     });
   } catch (err) {
