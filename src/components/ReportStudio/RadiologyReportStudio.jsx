@@ -102,6 +102,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [reportStatus, setReportStatus] = useState("Draft");
 
+  // Study & Patient Demographics State
+  const [study, setStudy] = useState({
+    PatientName: "",
+    PatientID: "",
+    PatientAge: "",
+    PatientSex: "",
+    AccessionNumber: "",
+    Modality: "CR",
+    BodyPartExamined: "",
+    StudyDescription: "",
+    StudyDate: "",
+    ReferringPhysicianName: "",
+    ReportedBy: "",
+    ApprovedBy: ""
+  });
+
   // RBAC Reporting Permission Check
   const loggedUser = (() => {
     try { return JSON.parse(sessionStorage.getItem("user") || localStorage.getItem("user") || "{}"); }
@@ -127,22 +143,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
   const isFinalSigned = ["Final", "Signed", "Approved", "FINAL", "COMPLETED"].includes(reportStatus);
   const isReadOnly = (isFinalSigned && !isAddendumMode && !adminUnlocked) || !canEditReport;
-
-  // Study & Patient Demographics State
-  const [study, setStudy] = useState({
-    PatientName: "",
-    PatientID: "",
-    PatientAge: "",
-    PatientSex: "",
-    AccessionNumber: "",
-    Modality: "CR",
-    BodyPartExamined: "",
-    StudyDescription: "",
-    StudyDate: "",
-    ReferringPhysicianName: "",
-    ReportedBy: "",
-    ApprovedBy: ""
-  });
 
   // Report Content State
   const [history, setHistory] = useState("");

@@ -42,6 +42,22 @@ function getInitialModKey(rawMod) {
 export default function DiagnosticWorkstationModal({ studyUID, initialModality = "CR", onClose }) {
   const [viewMode, setViewMode] = useState("split"); // "split" | "viewer" | "studio"
 
+  // Study & Patient Demographics State
+  const [study, setStudy] = useState({
+    PatientName: "",
+    PatientID: "",
+    PatientAge: "",
+    PatientSex: "",
+    AccessionNumber: "",
+    Modality: initialModality || "CR",
+    BodyPartExamined: "",
+    StudyDescription: "",
+    StudyDate: "",
+    ReferringPhysicianName: "",
+    ReportedBy: "",
+    ApprovedBy: ""
+  });
+
   // RBAC Permission Check
   const loggedUser = (() => {
     try { return JSON.parse(sessionStorage.getItem("user") || "{}"); }
@@ -64,22 +80,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   const activeDoctorTitle = loggedUser.designation || loggedUser.qualification || "Consultant Radiologist";
   const activeDoctorReg = loggedUser.reg_no || loggedUser.medical_council_reg || loggedUser.registration_no || "KMC/MED/REG/48190";
-
-  // Study & Patient Demographics State
-  const [study, setStudy] = useState({
-    PatientName: "",
-    PatientID: "",
-    PatientAge: "",
-    PatientSex: "",
-    AccessionNumber: "",
-    Modality: initialModality || "CR",
-    BodyPartExamined: "",
-    StudyDescription: "",
-    StudyDate: "",
-    ReferringPhysicianName: "",
-    ReportedBy: "",
-    ApprovedBy: ""
-  });
 
   // Report Content State
   const [history, setHistory] = useState("");
