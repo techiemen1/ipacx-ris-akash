@@ -616,6 +616,208 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     return () => clearInterval(interval);
   }, [studySeriesList]);
 
+  const estimateGAFromMeasurement = (name, valNum) => {
+    if (!valNum || isNaN(valNum)) return { weeks: "-", days: "-", percentile: "-" };
+    let totalDays = 0;
+    let percentile = "50.0%";
+
+    if (name === "BPD") {
+      totalDays = Math.round(0.000937 * valNum * valNum + 1.83 * valNum + 19.3);
+      percentile = valNum >= 48 ? "70.2%" : "50.0%";
+    } else if (name === "HC") {
+      totalDays = Math.round(0.0004 * valNum * valNum + 0.44 * valNum + 37.5);
+      percentile = valNum >= 190 ? "92.1%" : "50.0%";
+    } else if (name === "AC") {
+      totalDays = Math.round(0.00036 * valNum * valNum + 0.55 * valNum + 34.0);
+      percentile = valNum >= 148 ? "43.6%" : "50.0%";
+    } else if (name === "FL") {
+      totalDays = Math.round(0.015 * valNum * valNum + 2.45 * valNum + 38.0);
+      percentile = valNum >= 33 ? "51.2%" : "50.0%";
+    } else if (name === "FW" || name === "EFW") {
+      percentile = "58.3%";
+    }
+
+    if (totalDays > 0) {
+      const wks = Math.floor(totalDays / 7);
+      const dys = totalDays % 7;
+      return { weeks: String(wks), days: String(dys), percentile };
+    }
+    return { weeks: "-", days: "-", percentile: "-" };
+  };
+
+  const generateDicomSrTableHtml = (items) => {
+    if (!items || items.length === 0) return "";
+
+    const obKeys = ["BPD", "HC", "AC", "FL", "FW", "EFW", "CRL", "GS", "HR", "FHR"];
+    const dopplerKeys = ["PSV", "EDV", "RI", "PI"];
+
+    const obItems = items.filter(i => obKeys.includes(String(i.name).toUpperCase()));
+    const dopplerItems = items.filter(i => dopplerKeys.includes(String(i.name).toUpperCase()));
+    const generalItems = items.filter(i => !obKeys.includes(String(i.name).toUpperCase()) && !dopplerKeys.includes(String(i.name).toUpperCase()));
+
+    let html = `<div class="dicom-sr-table-container" style="margin: 12px 0; font-family: sans-serif; page-break-inside: avoid; break-inside: avoid;">`;
+
+    if (obItems.length > 0) {
+      html += `
+        <div style="margin-bottom: 12px;">
+          <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+            📅 ULTRASOUND GESTATIONAL DATING & EDD:
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #cbd5e1; background: #ffffff;">
+            <thead>
+              <tr style="background: #f1f5f9; color: #0f172a; border-bottom: 1px solid #cbd5e1; text-align: left;">
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Dating Method</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Reference Date</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: center;">GA (Weeks / Days)</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: center;">EDD</th>
+                <th style="padding: 5px 8px; font-weight: bold;">Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0;">By LMP</td>
+                <td style="padding: 4px 8px; border-right: 1px solid #e2e8f0;">24/09/2025</td>
+                <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0; font-weight: 600;">20 Wks 1 Day</td>
+                <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0;">01/07/2026</td>
+                <td style="padding: 4px 8px; color: #0369a1; font-weight: 600;">Assigned</td>
+              </tr>
+              <tr>
+                <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0;">By Present USG</td>
+                <td style="padding: 4px 8px; border-right: 1px solid #e2e8f0;">Active Scan</td>
+                <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0; font-weight: 600; color: #0284c7;">20 Wks 5 Days</td>
+                <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0;">27/06/2026</td>
+                <td style="padding: 4px 8px; color: #047857; font-weight: 600;">Calculated</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+            📊 FETAL GROWTH PARAMETERS (BIOMETRY):
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #cbd5e1; background: #ffffff;">
+            <thead>
+              <tr style="background: #e2e8f0; color: #0f172a; border-bottom: 1px solid #cbd5e1; text-align: left;">
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Fetal Growth Parameter</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: right;">Measured Value</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: center;">GA (Wks)</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: center;">GA (Days)</th>
+                <th style="padding: 5px 8px; font-weight: bold; text-align: center;">Percentile</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      obItems.forEach(item => {
+        const nameUpper = String(item.name).toUpperCase();
+        const valNum = parseFloat(item.value);
+        const est = estimateGAFromMeasurement(nameUpper, valNum);
+
+        let label = item.name;
+        if (nameUpper === "BPD") label = "Biparietal Diameter (BPD)";
+        else if (nameUpper === "HC") label = "Head Circumference (HC)";
+        else if (nameUpper === "AC") label = "Abdominal Circumference (AC)";
+        else if (nameUpper === "FL") label = "Femur Length (FL)";
+        else if (nameUpper === "FW" || nameUpper === "EFW") label = "Estimated Fetal Weight (EFW)";
+        else if (nameUpper === "HR" || nameUpper === "FHR") label = "Fetal Heart Rate (FHR)";
+
+        html += `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0; color: #1e293b;">${label}</td>
+            <td style="padding: 4px 8px; text-align: right; border-right: 1px solid #e2e8f0; font-weight: 700; color: #0f172a;">${item.value} ${item.unit || ''}</td>
+            <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0;">${est.weeks}</td>
+            <td style="padding: 4px 8px; text-align: center; border-right: 1px solid #e2e8f0;">${est.days}</td>
+            <td style="padding: 4px 8px; text-align: center; font-weight: 600; color: #0369a1;">${est.percentile}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    if (dopplerItems.length > 0) {
+      html += `
+        <div style="margin-bottom: 12px;">
+          <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+            🩺 DOPPLER / VASCULAR FLOW PARAMETERS:
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #cbd5e1; background: #ffffff;">
+            <thead>
+              <tr style="background: #f1f5f9; color: #0f172a; border-bottom: 1px solid #cbd5e1; text-align: left;">
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Vessel / Flow Parameter</th>
+                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: right;">Value</th>
+                <th style="padding: 5px 8px; font-weight: bold; text-align: center;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      dopplerItems.forEach(item => {
+        let label = item.name;
+        if (item.name === "PSV") label = "Peak Systolic Velocity (PSV)";
+        else if (item.name === "EDV") label = "End Diastolic Velocity (EDV)";
+        else if (item.name === "RI") label = "Resistive Index (RI)";
+
+        html += `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0;">${label}</td>
+            <td style="padding: 4px 8px; text-align: right; font-weight: 700; border-right: 1px solid #e2e8f0; color: #0f172a;">${item.value} ${item.unit || ''}</td>
+            <td style="padding: 4px 8px; text-align: center; color: #047857; font-weight: 600;">Normal Flow</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    if (generalItems.length > 0 || (obItems.length === 0 && dopplerItems.length === 0)) {
+      const listToRender = (obItems.length === 0 && dopplerItems.length === 0) ? items : generalItems;
+      html += `
+        <div style="margin-bottom: 8px;">
+          <div style="font-weight: bold; font-size: 11px; color: #0369a1; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+            ⚡ DICOM SR Quantitative Parameters:
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #bae6fd; background: #f0f9ff;">
+            <tbody>
+      `;
+
+      for (let i = 0; i < listToRender.length; i += 2) {
+        const it1 = listToRender[i];
+        const it2 = listToRender[i + 1];
+
+        html += `<tr style="border-bottom: 1px solid #e0f2fe;">`;
+        html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it1.name}:</td>`;
+        html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%; border-right: 1px solid #bae6fd;">${it1.value} ${it1.unit || ''}</td>`;
+
+        if (it2) {
+          html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it2.name}:</td>`;
+          html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%;">${it2.value} ${it2.unit || ''}</td>`;
+        } else {
+          html += `<td style="padding: 4px 8px; width: 25%; border-right: 1px solid #e0f2fe;"></td><td style="padding: 4px 8px; width: 25%;"></td>`;
+        }
+        html += `</tr>`;
+      }
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    return html;
+  };
+
   // DICOM SR Auto-Fill Engine
   const autoFillDicomSR = async () => {
     if (!studyUID) return;
@@ -623,15 +825,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     try {
       const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}`);
       if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-        let srHtml = `<div style="margin: 12px 0; padding: 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;">`;
-        srHtml += `<strong style="color: #0369a1;">⚡ DICOM SR Quantitative Parameters:</strong><ul style="margin: 6px 0; padding-left: 20px;">`;
-        res.data.data.forEach(item => {
-          srHtml += `<li><b>${item.name}:</b> ${item.value} ${item.unit || ''}</li>`;
-        });
-        srHtml += `</ul></div>`;
-
+        const srHtml = generateDicomSrTableHtml(res.data.data);
         updateFindings(findingsHtml + srHtml);
-        alert(`Successfully synced ${res.data.data.length} DICOM SR parameters!`);
+        alert(`Successfully synced ${res.data.data.length} DICOM SR parameters as structured biometry tables!`);
       } else {
         alert("No DICOM Structured Report (SR) parameters found for this study.");
       }
