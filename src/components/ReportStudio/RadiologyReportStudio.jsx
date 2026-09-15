@@ -655,9 +655,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const dopplerItems = items.filter(i => dopplerKeys.includes(String(i.name).toUpperCase()));
     const generalItems = items.filter(i => !obKeys.includes(String(i.name).toUpperCase()) && !dopplerKeys.includes(String(i.name).toUpperCase()));
 
+    const isOBScan = obItems.length > 0;
+
     let html = `<div class="dicom-sr-table-container" style="margin: 12px 0; font-family: sans-serif; page-break-inside: avoid; break-inside: avoid;">`;
 
-    if (obItems.length > 0) {
+    if (isOBScan) {
       html += `
         <div style="margin-bottom: 12px;">
           <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
@@ -738,74 +740,81 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </table>
         </div>
       `;
-    }
+    } else {
+      if (dopplerItems.length > 0) {
+        html += `
+          <div style="margin-bottom: 12px;">
+            <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+              🩺 DOPPLER / VASCULAR FLOW PARAMETERS:
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #cbd5e1; background: #ffffff;">
+              <thead>
+                <tr style="background: #f1f5f9; color: #0f172a; border-bottom: 1px solid #cbd5e1; text-align: left;">
+                  <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Vessel / Flow Parameter</th>
+                  <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: right;">Value</th>
+                  <th style="padding: 5px 8px; font-weight: bold; text-align: center;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
 
-    if (dopplerItems.length > 0) {
-      html += `
-        <div style="margin-bottom: 12px;">
-          <div style="font-weight: bold; font-size: 11px; color: #1e293b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
-            🩺 DOPPLER / VASCULAR FLOW PARAMETERS:
-          </div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #cbd5e1; background: #ffffff;">
-            <thead>
-              <tr style="background: #f1f5f9; color: #0f172a; border-bottom: 1px solid #cbd5e1; text-align: left;">
-                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1;">Vessel / Flow Parameter</th>
-                <th style="padding: 5px 8px; font-weight: bold; border-right: 1px solid #cbd5e1; text-align: right;">Value</th>
-                <th style="padding: 5px 8px; font-weight: bold; text-align: center;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-      `;
+        dopplerItems.forEach(item => {
+          let label = item.name;
+          if (item.name === "PSV") label = "Peak Systolic Velocity (PSV)";
+          else if (item.name === "EDV") label = "End Diastolic Velocity (EDV)";
+          else if (item.name === "RI") label = "Resistive Index (RI)";
 
-      dopplerItems.forEach(item => {
-        let label = item.name;
-        if (item.name === "PSV") label = "Peak Systolic Velocity (PSV)";
-        else if (item.name === "EDV") label = "End Diastolic Velocity (EDV)";
-        else if (item.name === "RI") label = "Resistive Index (RI)";
+          html += `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0;">${label}</td>
+              <td style="padding: 4px 8px; text-align: right; font-weight: 700; border-right: 1px solid #e2e8f0; color: #0f172a;">${item.value} ${item.unit || ''}</td>
+              <td style="padding: 4px 8px; text-align: center; color: #047857; font-weight: 600;">Normal Flow</td>
+            </tr>
+          `;
+        });
 
         html += `
-          <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 4px 8px; font-weight: 600; border-right: 1px solid #e2e8f0;">${label}</td>
-            <td style="padding: 4px 8px; text-align: right; font-weight: 700; border-right: 1px solid #e2e8f0; color: #0f172a;">${item.value} ${item.unit || ''}</td>
-            <td style="padding: 4px 8px; text-align: center; color: #047857; font-weight: 600;">Normal Flow</td>
-          </tr>
-        `;
-      });
-
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    if (generalItems.length > 0 || (obItems.length === 0 && dopplerItems.length === 0)) {
-      const listToRender = (obItems.length === 0 && dopplerItems.length === 0) ? items : generalItems;
-      html += `
-        <div style="margin-bottom: 8px;">
-          <div style="font-weight: bold; font-size: 11px; color: #0369a1; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
-            ⚡ DICOM SR Quantitative Parameters:
+              </tbody>
+            </table>
           </div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #bae6fd; background: #f0f9ff;">
-            <tbody>
-      `;
-
-      for (let i = 0; i < listToRender.length; i += 2) {
-        const it1 = listToRender[i];
-        const it2 = listToRender[i + 1];
-
-        html += `<tr style="border-bottom: 1px solid #e0f2fe;">`;
-        html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it1.name}:</td>`;
-        html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%; border-right: 1px solid #bae6fd;">${it1.value} ${it1.unit || ''}</td>`;
-
-        if (it2) {
-          html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it2.name}:</td>`;
-          html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%;">${it2.value} ${it2.unit || ''}</td>`;
-        } else {
-          html += `<td style="padding: 4px 8px; width: 25%; border-right: 1px solid #e0f2fe;"></td><td style="padding: 4px 8px; width: 25%;"></td>`;
-        }
-        html += `</tr>`;
+        `;
       }
+
+      if (generalItems.length > 0 || dopplerItems.length === 0) {
+        const listToRender = generalItems.length > 0 ? generalItems : items;
+        html += `
+          <div style="margin-bottom: 8px;">
+            <div style="font-weight: bold; font-size: 11px; color: #0369a1; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+              ⚡ DICOM SR Quantitative Parameters:
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #bae6fd; background: #f0f9ff;">
+              <tbody>
+        `;
+
+        for (let i = 0; i < listToRender.length; i += 2) {
+          const it1 = listToRender[i];
+          const it2 = listToRender[i + 1];
+
+          html += `<tr style="border-bottom: 1px solid #e0f2fe;">`;
+          html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it1.name}:</td>`;
+          html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%; border-right: 1px solid #bae6fd;">${it1.value} ${it1.unit || ''}</td>`;
+
+          if (it2) {
+            html += `<td style="padding: 4px 8px; font-weight: bold; color: #0c4a6e; width: 25%; border-right: 1px solid #e0f2fe;">${it2.name}:</td>`;
+            html += `<td style="padding: 4px 8px; font-weight: 600; color: #0369a1; width: 25%;">${it2.value} ${it2.unit || ''}</td>`;
+          } else {
+            html += `<td style="padding: 4px 8px; width: 25%; border-right: 1px solid #e0f2fe;"></td><td style="padding: 4px 8px; width: 25%;"></td>`;
+          }
+          html += `</tr>`;
+        }
+
+        html += `
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    }
 
       html += `
             </tbody>

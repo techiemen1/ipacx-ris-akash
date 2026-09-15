@@ -569,9 +569,10 @@ function getMeasurementsForModality(tags = {}, requestedModality = "", extraCont
     const obKeywords = [
       "ANOMALY", "FETAL", "OB", "OBSTETRIC", "PREGNANCY", "PREGNANT", "GRAVID",
       "GESTATION", "GESTATIONAL", "BIOMETRY", "TRIMESTER", "MATERNITY", "PLACENTA",
-      "AMNIOTIC", "AFI", "LMP", "EDD"
+      "AMNIOTIC", "AFI", "LMP", "EDD", "WKS", "WEEKS", "36W", "GA"
     ];
-    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || Boolean(tags["BPD"]) || requestedModality === "OB";
+    const hasGaPattern = /(\d{1,2})\s*(?:w|wks|weeks)/i.test(combinedContext) || /(\d{1,2})w(\d{1})d/i.test(combinedContext);
+    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || hasGaPattern || Boolean(tags["BPD"]) || requestedModality === "OB";
 
     if (isOB) {
       return {
