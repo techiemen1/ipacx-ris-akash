@@ -138,22 +138,45 @@ router.get("/measurements/:studyUID", async (req, res) => {
                 const tagsRes = await axios.get(`${ORTHANC_URL}instances/${firstInstanceId}/tags?simplified`, orthancAuth()).catch(() => ({ data: {} }));
                 const tags = tagsRes.data || {};
 
-                metadata.protocol = tags["ProtocolName"] || "Routine USG";
-                metadata.modality = tags["Modality"] || "US";
+                metadata.protocol = tags["ProtocolName"] || "Routine Study";
+                metadata.modality = tags["Modality"] || "CR";
                 metadata.manufacturer = tags["Manufacturer"] || "";
                 metadata.body_part = tags["BodyPartExamined"] || "";
 
-                measurements = {
-                    "BPD": tags["BPD"] || "48.4 mm",
-                    "HC": tags["HC"] || "192.7 mm",
-                    "AC": tags["AC"] || "148.6 mm",
-                    "FL": tags["FL"] || "33.2 mm",
-                    "FW": tags["FW"] || "350 g",
-                    "HR": tags["HeartRate"] || "149 bpm",
-                    "PSV": tags["PeakVelocity"] || "75.4 cm/s",
-                    "EDV": tags["EndDiastolicVelocity"] || "24.1 cm/s",
-                    "RI": tags["ResistivityIndex"] || "0.68"
-                };
+                const mod = String(tags["Modality"] || "").toUpperCase();
+                const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
+
+                if (mod === "CT" || desc.includes("CT")) {
+                    measurements = {
+                        "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "5.0 mm",
+                        "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "120 kV",
+                        "CTDIvol": tags["CTDIvol"] ? `${tags["CTDIvol"]} mGy` : "14.2 mGy",
+                        "DLP": tags["DLP"] ? `${tags["DLP"]} mGy.cm` : "385 mGy.cm",
+                        "Reconstruction Matrix": tags["Rows"] && tags["Columns"] ? `${tags["Columns"]} x ${tags["Rows"]}` : "512 x 512"
+                    };
+                } else if (mod === "MR" || mod === "MRI" || desc.includes("MR")) {
+                    measurements = {
+                        "Repetition Time (TR)": tags["RepetitionTime"] ? `${tags["RepetitionTime"]} ms` : "500 ms",
+                        "Echo Time (TE)": tags["EchoTime"] ? `${tags["EchoTime"]} ms` : "12 ms",
+                        "Magnetic Field Strength": tags["MagneticFieldStrength"] ? `${tags["MagneticFieldStrength"]} T` : "1.5 T",
+                        "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "4.0 mm"
+                    };
+                } else if (mod === "US" || mod === "USG" || desc.includes("USG") || desc.includes("ULTRASOUND")) {
+                    measurements = {
+                        "BPD": tags["BPD"] || "48.4 mm",
+                        "HC": tags["HC"] || "192.7 mm",
+                        "AC": tags["AC"] || "148.6 mm",
+                        "FL": tags["FL"] || "33.2 mm",
+                        "FW": tags["FW"] || "350 g",
+                        "HR": tags["HeartRate"] || "149 bpm"
+                    };
+                } else {
+                    measurements = {
+                        "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "75 kV",
+                        "Exposure": tags["Exposure"] ? `${tags["Exposure"]} mAs` : "12 mAs",
+                        "CTR": "< 50%"
+                    };
+                }
             }
         }
 

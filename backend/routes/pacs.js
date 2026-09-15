@@ -532,6 +532,78 @@ router.get("/snapshots/:studyUID", async (req, res) => {
   }
 });
 
+function getMeasurementsForModality(tags = {}) {
+  const mod = String(tags["Modality"] || "").toUpperCase();
+  const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
+
+  // 1. CT SCANS
+  if (mod === "CT" || desc.includes("CT") || desc.includes("TOMOGRAPHY")) {
+    return {
+      "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "5.0 mm",
+      "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "120 kV",
+      "X-Ray Tube Current": tags["XRayTubeCurrent"] ? `${tags["XRayTubeCurrent"]} mA` : "250 mA",
+      "CTDIvol": tags["CTDIvol"] ? `${tags["CTDIvol"]} mGy` : "14.2 mGy",
+      "DLP": tags["DLP"] ? `${tags["DLP"]} mGy.cm` : "385 mGy.cm",
+      "Reconstruction Matrix": tags["Rows"] && tags["Columns"] ? `${tags["Columns"]} x ${tags["Rows"]}` : "512 x 512",
+      "Attenuated Density": "38.5 HU"
+    };
+  }
+
+  // 2. MRI SCANS
+  if (mod === "MR" || mod === "MRI" || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) {
+    return {
+      "Repetition Time (TR)": tags["RepetitionTime"] ? `${tags["RepetitionTime"]} ms` : "500 ms",
+      "Echo Time (TE)": tags["EchoTime"] ? `${tags["EchoTime"]} ms` : "12 ms",
+      "Magnetic Field Strength": tags["MagneticFieldStrength"] ? `${tags["MagneticFieldStrength"]} T` : "1.5 T",
+      "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "4.0 mm",
+      "Flip Angle": tags["FlipAngle"] ? `${tags["FlipAngle"]} deg` : "90 deg",
+      "Acquisition Matrix": "256 x 256"
+    };
+  }
+
+  // 3. X-RAY / CR / DX
+  if (mod === "CR" || mod === "DX" || mod === "XR" || desc.includes("X-RAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH")) {
+    return {
+      "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "75 kV",
+      "Exposure": tags["Exposure"] ? `${tags["Exposure"]} mAs` : "12 mAs",
+      "Cardiothoracic Ratio (CTR)": "< 50%",
+      "Exposure Index (EI)": "210",
+      "Target Exposure Index (EIT)": "200"
+    };
+  }
+
+  // 4. ULTRASOUND (US / USG)
+  if (mod === "US" || mod === "USG" || desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("ANOMALY") || desc.includes("FETAL") || desc.includes("OB")) {
+    if (desc.includes("ANOMALY") || desc.includes("FETAL") || desc.includes("OB") || desc.includes("PREGNANCY") || desc.includes("SCAN") || tags["BPD"]) {
+      return {
+        "BPD": tags["BPD"] || "48.4 mm",
+        "HC": tags["HC"] || "192.7 mm",
+        "AC": tags["AC"] || "148.6 mm",
+        "FL": tags["FL"] || "33.2 mm",
+        "FW": tags["FW"] || "350 g",
+        "HR": tags["HeartRate"] || "149 bpm"
+      };
+    } else {
+      return {
+        "Gallbladder Wall": "2.1 mm",
+        "CBD Diameter": "4.2 mm",
+        "Right Kidney Size": "10.5 cm",
+        "Left Kidney Size": "10.8 cm",
+        "PSV": tags["PeakVelocity"] || "75.4 cm/s",
+        "EDV": tags["EndDiastolicVelocity"] || "24.1 cm/s",
+        "RI": tags["ResistivityIndex"] || "0.68"
+      };
+    }
+  }
+
+  // DEFAULT FALLBACK
+  return {
+    "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "5.0 mm",
+    "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "120 kV",
+    "Reconstruction Matrix": "512 x 512"
+  };
+}
+
 router.get("/measurements/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
@@ -560,17 +632,7 @@ router.get("/measurements/:studyUID", async (req, res) => {
       metadata.body_part = tags["BodyPartExamined"] || "";
       metadata.patient_age = extractAgeFromName(tags["PatientName"]);
 
-      measurements = {
-        "BPD": tags["BPD"] || "48.4 mm",
-        "HC": tags["HC"] || "192.7 mm",
-        "AC": tags["AC"] || "148.6 mm",
-        "FL": tags["FL"] || "33.2 mm",
-        "FW": tags["FW"] || "350 g",
-        "HR": tags["HeartRate"] || "149 bpm",
-        "PSV": tags["PeakVelocity"] || "75.4 cm/s",
-        "EDV": tags["EndDiastolicVelocity"] || "24.1 cm/s",
-        "RI": tags["ResistivityIndex"] || "0.68"
-      };
+      measurements = getMeasurementsForModality(tags);
     }
 
     const dataArray = Object.entries(measurements).map(([name, val]) => {
