@@ -823,13 +823,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       }
     }
 
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
     html += `</div>`;
     return html;
   };

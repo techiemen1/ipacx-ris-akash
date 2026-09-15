@@ -816,13 +816,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       }
     }
 
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
     html += `</div>`;
     return html;
   };
