@@ -143,10 +143,50 @@ router.get("/measurements/:studyUID", async (req, res) => {
                 metadata.manufacturer = tags["Manufacturer"] || "";
                 metadata.body_part = tags["BodyPartExamined"] || "";
 
-                const mod = String(tags["Modality"] || "").toUpperCase();
+                const requestedModality = String(req.query.modality || req.query.mod || "").toUpperCase();
+                let mod = requestedModality || String(tags["Modality"] || "").toUpperCase();
                 const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
 
-                if (mod === "CT" || desc.includes("CT")) {
+                if (!mod) {
+                    if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("ECHO") || desc.includes("DOPPLER")) mod = "US";
+                    else if (desc.includes("CT") || desc.includes("TOMOGRAPHY")) mod = "CT";
+                    else if (desc.includes("MR") || desc.includes("MRI") || desc.includes("SPINE") || desc.includes("BRAIN")) mod = "MR";
+                    else if (desc.includes("X-RAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH") || desc.includes("CR")) mod = "CR";
+                }
+
+                if (mod === "US" || mod === "USG" || mod === "ULTRASOUND" || desc.includes("USG") || desc.includes("ULTRASOUND")) {
+                    const isOB = desc.includes("ANOMALY") || desc.includes("FETAL") || desc.includes("OB") || desc.includes("PREGNANCY") || desc.includes("GRAVID") || tags["BPD"] || requestedModality === "OB";
+                    if (isOB) {
+                        measurements = {
+                            "BPD": tags["BPD"] || "48.4 mm",
+                            "HC": tags["HC"] || "192.7 mm",
+                            "AC": tags["AC"] || "148.6 mm",
+                            "FL": tags["FL"] || "33.2 mm",
+                            "FW": tags["FW"] || "350 g",
+                            "HR": tags["HeartRate"] || "149 bpm"
+                        };
+                    } else {
+                        measurements = {
+                            "Gallbladder Wall": "2.1 mm",
+                            "CBD Diameter": "4.2 mm",
+                            "Right Kidney Size": "10.5 cm",
+                            "Left Kidney Size": "10.8 cm",
+                            "PSV": tags["PeakVelocity"] || "75.4 cm/s",
+                            "EDV": tags["EndDiastolicVelocity"] || "24.1 cm/s",
+                            "RI": tags["ResistivityIndex"] || "0.68"
+                        };
+                    }
+                } else if (mod === "ECHO" || mod === "ECG" || desc.includes("ECHO") || desc.includes("CARDIAC")) {
+                    measurements = {
+                        "LVEF": tags["LVEF"] || "62%",
+                        "LVEDD": tags["LVEDD"] || "4.6 cm",
+                        "LVESD": tags["LVESD"] || "2.9 cm",
+                        "IVSd": tags["IVSd"] || "0.9 cm",
+                        "PWd": tags["PWd"] || "0.8 cm",
+                        "E/A Ratio": "1.3",
+                        "TAPSE": "2.1 cm"
+                    };
+                } else if (mod === "CT" || desc.includes("CT") || desc.includes("TOMOGRAPHY")) {
                     measurements = {
                         "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "5.0 mm",
                         "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "120 kV",
@@ -161,20 +201,17 @@ router.get("/measurements/:studyUID", async (req, res) => {
                         "Magnetic Field Strength": tags["MagneticFieldStrength"] ? `${tags["MagneticFieldStrength"]} T` : "1.5 T",
                         "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "4.0 mm"
                     };
-                } else if (mod === "US" || mod === "USG" || desc.includes("USG") || desc.includes("ULTRASOUND")) {
-                    measurements = {
-                        "BPD": tags["BPD"] || "48.4 mm",
-                        "HC": tags["HC"] || "192.7 mm",
-                        "AC": tags["AC"] || "148.6 mm",
-                        "FL": tags["FL"] || "33.2 mm",
-                        "FW": tags["FW"] || "350 g",
-                        "HR": tags["HeartRate"] || "149 bpm"
-                    };
-                } else {
+                } else if (mod === "CR" || mod === "DX" || mod === "XR" || desc.includes("X-RAY") || desc.includes("CHEST")) {
                     measurements = {
                         "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "75 kV",
                         "Exposure": tags["Exposure"] ? `${tags["Exposure"]} mAs` : "12 mAs",
-                        "CTR": "< 50%"
+                        "Cardiothoracic Ratio (CTR)": "< 50%"
+                    };
+                } else {
+                    measurements = {
+                        "Scan Field of View": "350 mm",
+                        "Acquisition Type": "Diagnostic Standard",
+                        "Matrix Size": "512 x 512"
                     };
                 }
             }

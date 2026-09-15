@@ -823,9 +823,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     if (!studyUID) return;
     setIsSyncingSR(true);
     try {
-      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}`);
+      const activeModality = selectedModality || study?.Modality || study?.modality || "";
+      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}`);
       if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
-        const srHtml = generateDicomSrTableHtml(res.data.data);
+        const srHtml = res.data.table_html || generateDicomSrTableHtml(res.data.data);
         updateFindings(findingsHtml + srHtml);
         alert(`Successfully synced ${res.data.data.length} DICOM SR parameters as structured biometry tables!`);
       } else {

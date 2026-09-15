@@ -39,7 +39,8 @@ export default function AIReportingToolbar({
     if (!study?.study_uid) return;
     setLoading(true);
     try {
-      const res = await axios.get(`/api/dicom-data/measurements/${study.study_uid}`);
+      const activeModality = study.modality || study.Modality || "";
+      const res = await axios.get(`/api/dicom-data/measurements/${study.study_uid}?modality=${encodeURIComponent(activeModality)}`);
       if (res.data?.data?.measurements && Object.keys(res.data.data.measurements).length > 0) {
         const fillRes = await axios.post("/api/ai/auto-fill-measurements", {
           findings,
