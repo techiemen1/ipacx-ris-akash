@@ -836,9 +836,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       const desc = study?.StudyDescription || reportTitle || "";
       const bodyPart = study?.BodyPartExamined || "";
       const historyText = study?.History || "";
-      const pName = patientName || study?.PatientName || "";
-      const pSex = patientGender || study?.PatientSex || "";
-      const pAge = patientAge || study?.PatientAge || "";
+      const pName = study?.PatientName || patientInfo?.PatientName || "";
+      const pSex = study?.PatientSex || study?.patient_sex || patientInfo?.PatientSex || "";
+      const pAge = study?.PatientAge || study?.patient_age || patientInfo?.PatientAge || "";
       const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}&history=${encodeURIComponent(historyText)}&title=${encodeURIComponent(reportTitle || '')}&patientName=${encodeURIComponent(pName)}&patientSex=${encodeURIComponent(pSex)}&patientAge=${encodeURIComponent(pAge)}`);
       
       if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
