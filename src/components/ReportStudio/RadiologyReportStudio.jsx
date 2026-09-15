@@ -1794,11 +1794,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                   <div style={{ fontSize: 11, color: '#64748b' }}>{activeDoctorTitle}</div>
                   <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg No: {activeDoctorReg}</div>
                 </div>
-              </div>
-            </div>
-          </div>
-                <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg No: KMC-84920</div>
-              </div>
             </div>
           </div>
         </div>
