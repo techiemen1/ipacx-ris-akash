@@ -669,12 +669,12 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
       const impressionText = res.data?.impression || "1. Clinical findings evaluated.\n2. Recommend clinical correlation.";
       const lines = impressionText.split('\n').filter(l => l.trim().length > 0);
-      const formattedHtml = `<div style="padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px;"><strong style="color: #15803d;">🤖 AI GENERATED IMPRESSION:</strong></div><ol style="padding-left: 20px;">${lines.map(line => `<li>${line.replace(/^\d+\.\s*/, '')}</li>`).join('')}</ol>`;
+      const formattedHtml = `<ol style="padding-left: 20px;">${lines.map(line => `<li>${line.replace(/^\d+\.\s*/, '')}</li>`).join('')}</ol>`;
       
       updateConclusion(formattedHtml);
     } catch (err) {
       console.error("AI Impression generation failed:", err);
-      const fallbackImpression = `<div style="padding: 8px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; margin-bottom: 8px;"><strong style="color: #15803d;">🤖 AI SUMMARY IMPRESSION:</strong></div><ul><li>${cleanFindings.slice(0, 180)}...</li><li>Recommend clinical correlation and routine follow-up as indicated.</li></ul>`;
+      const fallbackImpression = `<ul><li>${cleanFindings.slice(0, 180)}...</li><li>Recommend clinical correlation and routine follow-up as indicated.</li></ul>`;
       updateConclusion(fallbackImpression);
     } finally {
       setIsGeneratingAI(false);
@@ -1325,7 +1325,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 <button
                   onClick={() => {
                     if (studyUID) {
-                      window.open(`/api/reports/study/${encodeURIComponent(studyUID)}/pdf`, '_blank');
+                      const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+                      window.open(`/api/reports/study/${encodeURIComponent(studyUID)}/pdf?token=${encodeURIComponent(token)}`, '_blank');
                     } else {
                       alert("Please save report first to download PDF.");
                     }

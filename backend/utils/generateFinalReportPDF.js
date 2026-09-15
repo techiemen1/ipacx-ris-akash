@@ -78,6 +78,13 @@ module.exports = async function generateFinalReportPDF(
       const filterAiTerms = (content) => {
         if (!content) return "";
         return String(content)
+          .replace(/<div[^>]*>.*?🤖.*?<\/div>/gi, "")
+          .replace(/<div[^>]*>.*?AI\s*(GENERATED|SUMMARY)?\s*IMPRESSION.*?<\/div>/gi, "")
+          .replace(/<strong[^>]*>.*?🤖.*?<\/strong>/gi, "")
+          .replace(/<strong[^>]*>.*?AI\s*(GENERATED|SUMMARY)?\s*IMPRESSION.*?<\/strong>/gi, "")
+          .replace(/🤖\s*(AI GENERATED|AI SUMMARY)?\s*IMPRESSION:?/gi, "")
+          .replace(/🤖\s*IMPRESSION:?/gi, "")
+          .replace(/🤖/g, "")
           .replace(/\b(AUTO\s*)?GENERATE(D)?\s*(BY\s*)?AI\b/gi, "")
           .replace(/\bAI\s*(ASSISTED|GENERATED|IMPRESSION|FINDINGS|SUMMARY|NOTE|RECOMMENDATION|DRAFT)\b/gi, "")
           .replace(/\b(AI ASSISTED|AI GENERATED)\b/gi, "")
@@ -104,21 +111,32 @@ module.exports = async function generateFinalReportPDF(
       /* -----------------------------
          HEADER (Dynamic Clinic Branding)
       ----------------------------- */
-      if (!options.printMode && !isPrePrinted) {
-        if (clinicBranding.logo_url && fs.existsSync(clinicBranding.logo_url)) {
-          doc.image(clinicBranding.logo_url, marginSize, currentY, { width: 60 });
+      const drawHeader = (startY = marginSize) => {
+        let y = startY;
+        if (!options.printMode && !isPrePrinted) {
+          if (clinicBranding.logo_url && fs.existsSync(clinicBranding.logo_url)) {
+            doc.image(clinicBranding.logo_url, marginSize, y, { width: 60 });
+          }
+          doc.font("Helvetica-Bold").fontSize(13).text(clinicBranding.name.toUpperCase(), 0, y, { align: "center" });
+          y += 16;
+          doc.font("Helvetica-Bold").fontSize(9).text(clinicBranding.header_text.toUpperCase(), { align: "center" });
+          y += 13;
+          doc.font("Helvetica").fontSize(8).text(`${clinicBranding.address} • Helpline: ${clinicBranding.phone}`, { align: "center" });
+          y += 16;
+          doc.moveTo(marginSize, y).lineTo(pageWidth - marginSize, y).stroke();
+          return y + 12;
+        } else if (isPrePrinted) {
+          return y + 60;
         }
-        doc.font("Helvetica-Bold").fontSize(13).text(clinicBranding.name.toUpperCase(), 0, currentY, { align: "center" });
-        currentY += 16;
-        doc.font("Helvetica-Bold").fontSize(9).text(clinicBranding.header_text.toUpperCase(), { align: "center" });
-        currentY += 13;
-        doc.font("Helvetica").fontSize(8).text(`${clinicBranding.address} • Helpline: ${clinicBranding.phone}`, { align: "center" });
-        currentY += 16;
-        doc.moveTo(marginSize, currentY).lineTo(pageWidth - marginSize, currentY).stroke();
-        currentY += 10;
-      } else if (isPrePrinted) {
-        currentY += 60; // Leave blank space for pre-printed letterhead
-      }
+        return y;
+      };
+
+      const addNewPage = () => {
+        doc.addPage();
+        currentY = drawHeader(marginSize);
+      };
+
+      currentY = drawHeader(marginSize);
 
       /* -----------------------------
          PATIENT INFO TABLE
@@ -192,8 +210,7 @@ module.exports = async function generateFinalReportPDF(
       sections.forEach((s) => {
         if (s.val) {
           if (currentY > pageHeight - 150) {
-            doc.addPage();
-            currentY = marginSize;
+            addNewPage();
           }
           doc.font("Helvetica-Bold").fontSize(10).text(s.label, marginSize, currentY);
           currentY += 12;
@@ -211,8 +228,7 @@ module.exports = async function generateFinalReportPDF(
 
       if (keyImages.length > 0) {
         if (currentY > pageHeight - 160) {
-          doc.addPage();
-          currentY = marginSize;
+          addNewPage();
         }
         doc.font("Helvetica-Bold").fontSize(10).text("Key Diagnostic Images:", marginSize, currentY);
         currentY += 14;
@@ -241,8 +257,7 @@ module.exports = async function generateFinalReportPDF(
               currentY += 115;
             }
             if (currentY > pageHeight - 160) {
-              doc.addPage();
-              currentY = marginSize;
+              addNewPage();
               xPos = marginSize;
             }
 
@@ -264,8 +279,7 @@ module.exports = async function generateFinalReportPDF(
       ----------------------------- */
       if (report.report_content?.conclusion) {
         if (currentY > pageHeight - 180) {
-          doc.addPage();
-          currentY = marginSize;
+          addNewPage();
         }
         doc.font("Helvetica-Bold").fontSize(10).text("Conclusion:", marginSize, currentY);
         currentY += 12;
@@ -278,8 +292,7 @@ module.exports = async function generateFinalReportPDF(
       ----------------------------- */
       if (showFooter) {
         if (currentY > pageHeight - 150) {
-          doc.addPage();
-          currentY = marginSize;
+          addNewPage();
         }
 
         const formatSignature = (sig) => {

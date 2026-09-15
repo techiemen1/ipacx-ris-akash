@@ -26,6 +26,7 @@ const PUBLIC_PREFIX_PATTERNS = [
   /^\/api\/pacs\/mobile-study\//,
   /^\/api\/pacs\/study-series-instances\//,
   /^\/api\/pacs\/export\//,
+  /^\/api\/reports\/.*\/pdf/,
 ];
 
 function isPublicPath(pathname = "", originalUrl = "") {
