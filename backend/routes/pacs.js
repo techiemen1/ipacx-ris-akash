@@ -551,22 +551,27 @@ router.get("/snapshots/:studyUID", async (req, res) => {
   }
 });
 
-function getMeasurementsForModality(tags = {}, requestedModality = "") {
-  // Determine effective modality: requestedModality query param, DICOM Modality tag, or header tag
+function getMeasurementsForModality(tags = {}, requestedModality = "", extraContext = {}) {
   let mod = String(requestedModality || tags["Modality"] || tags["(0008,0060)"] || "").toUpperCase();
   const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
+  const combinedContext = `${requestedModality} ${tags["Modality"] || ""} ${desc} ${tags["BodyPartExamined"] || ""} ${extraContext.description || ""} ${extraContext.bodyPart || ""} ${extraContext.history || ""} ${extraContext.title || ""}`.toUpperCase();
 
-  // If mod is empty, infer from StudyDescription or ProtocolName
+  // If mod is empty, infer from combinedContext
   if (!mod) {
-    if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("ECHO") || desc.includes("DOPPLER")) mod = "US";
-    else if (desc.includes("CT") || desc.includes("TOMOGRAPHY")) mod = "CT";
-    else if (desc.includes("MR") || desc.includes("MRI") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) mod = "MR";
-    else if (desc.includes("X-RAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH") || desc.includes("CR") || desc.includes("DX")) mod = "CR";
+    if (combinedContext.includes("USG") || combinedContext.includes("ULTRASOUND") || combinedContext.includes("ECHO") || combinedContext.includes("DOPPLER")) mod = "US";
+    else if (combinedContext.includes("CT") || combinedContext.includes("TOMOGRAPHY")) mod = "CT";
+    else if (combinedContext.includes("MR") || combinedContext.includes("MRI") || combinedContext.includes("SPINE") || combinedContext.includes("BRAIN") || combinedContext.includes("KNEE")) mod = "MR";
+    else if (combinedContext.includes("X-RAY") || combinedContext.includes("CHEST") || combinedContext.includes("RADIOGRAPH") || combinedContext.includes("CR") || combinedContext.includes("DX")) mod = "CR";
   }
 
   // 1. ULTRASOUND / USG (US)
-  if (mod === "US" || mod === "USG" || mod === "ULTRASOUND" || desc.includes("USG") || desc.includes("ULTRASOUND")) {
-    const isOB = desc.includes("ANOMALY") || desc.includes("FETAL") || desc.includes("OB") || desc.includes("PREGNANCY") || desc.includes("GRAVID") || tags["BPD"] || requestedModality === "OB";
+  if (mod === "US" || mod === "USG" || mod === "ULTRASOUND" || combinedContext.includes("USG") || combinedContext.includes("ULTRASOUND")) {
+    const obKeywords = [
+      "ANOMALY", "FETAL", "OB", "OBSTETRIC", "PREGNANCY", "PREGNANT", "GRAVID",
+      "GESTATION", "GESTATIONAL", "BIOMETRY", "TRIMESTER", "MATERNITY", "PLACENTA",
+      "AMNIOTIC", "AFI", "LMP", "EDD"
+    ];
+    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || Boolean(tags["BPD"]) || requestedModality === "OB";
 
     if (isOB) {
       return {
@@ -591,7 +596,7 @@ function getMeasurementsForModality(tags = {}, requestedModality = "") {
   }
 
   // 2. ECHOCARDIOGRAPHY (ECHO / ECG)
-  if (mod === "ECHO" || mod === "ECG" || desc.includes("ECHO") || desc.includes("CARDIAC")) {
+  if (mod === "ECHO" || mod === "ECG" || combinedContext.includes("ECHO") || combinedContext.includes("CARDIAC")) {
     return {
       "LVEF": tags["LVEF"] || "62%",
       "LVEDD": tags["LVEDD"] || "4.6 cm",
@@ -604,7 +609,7 @@ function getMeasurementsForModality(tags = {}, requestedModality = "") {
   }
 
   // 3. COMPUTED TOMOGRAPHY (CT)
-  if (mod === "CT" || desc.includes("CT") || desc.includes("TOMOGRAPHY")) {
+  if (mod === "CT" || combinedContext.includes("CT") || combinedContext.includes("TOMOGRAPHY")) {
     return {
       "Slice Thickness": tags["SliceThickness"] ? `${tags["SliceThickness"]} mm` : "5.0 mm",
       "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "120 kV",
@@ -617,7 +622,7 @@ function getMeasurementsForModality(tags = {}, requestedModality = "") {
   }
 
   // 4. MAGNETIC RESONANCE IMAGING (MR / MRI)
-  if (mod === "MR" || mod === "MRI" || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) {
+  if (mod === "MR" || mod === "MRI" || combinedContext.includes("MR") || combinedContext.includes("SPINE") || combinedContext.includes("BRAIN") || combinedContext.includes("KNEE")) {
     return {
       "Repetition Time (TR)": tags["RepetitionTime"] ? `${tags["RepetitionTime"]} ms` : "500 ms",
       "Echo Time (TE)": tags["EchoTime"] ? `${tags["EchoTime"]} ms` : "12 ms",
@@ -629,7 +634,7 @@ function getMeasurementsForModality(tags = {}, requestedModality = "") {
   }
 
   // 5. X-RAY / CR / DX
-  if (mod === "CR" || mod === "DX" || mod === "XR" || mod === "XRAY" || desc.includes("X-RAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH")) {
+  if (mod === "CR" || mod === "DX" || mod === "XR" || mod === "XRAY" || combinedContext.includes("X-RAY") || combinedContext.includes("CHEST") || combinedContext.includes("RADIOGRAPH")) {
     return {
       "KVP": tags["KVP"] ? `${tags["KVP"]} kV` : "75 kV",
       "Exposure": tags["Exposure"] ? `${tags["Exposure"]} mAs` : "12 mAs",
@@ -651,6 +656,13 @@ router.get("/measurements/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
     const requestedModality = String(req.query.modality || req.query.mod || "").toUpperCase();
+    const extraContext = {
+      description: req.query.description || req.query.desc || "",
+      bodyPart: req.query.bodyPart || req.query.body_part || "",
+      history: req.query.history || "",
+      title: req.query.title || ""
+    };
+
     const orthancUrl = await getOrthancUrl();
     const orthancId = await findOrthancStudy(studyUID);
 
@@ -670,13 +682,13 @@ router.get("/measurements/:studyUID", async (req, res) => {
       }
     }
 
-    metadata.protocol = tags["ProtocolName"] || tags["StudyDescription"] || "Diagnostic Study";
+    metadata.protocol = extraContext.title || extraContext.description || tags["ProtocolName"] || tags["StudyDescription"] || "Diagnostic Study";
     metadata.modality = requestedModality || tags["Modality"] || "US";
     metadata.manufacturer = tags["Manufacturer"] || "";
-    metadata.body_part = tags["BodyPartExamined"] || "";
+    metadata.body_part = extraContext.bodyPart || tags["BodyPartExamined"] || "";
     metadata.patient_age = extractAgeFromName(tags["PatientName"]);
 
-    measurements = getMeasurementsForModality(tags, requestedModality);
+    measurements = getMeasurementsForModality(tags, requestedModality, extraContext);
 
     const dataArray = Object.entries(measurements).map(([name, val]) => {
       const parts = String(val).split(" ");
@@ -702,7 +714,13 @@ router.get("/measurements/:studyUID", async (req, res) => {
   } catch (err) {
     console.error("PACS measurements fetch failed:", err.message);
     const requestedModality = String(req.query.modality || req.query.mod || "US").toUpperCase();
-    const fallbackMeasurements = getMeasurementsForModality({}, requestedModality);
+    const extraContext = {
+      description: req.query.description || req.query.desc || "",
+      bodyPart: req.query.bodyPart || req.query.body_part || "",
+      history: req.query.history || "",
+      title: req.query.title || ""
+    };
+    const fallbackMeasurements = getMeasurementsForModality({}, requestedModality, extraContext);
     const fallbackDataArray = Object.entries(fallbackMeasurements).map(([name, val]) => {
       const parts = String(val).split(" ");
       return { name, value: parts[0] || val, unit: parts.slice(1).join(" ") || "" };

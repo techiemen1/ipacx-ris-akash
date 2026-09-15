@@ -824,7 +824,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     setIsSyncingSR(true);
     try {
       const activeModality = selectedModality || study?.Modality || study?.modality || "";
-      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}`);
+      const desc = study?.StudyDescription || reportTitle || "";
+      const bodyPart = study?.BodyPartExamined || "";
+      const historyText = study?.History || "";
+      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}&history=${encodeURIComponent(historyText)}&title=${encodeURIComponent(reportTitle || '')}`);
       if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
         const srHtml = res.data.table_html || generateDicomSrTableHtml(res.data.data);
         updateFindings(findingsHtml + srHtml);

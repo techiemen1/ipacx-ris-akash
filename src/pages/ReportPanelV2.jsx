@@ -689,7 +689,9 @@ export default function CreateReport() {
     setIsSyncingDicom(true);
     try {
       const activeModality = study.Modality || "";
-      const res = await api.get(`/api/pacs/measurements/${studyUID}?modality=${encodeURIComponent(activeModality)}`);
+      const desc = study.StudyDescription || reportTitle || "";
+      const bodyPart = study.BodyPartExamined || "";
+      const res = await api.get(`/api/pacs/measurements/${studyUID}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}`);
       if (res.data.success && res.data.data.length > 0) {
         // Map SR Concept Names to clinical keys (BPD, HC, AC, FL, etc.)
         const mapping = {

@@ -691,7 +691,9 @@ const fetchDicomMeasurements = async () => {
   setIsSyncingDicom(true);
   try {
     const activeModality = study.Modality || "";
-    const res = await api.get(`/api/pacs/measurements/${studyUID}?modality=${encodeURIComponent(activeModality)}`);
+    const desc = study.StudyDescription || reportTitle || "";
+    const bodyPart = study.BodyPartExamined || "";
+    const res = await api.get(`/api/pacs/measurements/${studyUID}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}`);
     if (res.data.success) {
       setDicomData(res.data.data);
       alert("DICOM measurements synced successfully.");

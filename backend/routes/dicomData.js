@@ -146,16 +146,23 @@ router.get("/measurements/:studyUID", async (req, res) => {
                 const requestedModality = String(req.query.modality || req.query.mod || "").toUpperCase();
                 let mod = requestedModality || String(tags["Modality"] || "").toUpperCase();
                 const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
+                const extraDesc = String(req.query.description || req.query.title || "").toUpperCase();
+                const combinedContext = `${requestedModality} ${tags["Modality"] || ""} ${desc} ${tags["BodyPartExamined"] || ""} ${extraDesc}`.toUpperCase();
 
                 if (!mod) {
-                    if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("ECHO") || desc.includes("DOPPLER")) mod = "US";
-                    else if (desc.includes("CT") || desc.includes("TOMOGRAPHY")) mod = "CT";
-                    else if (desc.includes("MR") || desc.includes("MRI") || desc.includes("SPINE") || desc.includes("BRAIN")) mod = "MR";
-                    else if (desc.includes("X-RAY") || desc.includes("CHEST") || desc.includes("RADIOGRAPH") || desc.includes("CR")) mod = "CR";
+                    if (combinedContext.includes("USG") || combinedContext.includes("ULTRASOUND") || combinedContext.includes("ECHO") || combinedContext.includes("DOPPLER")) mod = "US";
+                    else if (combinedContext.includes("CT") || combinedContext.includes("TOMOGRAPHY")) mod = "CT";
+                    else if (combinedContext.includes("MR") || combinedContext.includes("MRI") || combinedContext.includes("SPINE") || combinedContext.includes("BRAIN")) mod = "MR";
+                    else if (combinedContext.includes("X-RAY") || combinedContext.includes("CHEST") || combinedContext.includes("RADIOGRAPH") || combinedContext.includes("CR")) mod = "CR";
                 }
 
-                if (mod === "US" || mod === "USG" || mod === "ULTRASOUND" || desc.includes("USG") || desc.includes("ULTRASOUND")) {
-                    const isOB = desc.includes("ANOMALY") || desc.includes("FETAL") || desc.includes("OB") || desc.includes("PREGNANCY") || desc.includes("GRAVID") || tags["BPD"] || requestedModality === "OB";
+                if (mod === "US" || mod === "USG" || mod === "ULTRASOUND" || combinedContext.includes("USG") || combinedContext.includes("ULTRASOUND")) {
+                    const obKeywords = [
+                        "ANOMALY", "FETAL", "OB", "OBSTETRIC", "PREGNANCY", "PREGNANT", "GRAVID",
+                        "GESTATION", "GESTATIONAL", "BIOMETRY", "TRIMESTER", "MATERNITY", "PLACENTA",
+                        "AMNIOTIC", "AFI", "LMP", "EDD"
+                    ];
+                    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || Boolean(tags["BPD"]) || requestedModality === "OB";
                     if (isOB) {
                         measurements = {
                             "BPD": tags["BPD"] || "48.4 mm",
@@ -176,7 +183,7 @@ router.get("/measurements/:studyUID", async (req, res) => {
                             "RI": tags["ResistivityIndex"] || "0.68"
                         };
                     }
-                } else if (mod === "ECHO" || mod === "ECG" || desc.includes("ECHO") || desc.includes("CARDIAC")) {
+                } else if (mod === "ECHO" || mod === "ECG" || combinedContext.includes("ECHO") || combinedContext.includes("CARDIAC")) {
                     measurements = {
                         "LVEF": tags["LVEF"] || "62%",
                         "LVEDD": tags["LVEDD"] || "4.6 cm",
