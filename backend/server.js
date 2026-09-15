@@ -75,8 +75,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "1000mb" }));
-app.use(express.urlencoded({ limit: "1000mb", extended: true }));
+app.use(express.json({ limit: "2000mb" }));
+app.use(express.urlencoded({ limit: "2000mb", extended: true }));
 app.use("/uploads/report_images", express.static(path.join(__dirname, "uploads/report_images")));
 app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/signatures")));
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication

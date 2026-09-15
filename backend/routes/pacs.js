@@ -56,16 +56,35 @@ function extractAgeFromName(name) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 1024 * 1024 * 1024,
-    fieldSize: 1024 * 1024 * 1024,
-    files: 2000
+    fileSize: 2000 * 1024 * 1024,
+    fieldSize: 2000 * 1024 * 1024,
+    files: 20000,
+    parts: 40000,
+    headerPairs: 40000
   }
 });
 
 /* ======================================================
    UPLOAD LOCAL DICOM FILES / ZIP ARCHIVES
 ====================================================== */
-router.post("/upload", upload.any(), asyncHandler(async (req, res) => {
+router.post("/upload", (req, res, next) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      console.error("[PACS Upload Multer Error]:", err);
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          success: false,
+          message: "DICOM Payload too large. File size exceeds maximum threshold."
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Upload error: ${err.message}`
+      });
+    }
+    next();
+  });
+}, asyncHandler(async (req, res) => {
   console.log(`[PACS Upload] Processing upload request with ${req.files ? req.files.length : 0} files...`);
 
   if (!req.files || req.files.length === 0) {

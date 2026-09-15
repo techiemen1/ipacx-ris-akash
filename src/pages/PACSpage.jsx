@@ -317,16 +317,10 @@ export default function PACSpage() {
   };
 
   const handleDicomUpload = async (e, type) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const rawFiles = Array.from(e.target.files || []);
+    if (!rawFiles || rawFiles.length === 0) return;
 
-    let totalPayloadSize = 0;
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-      formData.append("dicomFiles", files[i]);
-      totalPayloadSize += files[i].size || 0;
-    }
-
+    const totalPayloadSize = rawFiles.reduce((acc, f) => acc + (f.size || 0), 0);
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -336,35 +330,93 @@ export default function PACSpage() {
       percentage: 0,
       loadedBytes: 0,
       totalBytes: totalPayloadSize,
-      fileCount: files.length
+      fileCount: rawFiles.length
     });
 
-    try {
-      const { data } = await api.post("/api/pacs/upload", formData, {
-        signal: controller.signal,
-        headers: { "Content-Type": undefined },
-        onUploadProgress: (progressEvent) => {
-          const total = progressEvent.total || totalPayloadSize || progressEvent.loaded || 1;
-          const percentCompleted = Math.min(100, Math.round((progressEvent.loaded * 100) / total));
-          
-          setUploadProgress({
-            percentage: percentCompleted,
-            loadedBytes: progressEvent.loaded,
-            totalBytes: total,
-            fileCount: files.length
-          });
+    // Chunk files into batches (max 25MB or 30 files per HTTP payload batch)
+    const batches = [];
+    let currentBatch = [];
+    let currentBatchSize = 0;
+    const MAX_BATCH_SIZE = 25 * 1024 * 1024;
+    const MAX_BATCH_FILES = 30;
 
-          // INSTANT AUTO-CLOSE ON 100% COMPLETION
-          if (percentCompleted >= 100) {
-            setTimeout(() => {
-              setUploading(false);
-            }, 250);
-          }
+    for (const file of rawFiles) {
+      const isZip = file.name.toLowerCase().endsWith(".zip") || file.type.includes("zip");
+      if (isZip || file.size > MAX_BATCH_SIZE) {
+        if (currentBatch.length > 0) {
+          batches.push(currentBatch);
+          currentBatch = [];
+          currentBatchSize = 0;
         }
+        batches.push([file]);
+      } else {
+        if (currentBatch.length >= MAX_BATCH_FILES || (currentBatchSize + file.size > MAX_BATCH_SIZE)) {
+          batches.push(currentBatch);
+          currentBatch = [file];
+          currentBatchSize = file.size;
+        } else {
+          currentBatch.push(file);
+          currentBatchSize += file.size;
+        }
+      }
+    }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+
+    let accumulatedLoadedBytes = 0;
+    let anySuccess = false;
+    let lastErrorMsg = "";
+
+    try {
+      for (let bIndex = 0; bIndex < batches.length; bIndex++) {
+        if (controller.signal.aborted) break;
+
+        const batchFiles = batches[bIndex];
+        const batchPayloadSize = batchFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+        const formData = new FormData();
+        for (const file of batchFiles) {
+          formData.append("dicomFiles", file);
+        }
+
+        const { data } = await api.post("/api/pacs/upload", formData, {
+          signal: controller.signal,
+          headers: { "Content-Type": undefined },
+          onUploadProgress: (progressEvent) => {
+            const batchLoaded = progressEvent.loaded || 0;
+            const currentTotalLoaded = Math.min(totalPayloadSize, accumulatedLoadedBytes + batchLoaded);
+            const percentCompleted = Math.min(99, Math.round((currentTotalLoaded * 100) / (totalPayloadSize || 1)));
+
+            setUploadProgress({
+              percentage: percentCompleted,
+              loadedBytes: currentTotalLoaded,
+              totalBytes: totalPayloadSize,
+              fileCount: rawFiles.length
+            });
+          }
+        });
+
+        accumulatedLoadedBytes += batchPayloadSize;
+        if (data?.success) {
+          anySuccess = true;
+        } else if (data?.message || data?.error) {
+          lastErrorMsg = data.message || data.error;
+        }
+      }
+
+      setUploadProgress({
+        percentage: 100,
+        loadedBytes: totalPayloadSize,
+        totalBytes: totalPayloadSize,
+        fileCount: rawFiles.length
       });
 
-      if (data?.success) {
-        loadStudies(activePacs);
+      if (anySuccess) {
+        setTimeout(() => {
+          loadStudies(activePacs);
+        }, 300);
+      } else if (lastErrorMsg) {
+        alert(`❌ DICOM Upload Failed: ${lastErrorMsg}`);
       }
     } catch (err) {
       if (axios.isCancel(err) || err.name === "CanceledError" || err.name === "AbortError") {
@@ -376,11 +428,13 @@ export default function PACSpage() {
       alert(`❌ DICOM Upload Failed: ${errMsg}`);
     } finally {
       abortControllerRef.current = null;
-      setUploading(false);
-      setUploadType(null);
-      setUploadProgress({ percentage: 0, loadedBytes: 0, totalBytes: 0, fileCount: 0 });
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (folderInputRef.current) folderInputRef.current.value = "";
+      setTimeout(() => {
+        setUploading(false);
+        setUploadType(null);
+        setUploadProgress({ percentage: 0, loadedBytes: 0, totalBytes: 0, fileCount: 0 });
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        if (folderInputRef.current) folderInputRef.current.value = "";
+      }, 400);
     }
   };
 

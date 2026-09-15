@@ -23,6 +23,16 @@ module.exports = function (app) {
     ws: true
   });
 
+  const backendTarget = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+  const backendProxy = createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    limit: "2000mb",
+  });
+
+  // Proxy API endpoints to backend Node.js server with high payload limit
+  app.use("/api", backendProxy);
+
   // Proxy OHIF Viewer static app & DICOMweb / WADO DICOM image streaming endpoints
   app.use("/viewer", ohifStandaloneProxy);
   app.use("/ohif-viewer", orthancProxy);
