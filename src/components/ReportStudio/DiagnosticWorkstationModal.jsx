@@ -50,6 +50,21 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const userRole = String(loggedUser.role || "").toUpperCase();
   const canEditReport = !userRole || ["ADMIN", "RADIOLOGIST", "DOCTOR", "SUPERVISOR"].includes(userRole);
 
+  const doctorNameRaw = 
+    study?.ApprovedBy || 
+    study?.ReportedBy || 
+    loggedUser.full_name || 
+    loggedUser.name || 
+    loggedUser.username || 
+    "Consultant Radiologist";
+
+  const activeDoctorName = (doctorNameRaw.toLowerCase().startsWith("dr.") || doctorNameRaw.toLowerCase().startsWith("dr "))
+    ? doctorNameRaw
+    : `Dr. ${doctorNameRaw}`;
+
+  const activeDoctorTitle = loggedUser.designation || loggedUser.qualification || "Consultant Radiologist";
+  const activeDoctorReg = loggedUser.reg_no || loggedUser.medical_council_reg || loggedUser.registration_no || "KMC/MED/REG/48190";
+
   // Study & Patient Demographics State
   const [study, setStudy] = useState({
     PatientName: "",
@@ -699,6 +714,16 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         modality: study.Modality,
         body_part: study.BodyPartExamined,
         accession_number: study.AccessionNumber,
+        reported_by_signature: {
+          full_name: activeDoctorName,
+          qualification: activeDoctorTitle,
+          registration_no: activeDoctorReg
+        },
+        approved_by_signature: {
+          full_name: activeDoctorName,
+          qualification: activeDoctorTitle,
+          registration_no: activeDoctorReg
+        },
         status: statusToSave,
         history,
         findings: DOMPurify.sanitize(currentFindings),
@@ -1297,6 +1322,19 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 🖨️ Official Radiology Printable Document
               </span>
               <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => {
+                    if (studyUID) {
+                      window.open(`/api/reports/study/${encodeURIComponent(studyUID)}/pdf`, '_blank');
+                    } else {
+                      alert("Please save report first to download PDF.");
+                    }
+                  }}
+                  className="dws-btn"
+                  style={{ background: '#0284c7', color: '#ffffff' }}
+                >
+                  <FileText size={16} /> Download Official PDF
+                </button>
                 <button onClick={handlePrint} className="dws-btn dws-btn-emerald">
                   <Printer size={16} /> Print Now
                 </button>
@@ -1345,111 +1383,128 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
               </label>
             </div>
 
-            {!pageSetup.prePrintedStationery ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px double #000', paddingBottom: 16, marginBottom: 20 }}>
-                <div>
-                  <h1 style={{ margin: 0, fontSize: 22, fontWeight: 'bold', color: '#1e1b4b', fontFamily: 'sans-serif', textTransform: 'uppercase' }}>
-                    {clinicBranding.name || "AKASH MEDICAL COLLEGE AND HOSPITALS"}
-                  </h1>
-                  <p style={{ margin: '4px 0 0 0', fontSize: 13, fontWeight: '600', color: '#4338ca', fontFamily: 'sans-serif' }}>
-                    {clinicBranding.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"}
-                  </p>
-                  {(clinicBranding.address || clinicBranding.phone) && (
-                    <p style={{ margin: '3px 0 0 0', fontSize: 11, color: '#475569', fontFamily: 'sans-serif' }}>
-                      {clinicBranding.address} {clinicBranding.phone ? `• Helpline: ${clinicBranding.phone}` : ''}
+            <div id="rs-printable-document" className="rs-printable-document">
+              {!pageSetup.prePrintedStationery ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px double #000', paddingBottom: 16, marginBottom: 20 }}>
+                  <div>
+                    <h1 style={{ margin: 0, fontSize: 22, fontWeight: 'bold', color: '#1e1b4b', fontFamily: 'sans-serif', textTransform: 'uppercase' }}>
+                      {clinicBranding.name || "AKASH MEDICAL COLLEGE AND HOSPITALS"}
+                    </h1>
+                    <p style={{ margin: '4px 0 0 0', fontSize: 13, fontWeight: '600', color: '#4338ca', fontFamily: 'sans-serif' }}>
+                      {clinicBranding.header_text || "DEPARTMENT OF RADIO-DIAGNOSIS & ADVANCED IMAGING"}
                     </p>
-                  )}
-                </div>
-                <div style={{ textAlign: 'right', fontFamily: 'sans-serif', fontSize: 11, color: '#64748b' }}>
-                  <div style={{ fontWeight: 'bold', color: '#047857', fontSize: 12 }}>
-                    {clinicBranding.nabh_id ? `NABH (${clinicBranding.nabh_id})` : 'NABH & NABL ACCREDITED'}
+                    {(clinicBranding.address || clinicBranding.phone) && (
+                      <p style={{ margin: '3px 0 0 0', fontSize: 11, color: '#475569', fontFamily: 'sans-serif' }}>
+                        {clinicBranding.address} {clinicBranding.phone ? `• Helpline: ${clinicBranding.phone}` : ''}
+                      </p>
+                    )}
                   </div>
-                  <div>{clinicBranding.nabl_id ? `NABL (${clinicBranding.nabl_id})` : '24x7 Diagnostic Helpline'}</div>
-                  {clinicBranding.registration_no && <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg: {clinicBranding.registration_no}</div>}
-                </div>
-              </div>
-            ) : (
-              <div style={{ height: 75 }} />
-            )}
-
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 20, border: '1px solid #000', fontFamily: 'sans-serif' }}>
-              <tbody>
-                <tr>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Patient Name:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', fontWeight: 'bold' }}>{study.PatientName || "-"}</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Age / Sex:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.PatientAge || "-"} / {study.PatientSex || "-"}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Patient ID:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.PatientID || "-"}</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Accession No:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.AccessionNumber || "-"}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Modality:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.Modality || initialModality || "CR"}</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Study Date:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.StudyDate || "-"}</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Ref. Doctor:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.ReferringPhysicianName || "Self / Desk"}</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Report Date:</td>
-                  <td style={{ padding: 6, border: '1px solid #ccc', fontWeight: 'bold', color: '#0284c7' }}>{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <h2 style={{ textTransform: 'uppercase', textAlign: 'center', fontSize: 16, margin: '20px 0', textDecoration: 'underline', fontWeight: 'bold' }}>
-              {reportTitle}
-            </h2>
-
-            {history && (
-              <div style={{ marginBottom: 16, fontSize: 13 }}>
-                <strong>CLINICAL HISTORY:</strong> {history}
-              </div>
-            )}
-
-            <div style={{ marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>
-              <div style={{ fontWeight: 'bold', marginBottom: 8, textDecoration: 'underline' }}>IMAGING FINDINGS:</div>
-              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(findingsHtml) }} />
-            </div>
-
-            <div style={{ marginBottom: 30, padding: 12, border: '1.5px solid #000', borderRadius: 8, background: '#fafafa', fontSize: 13 }}>
-              <div style={{ fontWeight: 'bold', marginBottom: 6 }}>IMPRESSION & CONCLUSION:</div>
-              <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(conclusionHtml) }} />
-            </div>
-
-            {/* ATTACHED KEY DIAGNOSTIC IMAGES IN PRINT PREVIEW (NEAT, CLEAN & CRISP PRINT SIZE) */}
-            {attachedSnapshots.length > 0 && (
-              <div style={{ margin: "12px 0 16px 0", pageBreakInside: "avoid", fontFamily: "sans-serif" }}>
-                <div style={{ fontWeight: "bold", fontSize: 11, marginBottom: 8, textDecoration: "underline", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  KEY DIAGNOSTIC IMAGES:
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
-                  {attachedSnapshots.map((snap, i) => (
-                    <div key={i} style={{ border: "1px solid #cbd5e1", borderRadius: 6, overflow: "hidden", background: "#ffffff", padding: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
-                      <img src={snap.preview_url} alt={`Key Image ${i + 1}`} style={{ width: "100%", height: 135, objectFit: "cover", display: "block" }} />
+                  <div style={{ textAlign: 'right', fontFamily: 'sans-serif', fontSize: 11, color: '#64748b' }}>
+                    <div style={{ fontWeight: 'bold', color: '#047857', fontSize: 12 }}>
+                      {clinicBranding.nabh_id ? `NABH (${clinicBranding.nabh_id})` : 'NABH & NABL ACCREDITED'}
                     </div>
-                  ))}
+                    <div>{clinicBranding.nabl_id ? `NABL (${clinicBranding.nabl_id})` : '24x7 Diagnostic Helpline'}</div>
+                    {clinicBranding.registration_no && <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg: {clinicBranding.registration_no}</div>}
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div style={{ height: 75 }} />
+              )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid #ccc', fontFamily: 'sans-serif' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <QrCode size={44} />
-                <div style={{ fontSize: 10, color: '#64748b' }}>
-                  Digitally Verified Electronic Signature<br />
-                  Verified via IPACX DICOM Engine
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 20, border: '1px solid #000', fontFamily: 'sans-serif' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Patient Name:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', fontWeight: 'bold' }}>{study.PatientName || "-"}</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Age / Sex:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.PatientAge || "-"} / {study.PatientSex || "-"}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Patient ID:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.PatientID || "-"}</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Accession No:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.AccessionNumber || "-"}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Modality:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.Modality || initialModality || "CR"}</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Study Date:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.StudyDate || "-"}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Ref. Doctor:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc' }}>{study.ReferringPhysicianName || "Self / Desk"}</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', background: '#f8fafc', fontWeight: 'bold' }}>Report Date:</td>
+                    <td style={{ padding: 6, border: '1px solid #ccc', fontWeight: 'bold', color: '#0284c7' }}>{new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <h2 style={{ textTransform: 'uppercase', textAlign: 'center', fontSize: 16, margin: '20px 0', textDecoration: 'underline', fontWeight: 'bold' }}>
+                {reportTitle}
+              </h2>
+
+              {history && (
+                <div style={{ marginBottom: 16, fontSize: 13 }}>
+                  <strong>CLINICAL HISTORY:</strong> {history}
                 </div>
+              )}
+
+              <div style={{ marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 8, textDecoration: 'underline' }}>IMAGING FINDINGS:</div>
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(findingsHtml) }} />
               </div>
 
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 'bold', fontSize: 14, color: '#0f172a' }}>Dr. Alex Vance, MD</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Consultant Radiologist</div>
-                <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg No: KMC-84920</div>
+              <div style={{ marginBottom: 30, padding: 12, border: '1.5px solid #000', borderRadius: 8, background: '#fafafa', fontSize: 13 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 6 }}>IMPRESSION & CONCLUSION:</div>
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(conclusionHtml) }} />
+              </div>
+
+              {/* ATTACHED KEY DIAGNOSTIC IMAGES IN PRINT PREVIEW (NEAT, CLEAN & CRISP PRINT SIZE) */}
+              {attachedSnapshots.length > 0 && (
+                <div className="rs-print-key-images" style={{ margin: "14px 0 18px 0", pageBreakInside: "avoid", breakInside: "avoid", fontFamily: "sans-serif" }}>
+                  <div style={{ fontWeight: "bold", fontSize: 11, marginBottom: 8, textDecoration: "underline", color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    KEY DIAGNOSTIC IMAGES ({attachedSnapshots.length}):
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
+                    {attachedSnapshots.map((snap, i) => {
+                      const imgUrl = snap.preview_url || snap.url || snap.dataUrl || snap.previewUrl || snap.image_path || snap.fallback_preview_url;
+                      return (
+                        <div key={i} style={{ border: "1px solid #cbd5e1", borderRadius: 6, overflow: "hidden", background: "#ffffff", padding: 0, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+                          <img
+                            src={imgUrl}
+                            alt={snap.caption || `Key Image ${i + 1}`}
+                            style={{ width: "100%", height: 135, objectFit: "cover", display: "block", background: "#000000" }}
+                            onError={(e) => {
+                              if (snap.fallback_preview_url && e.target.src !== snap.fallback_preview_url) {
+                                e.target.src = snap.fallback_preview_url;
+                              }
+                            }}
+                          />
+                          <div style={{ padding: "4px 6px", fontSize: "10px", fontWeight: "600", color: "#334155", background: "#f8fafc", textAlign: "center", borderTop: "1px solid #e2e8f0" }}>
+                            {snap.caption || `Slice #${i + 1}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="rs-print-signature-block" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 40, paddingTop: 20, borderTop: '1px solid #ccc', fontFamily: 'sans-serif' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <QrCode size={44} />
+                  <div style={{ fontSize: 10, color: '#64748b' }}>
+                    Digitally Verified Electronic Signature<br />
+                    Verified via IPACX DICOM Engine
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 14, color: '#0f172a' }}>{activeDoctorName}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{activeDoctorTitle}</div>
+                  <div style={{ fontSize: 10, color: '#94a3b8' }}>Reg No: {activeDoctorReg}</div>
+                </div>
               </div>
             </div>
           </div>

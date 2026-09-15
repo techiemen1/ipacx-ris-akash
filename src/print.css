@@ -1,39 +1,68 @@
 @media print {
-  /* Hide non-print elements */
-  body * {
-    visibility: visible; /* Show everything by default */
-  }
-  #print-area {
-    visibility: visible;
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 210mm;
-    min-height: 297mm;
-    margin: 0;
+  /* Hide non-print elements and UI chrome */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
-  /* Hide unwanted elements */
-  .no-print {
+  /* Hide unwanted UI elements */
+  .no-print,
+  .rs-header,
+  .rs-viewmode-bar,
+  .rs-header-actions,
+  .rs-wysiwyg-toolbar,
+  .rs-back-btn,
+  header,
+  nav,
+  aside,
+  button {
     display: none !important;
   }
 
-  /* Page settings */
+  /* Page setup */
   @page {
-    size: A4;
-    margin: 20mm;
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
   }
 
-  /* Images scale & avoid cutting */
-  #print-area img {
-    max-width: 100%;
-    height: auto;
-    page-break-inside: avoid;
-    break-inside: avoid;
+  /* Target exact printable paper document */
+  #rs-printable-document,
+  .rs-printable-document,
+  #print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
   }
 
-  /* Page breaks between sections */
+  /* Key Images scale & avoid cutting */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Section breaks & signature protection */
+  .rs-print-key-images,
+  .rs-print-signature-block,
+  .page-break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   .page-break {
-    page-break-before: always;
+    page-break-before: always !important;
   }
 }
+
