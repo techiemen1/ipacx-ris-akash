@@ -836,10 +836,28 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       const desc = study?.StudyDescription || reportTitle || "";
       const bodyPart = study?.BodyPartExamined || "";
       const historyText = study?.History || "";
-      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}&history=${encodeURIComponent(historyText)}&title=${encodeURIComponent(reportTitle || '')}`);
+      const pName = patientName || study?.PatientName || "";
+      const pSex = patientGender || study?.PatientSex || "";
+      const pAge = patientAge || study?.PatientAge || "";
+      const res = await api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}?modality=${encodeURIComponent(activeModality)}&description=${encodeURIComponent(desc)}&bodyPart=${encodeURIComponent(bodyPart)}&history=${encodeURIComponent(historyText)}&title=${encodeURIComponent(reportTitle || '')}&patientName=${encodeURIComponent(pName)}&patientSex=${encodeURIComponent(pSex)}&patientAge=${encodeURIComponent(pAge)}`);
+      
       if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        const isOB = res.data.middleware_sr?.pregnancy?.is_pregnant || res.data.middleware_sr?.template?.template_id === "OB_USG_ANOMALY_V2" || res.data.data.some(i => ["BPD","HC","AC","FL","FW","EFW","FHR"].includes(String(i.name).toUpperCase()));
         const srHtml = res.data.table_html || generateDicomSrTableHtml(res.data.data);
-        updateFindings(findingsHtml + srHtml);
+
+        if (isOB) {
+          if (reportTitle.toUpperCase().includes("ABDOMEN") || reportTitle.toUpperCase().includes("GENERIC") || reportTitle.toUpperCase().includes("STANDARD")) {
+            setReportTitle("ULTRASOUND OBSTETRIC (FETAL ANOMALY & BIOMETRY) REPORT");
+          }
+          if (findingsHtml.toUpperCase().includes("GALLBLADDER") || findingsHtml.toUpperCase().includes("LIVER")) {
+            updateFindings(srHtml);
+          } else {
+            updateFindings(findingsHtml + srHtml);
+          }
+        } else {
+          updateFindings(findingsHtml + srHtml);
+        }
+        
         alert(`Successfully synced ${res.data.data.length} DICOM SR parameters as structured biometry tables!`);
       } else {
         alert("No DICOM Structured Report (SR) parameters found for this study.");

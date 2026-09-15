@@ -554,7 +554,10 @@ router.get("/snapshots/:studyUID", async (req, res) => {
 function getMeasurementsForModality(tags = {}, requestedModality = "", extraContext = {}) {
   let mod = String(requestedModality || tags["Modality"] || tags["(0008,0060)"] || "").toUpperCase();
   const desc = String(tags["StudyDescription"] || tags["ProtocolName"] || "").toUpperCase();
-  const combinedContext = `${requestedModality} ${tags["Modality"] || ""} ${desc} ${tags["BodyPartExamined"] || ""} ${extraContext.description || ""} ${extraContext.bodyPart || ""} ${extraContext.history || ""} ${extraContext.title || ""}`.toUpperCase();
+  const patName = String(tags["PatientName"] || extraContext.patientName || "").toUpperCase();
+  const patSex = String(tags["PatientSex"] || extraContext.patientSex || "").toUpperCase();
+  
+  const combinedContext = `${requestedModality} ${tags["Modality"] || ""} ${desc} ${tags["SeriesDescription"] || ""} ${tags["PatientComments"] || ""} ${tags["BodyPartExamined"] || ""} ${patName} ${patSex} ${extraContext.description || ""} ${extraContext.bodyPart || ""} ${extraContext.history || ""} ${extraContext.title || ""}`.toUpperCase();
 
   // If mod is empty, infer from combinedContext
   if (!mod) {
@@ -572,7 +575,10 @@ function getMeasurementsForModality(tags = {}, requestedModality = "", extraCont
       "AMNIOTIC", "AFI", "LMP", "EDD", "WKS", "WEEKS", "36W", "GA"
     ];
     const hasGaPattern = /(\d{1,2})\s*(?:w|wks|weeks)/i.test(combinedContext) || /(\d{1,2})w(\d{1})d/i.test(combinedContext);
-    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || hasGaPattern || Boolean(tags["BPD"]) || requestedModality === "OB";
+    const isFemalePatient = patSex.startsWith("F") || patName.includes("/F") || patName.includes("FEMALE");
+    
+    // If it's a female patient with GA/WKS/WEEKS or any OB keyword, or explicit OB modality/tags, classify as OB
+    const isOB = obKeywords.some(kw => combinedContext.includes(kw)) || hasGaPattern || Boolean(tags["BPD"]) || requestedModality === "OB" || (isFemalePatient && (combinedContext.includes("GA") || combinedContext.includes("WKS") || combinedContext.includes("FETAL") || combinedContext.includes("BIOMETRY")));
 
     if (isOB) {
       return {
@@ -661,7 +667,10 @@ router.get("/measurements/:studyUID", async (req, res) => {
       description: req.query.description || req.query.desc || "",
       bodyPart: req.query.bodyPart || req.query.body_part || "",
       history: req.query.history || "",
-      title: req.query.title || ""
+      title: req.query.title || "",
+      patientName: req.query.patientName || req.query.patient_name || "",
+      patientSex: req.query.patientSex || req.query.patient_sex || "",
+      patientAge: req.query.patientAge || req.query.patient_age || ""
     };
 
     const orthancUrl = await getOrthancUrl();
@@ -683,11 +692,22 @@ router.get("/measurements/:studyUID", async (req, res) => {
       }
     }
 
-    metadata.protocol = extraContext.title || extraContext.description || tags["ProtocolName"] || tags["StudyDescription"] || "Diagnostic Study";
+    metadata.study_description = tags["StudyDescription"] || extraContext.description || extraContext.title || "";
+    metadata.protocol = extraContext.title || tags["ProtocolName"] || tags["StudyDescription"] || "Diagnostic Study";
+    metadata.clinical_history = extraContext.history || tags["ClinicalHistory"] || "";
     metadata.modality = requestedModality || tags["Modality"] || "US";
     metadata.manufacturer = tags["Manufacturer"] || "";
     metadata.body_part = extraContext.bodyPart || tags["BodyPartExamined"] || "";
-    metadata.patient_age = extractAgeFromName(tags["PatientName"]);
+    metadata.patient_name = tags["PatientName"] || extraContext.patientName || "Patient";
+    
+    let rawSex = String(tags["PatientSex"] || extraContext.patientSex || "").toUpperCase();
+    if (!rawSex || rawSex === "O") {
+      if (String(metadata.patient_name).toUpperCase().includes("/F") || String(metadata.patient_name).toUpperCase().includes("FEMALE")) {
+        rawSex = "F";
+      }
+    }
+    metadata.patient_sex = rawSex.startsWith("F") ? "F" : (rawSex.startsWith("M") ? "M" : "O");
+    metadata.patient_age = extractAgeFromName(metadata.patient_name) || extraContext.patientAge || tags["PatientAge"] || null;
 
     measurements = getMeasurementsForModality(tags, requestedModality, extraContext);
 
