@@ -298,7 +298,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     let currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
     let currentSliceNum = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
-      : (pickerSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || snapResult?.sliceNumber || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : 1));
+      : (
+          snapResult?.sliceNumber || 
+          (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 
+          (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || 
+          (pickerSliceNum && pickerSliceNum > 1 ? pickerSliceNum : null) || 
+          1
+        );
     let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
 
     try {
@@ -335,7 +341,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     const totalSlices = detectedTotal || (seriesObj?.total_slices) || (activeViewportInfo?.totalSlices) || 1;
 
-    let displaySliceNum = currentSliceNum || snapResult?.instanceNumber || 1;
+    let displaySliceNum = currentSliceNum || snapResult?.sliceNumber || snapResult?.instanceNumber || 1;
     if (isNaN(displaySliceNum) || displaySliceNum < 1) {
       displaySliceNum = 1;
     }
@@ -346,16 +352,23 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
-      const targetInstanceNum = snapResult?.instanceNumber;
-      if (targetInstanceNum) {
+      // Priority 1: Match instance by 1-based index (slice_index) or slice_number matching displaySliceNum
+      targetInst = seriesObj.instances.find(inst => 
+        parseInt(inst.slice_index, 10) === displaySliceNum || 
+        parseInt(inst.slice_number, 10) === displaySliceNum ||
+        parseInt(inst.instanceNumber, 10) === displaySliceNum
+      );
+
+      // Priority 2: Match by DICOM InstanceNumber (e.g. 217)
+      if (!targetInst && snapResult?.instanceNumber) {
         targetInst = seriesObj.instances.find(inst => 
-          parseInt(inst.slice_number, 10) === targetInstanceNum || 
-          parseInt(inst.instance_number, 10) === targetInstanceNum
+          parseInt(inst.slice_number, 10) === snapResult.instanceNumber || 
+          parseInt(inst.instance_number, 10) === snapResult.instanceNumber ||
+          parseInt(inst.instanceNumber, 10) === snapResult.instanceNumber
         );
       }
-      if (!targetInst) {
-        targetInst = seriesObj.instances.find(inst => inst.slice_index === displaySliceNum || inst.slice_number === displaySliceNum);
-      }
+
+      // Priority 3: Bounded 0-based array index fallback
       if (!targetInst) {
         const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
         targetInst = seriesObj.instances[boundedIndex];
