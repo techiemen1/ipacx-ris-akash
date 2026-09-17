@@ -308,109 +308,135 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
 });
 
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "*");
   const instanceId = extractCleanInstanceId(req.params.instanceId);
   const frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
-  const studyUID = req.query.studyUID || req.query.study;
-  const seriesUID = req.query.seriesUID || req.query.series;
+  let studyUID = req.query.studyUID || req.query.study;
+  let seriesUID = req.query.seriesUID || req.query.series;
   const orthancUrl = await getOrthancUrl();
 
-  // 1. Try Orthanc first
-  try {
-    const renderPath = (frame !== null && frame !== "") 
-      ? `instances/${instanceId}/frames/${frame}/rendered` 
-      : `instances/${instanceId}/rendered`;
-    const previewStream = await axios.get(`${orthancUrl}${renderPath}`, {
-      responseType: "stream",
-      ...orthancAuthConfig(),
-      timeout: 3000
-    });
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "public, max-age=86400");
-    return previewStream.data.pipe(res);
-  } catch (err) {
+  const isDicomSopUid = instanceId.includes('.');
+
+  const tryOrthanc = async () => {
     try {
-      const previewPath = (frame !== null && frame !== "") 
-        ? `instances/${instanceId}/frames/${frame}/preview` 
-        : `instances/${instanceId}/preview`;
-      const fbStream = await axios.get(`${orthancUrl}${previewPath}`, {
+      const renderPath = (frame !== null && frame !== "") 
+        ? `instances/${instanceId}/frames/${frame}/rendered` 
+        : `instances/${instanceId}/rendered`;
+      const previewStream = await axios.get(`${orthancUrl}${renderPath}`, {
         responseType: "stream",
         ...orthancAuthConfig(),
-        timeout: 3000
+        timeout: 2500
       });
-      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=86400");
-      return fbStream.data.pipe(res);
-    } catch (fbErr) {
-      // Orthanc fallback failed, attempt DCM4CHEE proxying below
-    }
-  }
-
-  // 2. Fallback to DCM4CHEE WADO-URI / WADO-RS
-  try {
-    const PacsRepository = require("../repositories/PacsRepository");
-    const pacsRepo = new PacsRepository(pool);
-    const activePacs = await pacsRepo.findActive().catch(() => []);
-    const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
-
-    for (const pacs of dcm4cheeNodes) {
-      const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
-      const uniquePorts = [...new Set(ports)];
-
-      for (const port of uniquePorts) {
-        let targetStudyUID = studyUID;
-        let targetSeriesUID = seriesUID;
-
-        // Auto-discover studyUID & seriesUID for instanceId if not provided in query params
-        if (!targetStudyUID || !targetSeriesUID) {
-          try {
-            const searchUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/instances?SOPInstanceUID=${instanceId}`;
-            const sRes = await axios.get(searchUrl, {
-              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-              headers: { Accept: "application/dicom+json" },
-              timeout: 3000
-            });
-            if (Array.isArray(sRes.data) && sRes.data.length > 0) {
-              targetStudyUID = sRes.data[0]["0020000D"]?.Value?.[0];
-              targetSeriesUID = sRes.data[0]["0020000E"]?.Value?.[0];
-            }
-          } catch (e) {}
-        }
-
-        // A) WADO-URI lookup if studyUID & seriesUID available
-        if (targetStudyUID && targetSeriesUID) {
-          const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${targetStudyUID}&seriesUID=${targetSeriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
-          try {
-            const wRes = await axios.get(wadoUrl, {
-              responseType: "stream",
-              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-              timeout: 4000
-            });
-            res.setHeader("Content-Type", "image/jpeg");
-            res.setHeader("Cache-Control", "public, max-age=86400");
-            return wRes.data.pipe(res);
-          } catch (e) {}
-        }
-
-        // B) Rendered frame RS lookup
-        if (targetStudyUID && targetSeriesUID) {
-          const frameSegment = (frame !== null && frame !== "") ? `/frames/${parseInt(frame, 10) + 1}/rendered` : "/rendered";
-          const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${targetStudyUID}/series/${targetSeriesUID}/instances/${instanceId}${frameSegment}`;
-          try {
-            const rRes = await axios.get(renderedUrl, {
-              responseType: "stream",
-              headers: { Accept: "image/jpeg" },
-              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-              timeout: 4000
-            });
-            res.setHeader("Content-Type", "image/jpeg");
-            res.setHeader("Cache-Control", "public, max-age=86400");
-            return rRes.data.pipe(res);
-          } catch (e) {}
-        }
+      return previewStream.data.pipe(res);
+    } catch (err) {
+      try {
+        const previewPath = (frame !== null && frame !== "") 
+          ? `instances/${instanceId}/frames/${frame}/preview` 
+          : `instances/${instanceId}/preview`;
+        const fbStream = await axios.get(`${orthancUrl}${previewPath}`, {
+          responseType: "stream",
+          ...orthancAuthConfig(),
+          timeout: 2500
+        });
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return fbStream.data.pipe(res);
+      } catch (fbErr) {
+        return null;
       }
     }
-  } catch (e) {
-    console.error(`[PACS Proxy] Multi-PACS instance preview failed for ${instanceId}:`, e.message);
+  };
+
+  const tryDcm4chee = async () => {
+    try {
+      const PacsRepository = require("../repositories/PacsRepository");
+      const pacsRepo = new PacsRepository(pool);
+      const activePacs = await pacsRepo.findActive().catch(() => []);
+      const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+
+      // Auto-lookup studyUID if missing
+      if (!studyUID) {
+        const dbMatch = await pool.query(
+          "SELECT study_uid FROM studies WHERE study_uid IS NOT NULL ORDER BY id DESC LIMIT 1"
+        ).catch(() => ({ rows: [] }));
+        if (dbMatch.rows?.length > 0) studyUID = dbMatch.rows[0].study_uid;
+      }
+
+      for (const pacs of dcm4cheeNodes) {
+        const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
+        const uniquePorts = [...new Set(ports)];
+
+        for (const port of uniquePorts) {
+          let targetStudyUID = studyUID;
+          let targetSeriesUID = seriesUID;
+
+          if (!targetStudyUID || !targetSeriesUID) {
+            try {
+              const searchUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/instances?SOPInstanceUID=${instanceId}`;
+              const sRes = await axios.get(searchUrl, {
+                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+                headers: { Accept: "application/dicom+json" },
+                timeout: 2500
+              });
+              if (Array.isArray(sRes.data) && sRes.data.length > 0) {
+                targetStudyUID = sRes.data[0]["0020000D"]?.Value?.[0];
+                targetSeriesUID = sRes.data[0]["0020000E"]?.Value?.[0];
+              }
+            } catch (e) {}
+          }
+
+          if (targetStudyUID && targetSeriesUID) {
+            const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${targetStudyUID}&seriesUID=${targetSeriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
+            try {
+              const wRes = await axios.get(wadoUrl, {
+                responseType: "stream",
+                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+                timeout: 4000
+              });
+              res.setHeader("Content-Type", "image/jpeg");
+              res.setHeader("Cache-Control", "public, max-age=86400");
+              wRes.data.pipe(res);
+              return true;
+            } catch (e) {}
+          }
+
+          if (targetStudyUID && targetSeriesUID) {
+            const frameSegment = (frame !== null && frame !== "") ? `/frames/${parseInt(frame, 10) + 1}/rendered` : "/rendered";
+            const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${targetStudyUID}/series/${targetSeriesUID}/instances/${instanceId}${frameSegment}`;
+            try {
+              const rRes = await axios.get(renderedUrl, {
+                responseType: "stream",
+                headers: { Accept: "image/jpeg" },
+                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+                timeout: 4000
+              });
+              res.setHeader("Content-Type", "image/jpeg");
+              res.setHeader("Cache-Control", "public, max-age=86400");
+              rRes.data.pipe(res);
+              return true;
+            } catch (e) {}
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`[PACS Proxy] Multi-PACS instance preview failed for ${instanceId}:`, e.message);
+    }
+    return false;
+  };
+
+  if (isDicomSopUid) {
+    const success = await tryDcm4chee();
+    if (success) return;
+    const orthResult = await tryOrthanc();
+    if (orthResult) return;
+  } else {
+    const orthResult = await tryOrthanc();
+    if (orthResult) return;
+    const success = await tryDcm4chee();
+    if (success) return;
   }
 
   res.status(404).send("Preview unavailable");

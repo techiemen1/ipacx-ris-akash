@@ -135,6 +135,46 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
   const [showKeyPickerModal, setShowKeyPickerModal] = useState(false);
   const [pickerSliceNum, setPickerSliceNum] = useState(1);
+  const [sessionLockInfo, setSessionLockInfo] = useState(null);
+
+  // Real-time Concurrent Doctor Reporting Lock (Online / LAN)
+  useEffect(() => {
+    if (!studyUID) return;
+
+    const userRaw = localStorage.getItem("user") || sessionStorage.getItem("user");
+    let currentUser = null;
+    try {
+      currentUser = userRaw ? JSON.parse(userRaw) : null;
+    } catch (e) {}
+
+    const doctorName = currentUser?.name || currentUser?.username || currentUser?.doctor_name || "Dr. Radiologist";
+    const userId = currentUser?.id || currentUser?.userId || ("doc_" + Date.now());
+
+    // Acquire lock
+    api.post("/api/reports/session/lock", { studyUID, userId, doctorName })
+      .then((res) => {
+        if (res.data?.isLocked) {
+          setSessionLockInfo({
+            isLocked: true,
+            lockedBy: res.data.lockedBy?.doctorName || "another doctor",
+            startedAt: res.data.lockedBy?.startedAt
+          });
+        } else {
+          setSessionLockInfo({ isLocked: false, lockedBy: null });
+        }
+      })
+      .catch((err) => console.error("Session lock error:", err));
+
+    // Maintain 10-second heartbeat
+    const hbInterval = setInterval(() => {
+      api.post("/api/reports/session/heartbeat", { studyUID, userId }).catch(() => {});
+    }, 10000);
+
+    return () => {
+      clearInterval(hbInterval);
+      api.post("/api/reports/session/unlock", { studyUID, userId }).catch(() => {});
+    };
+  }, [studyUID]);
 
   // Fetch Series & Instances list for exact series/slice tracking
   useEffect(() => {
@@ -182,7 +222,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             const sliceText = `${sDesc || "Diagnostic Viewport"} | Slice ${fNum || 1}${vpState.totalSlices > 1 ? `/${vpState.totalSlices}` : ''}`;
             setActiveViewportInfo({
               instance_id: instId,
-              preview_url: `/api/pacs/instance-preview/${instId}`,
+              preview_url: `/api/pacs/instance-preview/${instId}?studyUID=${encodeURIComponent(studyUID)}`,
               caption: sliceText,
               frameNumber: fNum,
               totalSlices: vpState.totalSlices,
@@ -319,7 +359,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
     
-    const previewUrl = validDataUrl || targetInst?.preview_url || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null);
+    const fallbackUrl = targetInst?.preview_url || targetInst?.previewUrl || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesObj?.series_id || '')}` : null);
+    const previewUrl = validDataUrl || fallbackUrl;
 
     if (!previewUrl) {
       console.warn("Could not resolve valid preview image URL for key image capture.");
@@ -331,7 +372,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
       dataUrl: validDataUrl,
       preview_url: previewUrl,
-      fallback_preview_url: targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null,
+      fallback_preview_url: fallbackUrl,
       caption: fullCaption
     };
 
@@ -1435,6 +1476,33 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   return (
     <div className="dws-overlay">
+      {/* CONCURRENT REPORTING LIVE LOCK BANNER */}
+      {sessionLockInfo?.isLocked && (
+        <div style={{
+          background: 'linear-gradient(90deg, #b45309 0%, #d97706 100%)',
+          color: '#ffffff',
+          padding: '8px 20px',
+          fontSize: 12.5,
+          fontWeight: 800,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)',
+          borderBottom: '1px solid #f59e0b',
+          zIndex: 1000
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🔒</span>
+            <span>
+              <b>REPORTING IN PROGRESS:</b> {sessionLockInfo.lockedBy} is currently editing this study report (Online / LAN session). You are in Read-Only Preview mode.
+            </span>
+          </div>
+          <span style={{ background: 'rgba(255,255,255,0.25)', padding: '2px 10px', borderRadius: 12, fontSize: 11, textTransform: 'uppercase' }}>
+            ● Live Lock Active
+          </span>
+        </div>
+      )}
+
       {/* TOP FLOATING BAR */}
       <header className="dws-topbar">
         <div className="dws-patient-info">
@@ -1468,8 +1536,12 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
         {/* TOP ACTIONS & CLOSE BUTTON */}
         <div className="dws-top-actions">
+          <button onClick={() => setShowKeyPickerModal(true)} className="dws-btn dws-btn-dark" title="Browse and select key DICOM series & slice thumbnails">
+            <ImageIcon size={14} /> 🖼️ Key Images
+          </button>
+
           <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-dark" title="Capture & attach current DICOM viewer image to report">
-            <Camera size={14} /> 📸 Key Image / Snapshot
+            <Camera size={14} /> 📸 Snapshot
           </button>
 
 

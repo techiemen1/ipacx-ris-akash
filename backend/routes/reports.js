@@ -318,4 +318,53 @@ router.get("/api/reports/priors/:patientId", async (req, res) => {
   }
 });
 
+// ======================================================
+// CONCURRENT REPORTING SESSION LOCK ENDPOINTS
+// ======================================================
+const reportingLockManager = require("../utils/reportingLockManager");
+
+router.post("/api/reports/session/lock", (req, res) => {
+  try {
+    const { studyUID } = req.body;
+    const user = req.user || { id: req.body.userId || 'user_1', name: req.body.doctorName || 'Radiologist' };
+    const lockResult = reportingLockManager.acquireLock(studyUID, user);
+    res.json(lockResult);
+  } catch (err) {
+    console.error("Acquire reporting lock error:", err);
+    res.status(500).json({ success: false, isLocked: false, error: "Lock failed" });
+  }
+});
+
+router.post("/api/reports/session/heartbeat", (req, res) => {
+  try {
+    const { studyUID } = req.body;
+    const userId = req.user?.id || req.body.userId || 'user_1';
+    const ok = reportingLockManager.heartbeat(studyUID, userId);
+    res.json({ success: ok });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
+
+router.post("/api/reports/session/unlock", (req, res) => {
+  try {
+    const { studyUID } = req.body;
+    const userId = req.user?.id || req.body.userId || 'user_1';
+    const ok = reportingLockManager.releaseLock(studyUID, userId);
+    res.json({ success: ok });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
+
+router.get("/api/reports/session/active-locks", (req, res) => {
+  try {
+    const locks = reportingLockManager.getActiveLocks();
+    res.json({ success: true, locks });
+  } catch (err) {
+    res.status(500).json({ success: false, locks: {} });
+  }
+});
+
 module.exports = router;
+

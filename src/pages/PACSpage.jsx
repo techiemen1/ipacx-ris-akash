@@ -136,6 +136,23 @@ export default function PACSpage() {
   const [exportingUid, setExportingUid] = useState(null);
   const [_exportType, setExportType] = useState(null);
 
+  const [activeLocks, setActiveLocks] = useState({});
+
+  const fetchActiveLocks = async () => {
+    try {
+      const res = await api.get("/api/reports/session/active-locks");
+      if (res.data?.success && res.data.locks) {
+        setActiveLocks(res.data.locks);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchActiveLocks();
+    const lockInterval = setInterval(fetchActiveLocks, 8000);
+    return () => clearInterval(lockInterval);
+  }, []);
+
   const openStudyViewer = (studyUID) => {
     const isMobile = window.innerWidth <= 768 || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     if (isMobile) {
@@ -751,13 +768,14 @@ export default function PACSpage() {
                       <th>Study Description</th>
                       <th>Study Date & Time</th>
                       <th>Accession No</th>
+                      <th>Status</th>
                       <th style={{ textAlign: "center" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pagedStudies.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="pacs-empty">
+                        <td colSpan={7} className="pacs-empty">
                           No DICOM studies matched your search filters.
                         </td>
                       </tr>
@@ -769,6 +787,7 @@ export default function PACSpage() {
                         const pName = formatPatientName(rawPName);
                         const pId = String(s.PatientID || s.patient_id || "").replace(/undefined|null/gi, "-");
                         const acc = String(s.AccessionNumber || s.accession_number || "").replace(/undefined|null/gi, "-");
+                        const rStatus = s.report_status || s.ReportStatus || s.status || "Unreported";
 
                         return (
                           <tr key={uid || idx} className="pacs-table-row">
@@ -799,6 +818,31 @@ export default function PACSpage() {
 
                             <td>
                               <span className="pacs-code-acc">{acc}</span>
+                            </td>
+
+                            <td>
+                              {(() => {
+                                const lock = activeLocks[uid];
+                                if (lock) {
+                                  return (
+                                    <span style={{ background: '#f59e0b', color: '#ffffff', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, fontSize: 11, boxShadow: '0 2px 6px rgba(245, 158, 11, 0.4)' }} title={`Currently being reported by ${lock.doctorName}`}>
+                                      🔒 Reporting ({lock.doctorName || 'Dr.'})
+                                    </span>
+                                  );
+                                }
+                                const st = String(rStatus).toLowerCase();
+                                let bg = '#64748b';
+                                let label = rStatus;
+                                if (st === 'final') { bg = '#10b981'; label = '✓ Final'; }
+                                else if (st === 'draft') { bg = '#0284c7'; label = '📝 Draft'; }
+                                else { bg = '#64748b'; label = '⚪ Unreported'; }
+
+                                return (
+                                  <span style={{ background: bg, color: '#ffffff', fontWeight: 700, padding: '4px 8px', borderRadius: 6, fontSize: 11 }}>
+                                    {label}
+                                  </span>
+                                );
+                              })()}
                             </td>
 
                             <td style={{ textAlign: "center" }}>

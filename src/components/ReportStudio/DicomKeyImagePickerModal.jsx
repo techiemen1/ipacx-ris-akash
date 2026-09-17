@@ -244,7 +244,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                   >
                     <div style={{ position: "relative", aspectRatio: "1/1", backgroundColor: "#000000", overflow: "hidden" }}>
                       <img
-                        src={`/api/pacs/instance-preview/${inst.instance_id}`}
+                        src={inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(selectedSeriesId)}`}
                         alt={`Slice ${inst.slice_number}`}
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />

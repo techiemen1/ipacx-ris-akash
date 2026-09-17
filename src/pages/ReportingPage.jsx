@@ -117,9 +117,21 @@ export default function ReportingPage() {
     return count;
   }, [filterModality, filterStatus, dateQuickFilter, fromDate, toDate]);
 
+  const [activeLocks, setActiveLocks] = useState({});
+
+  const fetchActiveLocks = async () => {
+    try {
+      const res = await api.get("/api/reports/session/active-locks");
+      if (res.data?.success && res.data.locks) {
+        setActiveLocks(res.data.locks);
+      }
+    } catch (e) {}
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
+      fetchActiveLocks();
       const { data: reportsData } = await api.get("/api/reports").catch(() => ({ data: [] }));
       const reportsList = Array.isArray(reportsData) ? reportsData : [];
       setReports(reportsList);
@@ -146,6 +158,8 @@ export default function ReportingPage() {
 
   useEffect(() => {
     fetchData();
+    const lockInterval = setInterval(fetchActiveLocks, 8000);
+    return () => clearInterval(lockInterval);
   }, []);
 
   const mergedWorklist = useMemo(() => {
@@ -522,9 +536,28 @@ export default function ReportingPage() {
                             <span className="rp-code-acc">{item.accession_number}</span>
                           </td>
                           <td>
-                            <span className={`rp-status-badge status-${item.status.toLowerCase()}`}>
-                              {item.status}
-                            </span>
+                            {(() => {
+                              const lock = activeLocks[item.study_uid];
+                              if (lock) {
+                                return (
+                                  <span className="rp-status-badge status-reporting" style={{ background: '#f59e0b', color: '#ffffff', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, fontSize: 11, boxShadow: '0 2px 6px rgba(245, 158, 11, 0.4)' }} title={`Currently being reported by ${lock.doctorName}`}>
+                                    🔒 Reporting ({lock.doctorName || 'Dr.'})
+                                  </span>
+                                );
+                              }
+                              const st = String(item.status || "Unreported").toLowerCase();
+                              let bg = '#64748b';
+                              let label = item.status || "Unreported";
+                              if (st === 'final') { bg = '#10b981'; label = '✓ Final'; }
+                              else if (st === 'draft') { bg = '#0284c7'; label = '📝 Draft'; }
+                              else if (st === 'unreported') { bg = '#64748b'; label = '⚪ Unreported'; }
+
+                              return (
+                                <span className={`rp-status-badge status-${st}`} style={{ background: bg, color: '#ffffff', fontWeight: 700, padding: '4px 8px', borderRadius: 6, fontSize: 11 }}>
+                                  {label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div className="rp-action-bar">
