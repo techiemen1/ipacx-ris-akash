@@ -1550,39 +1550,21 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
       </header>
 
-      {/* MAIN VIEWPORT CANVAS */}
+      {/* MAIN VIEWPORT CANVAS - PERSISTENT SINGLE IFRAME */}
       <main className="dws-viewport">
-        {viewMode === "split" && (
-          <div className="dws-split-pane">
-            <div className="dws-left-viewer">
-              <iframe
-                src={viewerUrl}
-                title="OHIF DICOM Viewer"
-                className="dws-iframe"
-              />
-            </div>
-
-            <div className="dws-right-studio">
-              {renderFormContent()}
-            </div>
-          </div>
-        )}
-
-        {viewMode === "viewer" && (
-          <div className="dws-left-viewer" style={{ width: '100%' }}>
+        <div className="dws-split-pane" style={{ gridTemplateColumns: viewMode === "split" ? "50% 50%" : viewMode === "viewer" ? "100% 0%" : "0% 100%" }}>
+          <div className="dws-left-viewer" style={{ display: viewMode === "studio" ? "none" : "block", height: '100%' }}>
             <iframe
               src={viewerUrl}
-              title="OHIF DICOM Viewer Fullscreen"
+              title="OHIF DICOM Viewer"
               className="dws-iframe"
             />
           </div>
-        )}
 
-        {viewMode === "studio" && (
-          <div className="dws-right-studio" style={{ width: '100%', maxWidth: 1240, margin: '0 auto', background: '#f1f5f9', padding: '20px 24px' }}>
+          <div className="dws-right-studio" style={{ display: viewMode === "viewer" ? "none" : "block", height: '100%', overflowY: 'auto', background: '#f8fafc', padding: viewMode === "studio" ? '20px 24px' : '16px 20px', maxWidth: viewMode === "studio" ? 1240 : 'none', margin: viewMode === "studio" ? '0 auto' : '0' }}>
             {renderFormContent()}
           </div>
-        )}
+        </div>
       </main>
 
       {/* PRINT PREVIEW MODAL */}

@@ -1742,33 +1742,19 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
       </header>
 
-      {/* DYNAMIC VIEW MODE RENDER */}
-      {viewMode === "studio" && renderStudioForm()}
-
-      {viewMode === "split" && (
-        <div className="rs-split-layout">
-          <div className="rs-viewer-pane">
-            <iframe
-              src={viewerUrl}
-              title="OHIF Viewer"
-              className="rs-viewer-iframe"
-            />
-          </div>
-          <div>
-            {renderStudioForm()}
-          </div>
-        </div>
-      )}
-
-      {viewMode === "viewer" && (
-        <div className="rs-viewer-pane" style={{ height: 'calc(100vh - 120px)' }}>
+      {/* DYNAMIC VIEW MODE RENDER — PERSISTENT SINGLE IFRAME */}
+      <div className="rs-split-layout" style={{ gridTemplateColumns: viewMode === "split" ? "1fr 1fr" : viewMode === "viewer" ? "1fr 0fr" : "0fr 1fr", display: viewMode === "studio" ? "block" : "grid" }}>
+        <div className="rs-viewer-pane" style={{ display: viewMode === "studio" ? "none" : "block", height: 'calc(100vh - 120px)' }}>
           <iframe
             src={viewerUrl}
-            title="OHIF Viewer Fullscreen"
+            title="OHIF Viewer"
             className="rs-viewer-iframe"
           />
         </div>
-      )}
+        <div className="rs-studio-pane" style={{ display: viewMode === "viewer" ? "none" : "block" }}>
+          {renderStudioForm()}
+        </div>
+      </div>
 
       {/* FULL-SCREEN FLASH SPLIT WORKSTATION MODAL */}
       {showFlashSplitModal && (
