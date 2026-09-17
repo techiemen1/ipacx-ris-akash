@@ -203,7 +203,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       return null;
     };
 
-    // 1. Gather viewports / canvas containers outside sidebars, sorted by surface area DESCENDING
+    // 1. Gather viewports / canvas containers outside sidebars, prioritizing active/selected canvas
     const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
       .filter(c => !isSidebarElement(c))
       .sort((a, b) => {
@@ -212,20 +212,20 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         return areaB - areaA;
       });
 
+    const activeCanvas = canvases.find(c => c.closest('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]')) || canvases[0];
+
+    const sortedCanvases = activeCanvas
+      ? [activeCanvas, ...canvases.filter(c => c !== activeCanvas)]
+      : canvases;
+
     let candidateContainers = [];
 
-    canvases.forEach(c => {
+    sortedCanvases.forEach(c => {
       let vp = c.parentElement;
       while (vp && vp !== bodyEl) {
         if (isSidebarElement(vp)) break;
-        const cls = (vp.className || '').toString().toLowerCase();
-        const cy = (vp.getAttribute?.('data-cy') || '').toLowerCase();
-        const textLen = (vp.textContent || '').length;
-        if ((cls.includes('viewport') || cls.includes('pane') || cy.includes('viewport') || cls.includes('grid') || cls.includes('cell') || cls.includes('cornerstone')) && textLen > 5) {
-          if (!candidateContainers.includes(vp)) {
-            candidateContainers.push(vp);
-          }
-          break;
+        if (!candidateContainers.includes(vp)) {
+          candidateContainers.push(vp);
         }
         vp = vp.parentElement;
       }
@@ -235,10 +235,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       candidateContainers = [bodyEl];
     }
 
-    const parseTextNodesForSlice = (textNodes) => {
+    const parseTextNodesForSlice = (textNodes, isBodyFallback = false) => {
       // Priority 1: Parenthesized pattern like "(16/258)" or "I: 243 (16/258)" - unique to viewport overlays
       for (const item of textNodes) {
-        const fullParenMatch = item.val.match(/(?:i|im|image|slice|frame)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+        const fullParenMatch = item.val.match(/(?:i|im|image|slice|frame|s)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
         if (fullParenMatch) {
           const instNum = fullParenMatch[1] ? parseInt(fullParenMatch[1], 10) : null;
           const sNum = parseInt(fullParenMatch[2], 10);
@@ -273,13 +273,14 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         }
       }
 
-      // Priority 4: Fallback unparenthesized fraction "16/258" (only if outside sidebar)
+      // Priority 4: Fallback unparenthesized fraction "16/258"
       for (const item of textNodes) {
         const unparenMatch = item.val.match(/(?:^|\s)(\d+)\s*\/\s*(\d+)(?:\s|$)/);
         if (unparenMatch) {
           const sNum = parseInt(unparenMatch[1], 10);
           const tNum = parseInt(unparenMatch[2], 10);
           if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+            if (isBodyFallback && sNum === 1 && tNum === 1) continue;
             return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
           }
         }
@@ -354,7 +355,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       allDocTextNodes.push({ node: dNode, val: dVal, parentEl: pEl });
     }
 
-    const fallbackSliceInfo = parseTextNodesForSlice(allDocTextNodes);
+    const fallbackSliceInfo = parseTextNodesForSlice(allDocTextNodes, true);
     if (fallbackSliceInfo) {
       const { instanceNumber, sliceNumber, totalSlices } = fallbackSliceInfo;
       let targetVp = fallbackSliceInfo.item.parentEl;

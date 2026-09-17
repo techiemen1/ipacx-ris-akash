@@ -253,33 +253,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     return () => unsubscribe();
   }, [study, studySeriesList]);
 
-  // Real-time polling to sync iframe active viewport slice & series with RIS controls
-  useEffect(() => {
-    if (!studySeriesList || studySeriesList.length === 0) return;
-
-    const syncViewportState = () => {
-      try {
-        const iframeEl = document.querySelector(".dws-iframe, iframe");
-        if (!iframeEl || !iframeEl.contentDocument) return;
-
-        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
-        if (domInfo) {
-          if (domInfo.matchedSeriesId) {
-            setSelectedSeriesId(prev => (prev !== domInfo.matchedSeriesId ? domInfo.matchedSeriesId : prev));
-          }
-          if (domInfo.sliceNumber) {
-            setTargetSliceNumber(prev => (prev !== String(domInfo.sliceNumber) ? String(domInfo.sliceNumber) : prev));
-          }
-        }
-      } catch (e) {
-        // Cross-origin catch if any
-      }
-    };
-
-    const intervalId = setInterval(syncViewportState, 400);
-    return () => clearInterval(intervalId);
-  }, [studySeriesList]);
-
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
     try {
@@ -301,31 +274,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       : (
           snapResult?.sliceNumber || 
           (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 
-          (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || 
           (pickerSliceNum && pickerSliceNum > 1 ? pickerSliceNum : null) || 
+          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 1 ? parseInt(targetSliceNumber, 10) : null) ||
           1
         );
     let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
-
-    try {
-      const iframeEl = document.querySelector(".dws-iframe, iframe");
-      if (iframeEl && iframeEl.contentDocument) {
-        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
-        if (domInfo) {
-          if (overrideSeriesId === null && domInfo.matchedSeriesId) {
-            currentSeriesId = domInfo.matchedSeriesId;
-          }
-          if (overrideSliceNum === null && domInfo.sliceNumber) {
-            currentSliceNum = domInfo.sliceNumber;
-          }
-          if (domInfo.totalSlices) {
-            detectedTotal = domInfo.totalSlices;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Live DOM slice extraction notice:", e);
-    }
 
     const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
 

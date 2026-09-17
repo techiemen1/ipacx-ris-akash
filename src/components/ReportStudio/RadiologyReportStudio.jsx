@@ -592,29 +592,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     return () => unsubscribe();
   }, [study, studySeriesList]);
 
-  // Real-time polling to sync iframe active viewport slice & series with RIS controls
-  useEffect(() => {
-    if (!studySeriesList || studySeriesList.length === 0) return;
-    const interval = setInterval(() => {
-      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
-      if (!iframeEl || !iframeEl.contentDocument) return;
-      try {
-        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
-        if (domInfo) {
-          if (domInfo.matchedSeriesId) {
-            setSelectedSeriesId(prev => (prev !== domInfo.matchedSeriesId ? domInfo.matchedSeriesId : prev));
-          }
-          if (domInfo.sliceNumber) {
-            setTargetSliceNumber(prev => (prev !== String(domInfo.sliceNumber) ? String(domInfo.sliceNumber) : prev));
-          }
-        }
-      } catch (err) {
-        // Cross-origin fallback safety
-      }
-    }, 1500);
 
-    return () => clearInterval(interval);
-  }, [studySeriesList]);
 
   const estimateGAFromMeasurement = (name, valNum) => {
     if (!valNum || isNaN(valNum)) return { weeks: "-", days: "-", percentile: "-" };
@@ -886,31 +864,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       : (
           snapResult?.sliceNumber || 
           (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 
-          (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || 
           (pickerSliceNum && pickerSliceNum > 1 ? pickerSliceNum : null) || 
+          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 1 ? parseInt(targetSliceNumber, 10) : null) ||
           1
         );
     let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
-
-    try {
-      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
-      if (iframeEl && iframeEl.contentDocument) {
-        const domInfo = detectViewportSliceInfoFromDOM(iframeEl.contentDocument, studySeriesList);
-        if (domInfo) {
-          if (overrideSeriesId === null && domInfo.matchedSeriesId) {
-            currentSeriesId = domInfo.matchedSeriesId;
-          }
-          if (overrideSliceNum === null && domInfo.sliceNumber) {
-            currentSliceNum = domInfo.sliceNumber;
-          }
-          if (domInfo.totalSlices) {
-            detectedTotal = domInfo.totalSlices;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Live DOM slice extraction notice:", e);
-    }
 
     const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
 
