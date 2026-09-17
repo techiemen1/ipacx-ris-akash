@@ -383,11 +383,12 @@ const MobileLiteViewer = () => {
       capturedAt: new Date().toISOString()
     };
 
-    const saved = JSON.parse(localStorage.getItem("key_images") || "[]");
-    const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== imageUrl)];
-    localStorage.setItem("key_images", JSON.stringify(updated));
     if (studyUID) {
-      localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated.filter(s => typeof s !== "object" || !s.studyUID || s.studyUID === studyUID)));
+      const savedStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
+      let saved = [];
+      try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
+      const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== imageUrl)];
+      localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
     }
 
     try {
@@ -413,6 +414,7 @@ const MobileLiteViewer = () => {
   }
 
   const modalityKey = String(studyMeta?.modality || "CR").toUpperCase();
+  const isMPRSupported = (modalityKey === "CT" || modalityKey === "MR") && (currentInstances.length > 2 || (activeSeries?.totalSlices && activeSeries.totalSlices > 2));
 
   return (
     <div className="lite-viewer-container dark">
@@ -450,7 +452,6 @@ const MobileLiteViewer = () => {
               <Layers size={18} />
             </button>
           )}
-
 
           <button 
             className="icon-btn-glass action-report" 
@@ -546,7 +547,6 @@ const MobileLiteViewer = () => {
           </div>
         </div>
       )}
-
 
       {/* 📚 SERIES SELECTION DRAWER */}
       <div className={`lite-instance-list ${showSeriesDrawer ? "open" : ""}`}>
@@ -717,26 +717,30 @@ const MobileLiteViewer = () => {
           >
             📏 Measure
           </button>
-          <button
-            className={`mode-seg-btn ${showMPRModal ? "active" : ""}`}
-            onClick={() => setShowMPRModal(true)}
-            title="3D Multiplanar Reconstruction (MPR) & MIP Viewer"
-          >
-            📐 MPR / MIP
-          </button>
+          {isMPRSupported && (
+            <button
+              className={`mode-seg-btn ${showMPRModal ? "active" : ""}`}
+              onClick={() => setShowMPRModal(true)}
+              title="3D Multiplanar Reconstruction (MPR) & MIP Viewer"
+            >
+              📐 MPR / MIP
+            </button>
+          )}
         </div>
 
         <div className="dock-divider" />
 
         {/* Essential Action Buttons */}
         <div className="dock-actions">
-          <button 
-            className={`dock-icon-btn ${showMPRModal ? "active" : "text-sky-400"}`} 
-            onClick={() => setShowMPRModal(!showMPRModal)} 
-            title="Toggle 3D MPR / MIP Viewer"
-          >
-            <Activity size={16} />
-          </button>
+          {isMPRSupported && (
+            <button 
+              className={`dock-icon-btn ${showMPRModal ? "active" : "text-sky-400"}`} 
+              onClick={() => setShowMPRModal(!showMPRModal)} 
+              title="Toggle 3D MPR / MIP Viewer"
+            >
+              <Activity size={16} />
+            </button>
+          )}
 
           <button className="dock-icon-btn text-cyan-400" onClick={captureSnapshot} title="Capture Key Image">
             <Camera size={16} />
@@ -749,7 +753,7 @@ const MobileLiteViewer = () => {
       </footer>
 
       {/* 📐 LIGHTWEIGHT 3D MPR / MIP RECONSTRUCTION OVERLAY */}
-      {showMPRModal && (
+      {showMPRModal && isMPRSupported && (
         <div className="mpr-full-overlay">
           <div className="mpr-overlay-header">
             <span className="mpr-overlay-title">📐 3D Multiplanar Reconstruction (MPR & MIP)</span>
