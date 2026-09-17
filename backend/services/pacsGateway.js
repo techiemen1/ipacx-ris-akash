@@ -65,6 +65,69 @@ class PacsGateway {
         if (dData && dData.ID) orthancData = dData;
       }
 
+      // 1.5 Query DCM4CHEE / Multi-PACS active nodes if Orthanc didn't return data
+      if (!orthancData) {
+        try {
+          const PacsRepository = require("../repositories/PacsRepository");
+          const pacsRepo = new PacsRepository(pool);
+          const activePacs = await pacsRepo.findActive().catch(() => []);
+          const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+
+          for (const pacs of dcm4cheeNodes) {
+            const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
+            const uniquePorts = [...new Set(ports)];
+
+            for (const port of uniquePorts) {
+              const metadataUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
+              try {
+                const res = await axios.get(metadataUrl, {
+                  headers: { Accept: "application/dicom+json" },
+                  timeout: 5000
+                });
+                if (Array.isArray(res.data) && res.data.length > 0) {
+                  const first = res.data[0];
+                  const pName = first["00100010"]?.Value?.[0];
+                  const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
+
+                  orthancData = {
+                    PatientMainDicomTags: {
+                      PatientName: nameStr,
+                      PatientID: first["00100020"]?.Value?.[0] || "",
+                      PatientSex: first["00100040"]?.Value?.[0] || "O",
+                      PatientAge: first["00101010"]?.Value?.[0] || "",
+                      PatientBirthDate: first["00100030"]?.Value?.[0] || ""
+                    },
+                    MainDicomTags: {
+                      AccessionNumber: first["00080050"]?.Value?.[0] || "",
+                      StudyInstanceUID: first["0020000D"]?.Value?.[0] || studyUID,
+                      StudyDate: first["00080020"]?.Value?.[0] || "",
+                      StudyTime: first["00080030"]?.Value?.[0] || "",
+                      StudyDescription: first["00081030"]?.Value?.[0] || "",
+                      ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
+                      Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
+                      BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                      InstitutionName: first["00080080"]?.Value?.[0] || ""
+                    }
+                  };
+                  seriesData = {
+                    MainDicomTags: {
+                      Modality: first["00080060"]?.Value?.[0] || "CR",
+                      BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                      Manufacturer: first["00080070"]?.Value?.[0] || "",
+                      ManufacturerModelName: first["00081090"]?.Value?.[0] || ""
+                    }
+                  };
+                  break;
+                }
+              } catch (e) {}
+            }
+            if (orthancData) break;
+          }
+        } catch (e) {
+          console.warn("[PacsGateway] DCM4CHEE fallback failed:", e.message);
+        }
+      }
+
       // 2. Fetch Series and Instance DICOM Tags
       if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
         const firstSeriesId = orthancData.Series[0];
