@@ -949,7 +949,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
     
-    const previewUrl = validDataUrl || targetInst?.preview_url || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null);
+    const fallbackUrl = targetInst?.preview_url || targetInst?.previewUrl || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}?studyUID=${encodeURIComponent(studyUID || '')}&seriesUID=${encodeURIComponent(seriesObj?.series_id || '')}` : null);
+    const previewUrl = validDataUrl || fallbackUrl;
 
     if (!previewUrl) {
       console.warn("Could not resolve valid preview image URL for key image capture.");
@@ -961,7 +962,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
       dataUrl: validDataUrl,
       preview_url: previewUrl,
-      fallback_preview_url: targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}` : null,
+      fallback_preview_url: fallbackUrl,
       caption: fullCaption
     };
 

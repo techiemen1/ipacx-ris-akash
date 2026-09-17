@@ -23,12 +23,10 @@ import {
   Columns,
   Maximize2,
   Camera,
-  Settings,
-  Image as ImageIcon
+  Settings
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
 import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
-import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
 
@@ -134,9 +132,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
   const [targetSliceNumber, setTargetSliceNumber] = useState("1");
   const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
-  const [showKeyPickerModal, setShowKeyPickerModal] = useState(false);
   const [pickerSliceNum, setPickerSliceNum] = useState(1);
   const [sessionLockInfo, setSessionLockInfo] = useState(null);
+  const [toastMsg, setToastMsg] = useState("");
 
   // Real-time Concurrent Doctor Reporting Lock (Online / LAN)
   useEffect(() => {
@@ -384,6 +382,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     };
 
     setAttachedSnapshots(prev => [...prev, snapObj]);
+    setToastMsg(`✓ Key Image (${fullCaption}) attached to report!`);
+    setTimeout(() => setToastMsg(""), 3500);
   };
 
   const removeSnapshot = (idToRemove) => {
@@ -1357,26 +1357,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
               }}
             >
-              <Camera size={14} /> 📸 Capture Active Viewer Slice
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowKeyPickerModal(true)}
-              style={{
-                background: "#0f172a",
-                color: "#38bdf8",
-                border: "1px solid #0284c7",
-                borderRadius: 8,
-                padding: "7px 14px",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6
-              }}
-            >
-              🖼️ Browse All Slices Grid
+              <Camera size={14} /> 📸 Attach Key Image (Snapshot)
             </button>
           </div>
         </div>
@@ -1483,6 +1464,29 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   return (
     <div className="dws-overlay">
+      {/* FLOATING SUCCESS TOAST FOR SNAPSHOT / KEY IMAGE ATTACHMENT */}
+      {toastMsg && (
+        <div style={{
+          position: 'fixed',
+          top: 70,
+          right: 35,
+          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+          color: '#ffffff',
+          padding: '10px 18px',
+          borderRadius: 10,
+          fontSize: 13,
+          fontWeight: 800,
+          boxShadow: '0 12px 28px rgba(16, 185, 129, 0.4)',
+          zIndex: 999999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          border: '1px solid #34d399'
+        }}>
+          <CheckCircle size={18} /> {toastMsg}
+        </div>
+      )}
+
       {/* CONCURRENT REPORTING LIVE LOCK BANNER */}
       {sessionLockInfo?.isLocked && (
         <div style={{
@@ -1543,12 +1547,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
         {/* TOP ACTIONS & CLOSE BUTTON */}
         <div className="dws-top-actions">
-          <button onClick={() => setShowKeyPickerModal(true)} className="dws-btn dws-btn-dark" title="Browse and select key DICOM series & slice thumbnails">
-            <ImageIcon size={14} /> 🖼️ Key Images
-          </button>
-
-          <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-dark" title="Capture & attach current DICOM viewer image to report">
-            <Camera size={14} /> 📸 Snapshot
+          <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', color: '#ffffff', fontWeight: 800 }} title="Instantly capture and attach currently viewed DICOM viewer slice as key image to report">
+            <Camera size={14} /> 📸 Attach Key Image (Snapshot)
           </button>
 
 
@@ -1988,19 +1988,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
       )}
 
-      {/* FULL DICOM KEY IMAGE PICKER MODAL */}
-      <DicomKeyImagePickerModal
-        isOpen={showKeyPickerModal}
-        onClose={() => setShowKeyPickerModal(false)}
-        studyUID={studyUID}
-        attachedSnapshots={attachedSnapshots}
-        onSelectImage={(snap) => {
-          setAttachedSnapshots(prev => {
-            if (prev.some(s => s.instance_id === snap.instance_id || s.preview_url === snap.preview_url)) return prev;
-            return [...prev, snap];
-          });
-        }}
-      />
     </div>
   );
+}
 }
