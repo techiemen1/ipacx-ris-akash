@@ -182,6 +182,29 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   res.json({ success: true, message: "PACS configuration removed" });
 }));
 
+router.post("/test", asyncHandler(async (req, res) => {
+  const result = await pacsService.testNode(req.body);
+  res.json(result);
+}));
+
+router.post("/:id/activate", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await pacsService.setActive(id, true);
+  res.json({ success: true, message: "PACS node activated" });
+}));
+
+router.post("/:id/deactivate", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await pacsService.setActive(id, false);
+  res.json({ success: true, message: "PACS node deactivated" });
+}));
+
+router.post("/:id/sync", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const studies = await pacsService.listActiveStudies({ pacsId: id, forceRefresh: true });
+  res.json({ success: true, synced: studies.length });
+}));
+
 router.get("/logs", asyncHandler(async (req, res) => {
   const activePacs = await pacsService.repository.findActive();
   res.json({
