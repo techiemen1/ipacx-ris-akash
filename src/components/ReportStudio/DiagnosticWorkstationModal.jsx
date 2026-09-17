@@ -1991,4 +1991,3 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     </div>
   );
 }
-}
