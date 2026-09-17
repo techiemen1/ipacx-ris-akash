@@ -12,7 +12,7 @@ class PacsGateway {
    * Extract DICOM Age from PatientName or PatientAge tag
    */
   extractAge(patientName, rawAge) {
-    if (rawAge && String(rawAge).trim() !== "" && rawAge !== "N/A") return String(rawAge).trim();
+    if (rawAge && String(rawAge).trim() !== "" && rawAge !== "N/A" && rawAge !== "-") return String(rawAge).trim();
     if (!patientName) return "N/A";
     const str = String(patientName);
     const match = str.match(/(\d{1,3})\s*(Y|M|D|YRS|YEARS)/i) || str.match(/\^(\d{1,3})Y/i) || str.match(/\s(\d{1,3})Y/i);
@@ -81,6 +81,7 @@ class PacsGateway {
               const metadataUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
               try {
                 const res = await axios.get(metadataUrl, {
+                  ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
                   headers: { Accept: "application/dicom+json" },
                   timeout: 5000
                 });
@@ -109,13 +110,30 @@ class PacsGateway {
                       InstitutionName: first["00080080"]?.Value?.[0] || ""
                     }
                   };
+
                   seriesData = {
                     MainDicomTags: {
                       Modality: first["00080060"]?.Value?.[0] || "CR",
                       BodyPartExamined: first["00180015"]?.Value?.[0] || "",
                       Manufacturer: first["00080070"]?.Value?.[0] || "",
-                      ManufacturerModelName: first["00081090"]?.Value?.[0] || ""
+                      ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
+                      SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
+                      SeriesNumber: first["00200011"]?.Value?.[0] || "1",
+                      SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
+                      InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
+                      StationName: first["00081010"]?.Value?.[0] || ""
                     }
+                  };
+
+                  instanceData = {
+                    "0018,0050": first["00180050"]?.Value?.[0],
+                    "0018,0060": first["00180060"]?.Value?.[0],
+                    "0018,1152": first["00181152"]?.Value?.[0],
+                    "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
+                    "0028,1050": first["00281050"]?.Value?.[0],
+                    "0028,1051": first["00281051"]?.Value?.[0],
+                    "0028,0010": first["00280010"]?.Value?.[0],
+                    "0028,0011": first["00280011"]?.Value?.[0]
                   };
                   break;
                 }
@@ -128,16 +146,16 @@ class PacsGateway {
         }
       }
 
-      // 2. Fetch Series and Instance DICOM Tags
+      // 2. Fetch Series and Instance DICOM Tags for Orthanc
       if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
         const firstSeriesId = orthancData.Series[0];
         const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-        seriesData = serRes;
+        if (serRes) seriesData = serRes;
 
         if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
           const firstInstId = seriesData.Instances[0];
           const { data: instRes } = await axios.get(`${orthancUrl}instances/${firstInstId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-          instanceData = instRes;
+          if (instRes) instanceData = instRes;
         }
       }
     } catch (err) {
@@ -156,20 +174,20 @@ class PacsGateway {
     // 4. Construct Comprehensive DICOM Tag Dictionary
     const tagsDictionary = {
       patient: {
-        PatientName: cleanName || "Patient",
-        PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || dbRow.id || "ID-1001",
+        PatientName: cleanName || dbRow.patient_name || "Patient",
+        PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || dbRow.id || "N/A",
         PatientBirthDate: orthancData?.PatientMainDicomTags?.PatientBirthDate || dbRow.patient_dob || "-",
         PatientSex: orthancData?.PatientMainDicomTags?.PatientSex || dbRow.patient_sex || "O",
         PatientAge: this.extractAge(rawName, orthancData?.PatientMainDicomTags?.PatientAge || dbRow.patient_age)
       },
       study: {
-        AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "ACC-1001",
+        AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "N/A",
         StudyInstanceUID: orthancData?.MainDicomTags?.StudyInstanceUID || studyUID,
         StudyDate: orthancData?.MainDicomTags?.StudyDate || dbRow.study_date || "-",
         StudyTime: orthancData?.MainDicomTags?.StudyTime || dbRow.study_time || "-",
         StudyDescription: orthancData?.MainDicomTags?.StudyDescription || dbRow.study_description || "Radiology Scan",
         StudyID: orthancData?.MainDicomTags?.StudyID || dbRow.study_id || "-",
-        ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "Self / Desk",
+        ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "-",
         Modality: String(modality).toUpperCase().trim(),
         BodyPartExamined: bodyPart
       },
@@ -177,20 +195,20 @@ class PacsGateway {
         InstitutionName: orthancData?.MainDicomTags?.InstitutionName || dbRow.hospital_name || "AKASH MEDICAL COLLEGE AND HOSPITALS",
         InstitutionalDepartmentName: seriesData?.MainDicomTags?.InstitutionalDepartmentName || "Radio-Diagnosis & Imaging",
         StationName: seriesData?.MainDicomTags?.StationName || "WORKSTATION-01",
-        Manufacturer: seriesData?.MainDicomTags?.Manufacturer || "Siemens / GE Healthcare / Philips",
-        ManufacturerModelName: seriesData?.MainDicomTags?.ManufacturerModelName || "Multi-Slice Diagnostic Scanner",
+        Manufacturer: seriesData?.MainDicomTags?.Manufacturer || "Multi-PACS Scanner",
+        ManufacturerModelName: seriesData?.MainDicomTags?.ManufacturerModelName || "Diagnostic Imaging Station",
         SoftwareVersions: seriesData?.MainDicomTags?.SoftwareVersions || "v1.1 Enterprise PACS"
       },
       acquisition: {
         SeriesInstanceUID: seriesData?.MainDicomTags?.SeriesInstanceUID || "-",
         SeriesNumber: seriesData?.MainDicomTags?.SeriesNumber || "1",
         SeriesDescription: seriesData?.MainDicomTags?.SeriesDescription || "Diagnostic Series",
-        SliceThickness: seriesData?.MainDicomTags?.SliceThickness || instanceData?.["0018,0050"] || "1.0 mm",
-        KVP: seriesData?.MainDicomTags?.KVP || instanceData?.["0018,0060"] || "-",
-        Exposure: seriesData?.MainDicomTags?.Exposure || instanceData?.["0018,1152"] || "-",
-        PixelSpacing: seriesData?.MainDicomTags?.PixelSpacing || instanceData?.["0028,0030"] || "-",
-        WindowCenter: seriesData?.MainDicomTags?.WindowCenter || instanceData?.["0028,1050"] || "40",
-        WindowWidth: seriesData?.MainDicomTags?.WindowWidth || instanceData?.["0028,1051"] || "400"
+        SliceThickness: instanceData?.["0018,0050"] || seriesData?.MainDicomTags?.SliceThickness || "-",
+        KVP: instanceData?.["0018,0060"] || seriesData?.MainDicomTags?.KVP || "-",
+        Exposure: instanceData?.["0018,1152"] || seriesData?.MainDicomTags?.Exposure || "-",
+        PixelSpacing: instanceData?.["0028,0030"] || seriesData?.MainDicomTags?.PixelSpacing || "-",
+        WindowCenter: instanceData?.["0028,1050"] || seriesData?.MainDicomTags?.WindowCenter || "-",
+        WindowWidth: instanceData?.["0028,1051"] || seriesData?.MainDicomTags?.WindowWidth || "-"
       }
     };
 

@@ -310,7 +310,11 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   const instanceId = extractCleanInstanceId(req.params.instanceId);
   const frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
+  const studyUID = req.query.studyUID || req.query.study;
+  const seriesUID = req.query.seriesUID || req.query.series;
   const orthancUrl = await getOrthancUrl();
+
+  // 1. Try Orthanc first
   try {
     const renderPath = (frame !== null && frame !== "") 
       ? `instances/${instanceId}/frames/${frame}/rendered` 
@@ -318,10 +322,11 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
     const previewStream = await axios.get(`${orthancUrl}${renderPath}`, {
       responseType: "stream",
       ...orthancAuthConfig(),
+      timeout: 3000
     });
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Cache-Control", "public, max-age=86400");
-    previewStream.data.pipe(res);
+    return previewStream.data.pipe(res);
   } catch (err) {
     try {
       const previewPath = (frame !== null && frame !== "") 
@@ -330,15 +335,66 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
       const fbStream = await axios.get(`${orthancUrl}${previewPath}`, {
         responseType: "stream",
         ...orthancAuthConfig(),
+        timeout: 3000
       });
       res.setHeader("Content-Type", "image/jpeg");
       res.setHeader("Cache-Control", "public, max-age=86400");
-      fbStream.data.pipe(res);
+      return fbStream.data.pipe(res);
     } catch (fbErr) {
-      console.error(`[PACS Proxy] Failed fetching instance preview for ${instanceId} frame ${frame}:`, fbErr.message);
-      res.status(404).send("Preview unavailable");
+      // Orthanc fallback failed, attempt DCM4CHEE proxying below
     }
   }
+
+  // 2. Fallback to DCM4CHEE WADO-URI / WADO-RS
+  try {
+    const PacsRepository = require("../repositories/PacsRepository");
+    const pacsRepo = new PacsRepository(pool);
+    const activePacs = await pacsRepo.findActive().catch(() => []);
+    const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+
+    for (const pacs of dcm4cheeNodes) {
+      const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
+      const uniquePorts = [...new Set(ports)];
+
+      for (const port of uniquePorts) {
+        // A) WADO-URI lookup if studyUID & seriesUID available
+        if (studyUID && seriesUID) {
+          const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${studyUID}&seriesUID=${seriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
+          try {
+            const wRes = await axios.get(wadoUrl, {
+              responseType: "stream",
+              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+              timeout: 4000
+            });
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=86400");
+            return wRes.data.pipe(res);
+          } catch (e) {}
+        }
+
+        // B) Rendered frame RS lookup
+        if (studyUID && seriesUID) {
+          const frameSegment = (frame !== null && frame !== "") ? `/frames/${parseInt(frame, 10) + 1}/rendered` : "/rendered";
+          const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series/${seriesUID}/instances/${instanceId}${frameSegment}`;
+          try {
+            const rRes = await axios.get(renderedUrl, {
+              responseType: "stream",
+              headers: { Accept: "image/jpeg" },
+              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+              timeout: 4000
+            });
+            res.setHeader("Content-Type", "image/jpeg");
+            res.setHeader("Cache-Control", "public, max-age=86400");
+            return rRes.data.pipe(res);
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[PACS Proxy] Multi-PACS instance preview failed for ${instanceId}:`, e.message);
+  }
+
+  res.status(404).send("Preview unavailable");
 }));
 
 router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
@@ -354,13 +410,110 @@ router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
 }));
 
 /**
- * Shared High-Performance Parallel DICOM Series & Instance Retriever
- * Handles:
- *  - Single-frame DICOM series (sorted strictly by InstanceNumber)
- *  - Multi-frame DICOM instances (expands frames 0..N into slices)
- *  - Parallel non-blocking execution across all series in study
- *  - All modalities (MR, CT, CR/DX, US, MG, EC)
+ * Universal Multi-PACS DICOM Series & Instance Retriever
+ * Fetches series & instances from Orthanc OR active DCM4CHEE nodes
  */
+async function fetchStudySeriesAndInstancesAcrossPacs(studyUID) {
+  const orthancUrl = await getOrthancUrl();
+  const orthancId = await findOrthancStudy(studyUID);
+
+  if (orthancId) {
+    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
+    if (studyData && Array.isArray(studyData.Series) && studyData.Series.length > 0) {
+      const orthancSeries = await fetchStudySeriesAndInstances(orthancUrl, studyData);
+      if (orthancSeries && orthancSeries.length > 0) return orthancSeries;
+    }
+  }
+
+  // Fallback: Query DCM4CHEE / active PACS nodes via QIDO-RS
+  try {
+    const PacsRepository = require("../repositories/PacsRepository");
+    const pacsRepo = new PacsRepository(pool);
+    const activePacs = await pacsRepo.findActive().catch(() => []);
+    const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+
+    for (const pacs of dcm4cheeNodes) {
+      const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
+      const uniquePorts = [...new Set(ports)];
+
+      for (const port of uniquePorts) {
+        const seriesUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series`;
+        try {
+          const sRes = await axios.get(seriesUrl, {
+            ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+            headers: { Accept: "application/dicom+json" },
+            timeout: 5000
+          });
+
+          if (Array.isArray(sRes.data) && sRes.data.length > 0) {
+            const seriesList = [];
+            for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
+              const serObj = sRes.data[sIdx];
+              const seriesUid = serObj["0020000E"]?.Value?.[0];
+              const seriesDesc = serObj["0008103E"]?.Value?.[0] || serObj["00081030"]?.Value?.[0] || `Series ${sIdx + 1}`;
+              const seriesNum = parseInt(serObj["00200011"]?.Value?.[0] || (sIdx + 1), 10);
+              const sModality = serObj["00080060"]?.Value?.[0] || "";
+
+              if (!seriesUid) continue;
+
+              const instUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series/${seriesUid}/instances`;
+              const iRes = await axios.get(instUrl, {
+                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+                headers: { Accept: "application/dicom+json" },
+                timeout: 5000
+              }).catch(() => ({ data: [] }));
+
+              let instances = [];
+              if (Array.isArray(iRes.data) && iRes.data.length > 0) {
+                iRes.data.sort((a, b) => {
+                  const numA = parseInt(a["00200013"]?.Value?.[0] || 0, 10);
+                  const numB = parseInt(b["00200013"]?.Value?.[0] || 0, 10);
+                  return numA - numB;
+                });
+                instances = iRes.data.map((inst, iIdx) => {
+                  const sopUid = inst["00080018"]?.Value?.[0];
+                  const sliceNum = parseInt(inst["00200013"]?.Value?.[0] || (iIdx + 1), 10);
+                  const pUrl = `/api/pacs/instance-preview/${sopUid}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUid)}&pacsId=${pacs.id}`;
+                  return {
+                    id: sopUid,
+                    instance_id: sopUid,
+                    slice_number: sliceNum,
+                    instanceNumber: sliceNum,
+                    slice_index: iIdx + 1,
+                    previewUrl: pUrl,
+                    preview_url: pUrl,
+                    caption: `${seriesDesc} | Slice ${iIdx + 1}/${iRes.data.length}`
+                  };
+                });
+              }
+
+              seriesList.push({
+                seriesId: seriesUid,
+                series_id: seriesUid,
+                series_instance_uid: seriesUid,
+                seriesDescription: seriesDesc,
+                series_description: seriesDesc,
+                seriesNumber: seriesNum,
+                series_number: seriesNum,
+                modality: sModality,
+                totalSlices: instances.length,
+                total_slices: instances.length,
+                instances
+              });
+            }
+
+            if (seriesList.length > 0) return seriesList;
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    console.warn("[PACS] Multi-PACS series search failed:", e.message);
+  }
+
+  return [];
+}
+
 async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
   if (!studyData || !Array.isArray(studyData.Series) || studyData.Series.length === 0) {
     return [];
@@ -379,7 +532,6 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
 
         let orderedInstances = [];
 
-        // 1. Attempt expanded instances query (provides full DICOM tags for sorting)
         try {
           const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
           if (Array.isArray(expInstances) && expInstances.length > 0) {
@@ -403,11 +555,8 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
               };
             });
           }
-        } catch (e) {
-          // Fallback if expanded query times out or fails
-        }
+        } catch (e) {}
 
-        // 2. Fallback if expansion produced empty array
         if (orderedInstances.length === 0 && Array.isArray(sData.Instances) && sData.Instances.length > 0) {
           orderedInstances = sData.Instances.map((instItem, iIdx) => {
             const instId = extractCleanInstanceId(instItem);
@@ -424,7 +573,6 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
           });
         }
 
-        // 3. Multi-frame DICOM slice expansion (crucial for MRI, CT, US multi-frame single instance files)
         if (orderedInstances.length === 1) {
           const singleInstId = orderedInstances[0].id;
           try {
@@ -442,9 +590,7 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
                 caption: `${sDesc} | Frame ${fIdx + 1}/${frames.length}`
               }));
             }
-          } catch (e) {
-            // Standard single frame DICOM file
-          }
+          } catch (e) {}
         }
 
         const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID || seriesId;
@@ -482,52 +628,18 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
 ====================================================== */
 router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
   const { studyUID } = req.params;
-  const orthancUrl = await getOrthancUrl();
-  const orthancId = await findOrthancStudy(studyUID);
-
-  if (!orthancId) {
-    return res.status(404).json({ success: false, message: "Study not found in PACS" });
-  }
-
-  const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 });
-
-  const rawPName = studyData.PatientMainDicomTags?.PatientName || studyData.MainDicomTags?.PatientName || "Patient";
-  const patientName = String(rawPName).replace(/\^+/g, " ").trim() || "Patient";
-  const patientId = studyData.PatientMainDicomTags?.PatientID || studyData.MainDicomTags?.PatientID || "N/A";
-  const accession = studyData.MainDicomTags?.AccessionNumber || "N/A";
-  let modality = studyData.MainDicomTags?.Modality || "";
-  const studyDate = studyData.MainDicomTags?.StudyDate || "";
-  const studyDescription = studyData.MainDicomTags?.StudyDescription || "";
-
-  const seriesList = await fetchStudySeriesAndInstances(orthancUrl, studyData);
-
-  if (!modality && seriesList.length > 0) {
-    const foundMod = seriesList.find(s => s.modality)?.modality;
-    if (foundMod) modality = foundMod;
-  }
-
-  // Fallback modality parsing if missing
-  const normMod = String(modality).toUpperCase().trim();
-  if (!normMod || !["CR", "DX", "XR", "CT", "MR", "MRI", "US", "USG", "MG", "EC", "ECHO"].includes(normMod)) {
-    const desc = String(studyDescription).toUpperCase();
-    if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) modality = "CR";
-    else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN")) modality = "MR";
-    else if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) modality = "US";
-    else if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) modality = "CT";
-    else modality = "CR";
-  } else {
-    modality = normMod === "MRI" ? "MR" : normMod === "USG" ? "US" : normMod;
-  }
+  const dicomTags = await pacsGateway.getFullDicomTags(studyUID);
+  const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
 
   res.json({
     success: true,
     studyUID,
-    patientName,
-    patientId,
-    accession,
-    modality,
-    studyDate,
-    studyDescription,
+    patientName: dicomTags?.patient?.PatientName || "Patient",
+    patientId: dicomTags?.patient?.PatientID || "N/A",
+    accession: dicomTags?.study?.AccessionNumber || "N/A",
+    modality: dicomTags?.study?.Modality || "CR",
+    studyDate: dicomTags?.study?.StudyDate || "",
+    studyDescription: dicomTags?.study?.StudyDescription || "",
     series: seriesList
   });
 }));
@@ -535,33 +647,25 @@ router.get("/mobile-study/:studyUID", asyncHandler(async (req, res) => {
 router.get("/snapshots/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-    const orthancUrl = await getOrthancUrl();
-    const orthancId = await findOrthancStudy(studyUID);
+    const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
 
-    if (!orthancId) {
-      return res.json({ success: true, data: [] });
-    }
-
-    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
-
-    if (!studyData || !Array.isArray(studyData.Series) || studyData.Series.length === 0) {
+    if (!seriesList || seriesList.length === 0) {
       return res.json({ success: true, data: [] });
     }
 
     const snapshots = [];
-    for (const seriesId of studyData.Series) {
-      const { data: seriesData } = await axios.get(`${orthancUrl}series/${seriesId}`, { ...orthancAuthConfig(), timeout: 3000 }).catch(() => ({ data: null }));
-      if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
-        const midIndex = Math.floor(seriesData.Instances.length / 2);
-        const instanceId = seriesData.Instances[midIndex] || seriesData.Instances[0];
-        const seriesDesc = seriesData.MainDicomTags?.SeriesDescription || `Series ${seriesData.MainDicomTags?.SeriesNumber || snapshots.length + 1}`;
-        const total = seriesData.Instances.length;
+    for (const series of seriesList) {
+      if (Array.isArray(series.instances) && series.instances.length > 0) {
+        const midIndex = Math.floor(series.instances.length / 2);
+        const inst = series.instances[midIndex] || series.instances[0];
+        const seriesDesc = series.seriesDescription || `Series ${series.seriesNumber || snapshots.length + 1}`;
+        const total = series.instances.length;
 
         const sliceCaption = total > 1 ? `${seriesDesc} | Slice ${midIndex + 1}/${total}` : `${seriesDesc}`;
 
         snapshots.push({
-          instance_id: instanceId,
-          preview_url: `/api/pacs/instance-preview/${instanceId}`,
+          instance_id: inst.id || inst.instance_id,
+          preview_url: inst.previewUrl || inst.preview_url || `/api/pacs/instance-preview/${inst.id || inst.instance_id}`,
           caption: sliceCaption
         });
       }
@@ -869,20 +973,7 @@ router.get("/measurements/:studyUID", async (req, res) => {
 router.get("/study-series-instances/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
-    const orthancUrl = await getOrthancUrl();
-    const orthancId = await findOrthancStudy(studyUID);
-
-    if (!orthancId) {
-      return res.json({ success: true, series: [] });
-    }
-
-    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-
-    if (!studyData) {
-      return res.json({ success: true, series: [] });
-    }
-
-    const seriesList = await fetchStudySeriesAndInstances(orthancUrl, studyData);
+    const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
 
     res.json({
       success: true,
@@ -983,29 +1074,19 @@ router.get("/export/images/:format/:studyUID", asyncHandler(async (req, res) => 
 
 router.get("/export/single/:studyUID", asyncHandler(async (req, res) => {
   const { studyUID } = req.params;
-  const orthancUrl = await getOrthancUrl();
-  const orthancId = await findOrthancStudy(studyUID);
+  const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
 
-  if (!orthancId) {
-    return res.status(404).json({ success: false, message: "Study not found in PACS storage" });
-  }
-
-  const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, orthancAuthConfig());
-
-  if (Array.isArray(studyData.Series) && studyData.Series.length > 0) {
-    const seriesId = studyData.Series[0];
-    const { data: seriesData } = await axios.get(`${orthancUrl}series/${seriesId}`, orthancAuthConfig());
-    if (Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
-      const instanceId = seriesData.Instances[0];
-      const previewStream = await axios.get(`${orthancUrl}instances/${instanceId}/preview`, {
-        responseType: "stream",
-        ...orthancAuthConfig(),
-      });
-
+  if (seriesList.length > 0 && Array.isArray(seriesList[0].instances) && seriesList[0].instances.length > 0) {
+    const keyInst = seriesList[0].instances[0];
+    const previewPath = keyInst.previewUrl || keyInst.preview_url || `/api/pacs/instance-preview/${keyInst.id}`;
+    
+    const fullUrl = previewPath.startsWith("http") ? previewPath : `http://127.0.0.1:${process.env.PORT || 3015}${previewPath}`;
+    try {
+      const imgStream = await axios.get(fullUrl, { responseType: "stream", timeout: 5000 });
       res.setHeader("Content-Type", "image/jpeg");
       res.setHeader("Content-Disposition", `attachment; filename="KeyImage_${studyUID.slice(-8)}.jpg"`);
-      return previewStream.data.pipe(res);
-    }
+      return imgStream.data.pipe(res);
+    } catch (e) {}
   }
 
   res.status(404).json({ success: false, message: "No key preview image found for study" });

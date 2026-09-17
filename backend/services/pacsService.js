@@ -123,7 +123,7 @@ class PacsService {
     return { success: false, message: tcpResult.error || `Could not connect to ${host}:${port}` };
   }
 
-  async listActiveStudies({ startDate, endDate, pacsId, forceRefresh } = {}) {
+  async listActiveStudies({ startDate, endDate, pacsId, forceRefresh, forceAll } = {}) {
     const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}`;
     
     if (forceRefresh) {
@@ -147,10 +147,10 @@ class PacsService {
       try {
         const pacsTypeUpper = String(pacs.pacs_type || "").toUpperCase().trim();
         if (pacsTypeUpper === "ORTHANC") {
-          const studies = await this.fetchOrthancStudies(pacs, { startDate, endDate });
+          const studies = await this.fetchOrthancStudies(pacs, { startDate, endDate, forceAll });
           allStudies.push(...studies);
         } else if (pacsTypeUpper === "DCM4CHEE") {
-          const studies = await this.fetchDcm4cheeStudies(pacs, { startDate, endDate });
+          const studies = await this.fetchDcm4cheeStudies(pacs, { startDate, endDate, forceAll });
           allStudies.push(...studies);
         }
       } catch (err) {
@@ -162,7 +162,7 @@ class PacsService {
     if (allStudies.length === 0) {
       try {
         const dynamicUrl = await getOrthancUrl();
-        const fallbackStudies = await this.fetchOrthancFromUrl(dynamicUrl, { startDate, endDate });
+        const fallbackStudies = await this.fetchOrthancFromUrl(dynamicUrl, { startDate, endDate, forceAll });
         allStudies.push(...fallbackStudies);
       } catch (e) {
         console.error("[PacsService] Dynamic Orthanc fallback failed:", e.message);
@@ -209,34 +209,50 @@ class PacsService {
     });
 
     if (unique.length > 0) {
-      await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 45));
+      await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 30));
     }
     return unique;
   }
 
-  async fetchOrthancStudies(pacs, { startDate, endDate }) {
+  async fetchOrthancStudies(pacs, { startDate, endDate, forceAll }) {
     let serverUrl = `http://${pacs.ip_address}:${pacs.port}/`;
     if (pacs.ip_address === "localhost" || pacs.ip_address === "127.0.0.1") {
       serverUrl = await getOrthancUrl();
     }
     try {
-      return await this.fetchOrthancFromUrl(serverUrl, { startDate, endDate });
+      return await this.fetchOrthancFromUrl(serverUrl, { startDate, endDate, forceAll });
     } catch (err) {
       console.warn(`[PacsService] Failed to fetch from ${serverUrl}, falling back to dynamic Orthanc URL:`, err.message);
       const fallbackUrl = await getOrthancUrl();
-      return this.fetchOrthancFromUrl(fallbackUrl, { startDate, endDate });
+      return this.fetchOrthancFromUrl(fallbackUrl, { startDate, endDate, forceAll });
     }
   }
 
-  async fetchOrthancFromUrl(serverUrl, { startDate, endDate }) {
+  async fetchOrthancFromUrl(serverUrl, { startDate, endDate, forceAll }) {
     const config = orthancAuthConfig();
     const payload = { Level: "Study", Query: {}, Limit: 500 };
-    if (startDate && endDate) payload.Query.StudyDate = `${startDate}-${endDate}`;
+    
+    let cleanStart = startDate ? String(startDate).replace(/[^0-9]/g, "") : "";
+    let cleanEnd = endDate ? String(endDate).replace(/[^0-9]/g, "") : "";
 
-    const { data: ids } = await axios.post(`${serverUrl}tools/find`, payload, config);
+    // Default to last 3 days if no dates passed and forceAll is false
+    if (!cleanStart && !cleanEnd && !forceAll) {
+      const today = new Date();
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+      cleanStart = fmt(threeDaysAgo);
+      cleanEnd = fmt(today);
+    }
+
+    if (cleanStart && cleanEnd) {
+      payload.Query.StudyDate = cleanStart === cleanEnd ? cleanStart : `${cleanStart}-${cleanEnd}`;
+    }
+
+    const { data: ids } = await axios.post(`${serverUrl}tools/find`, payload, config).catch(() => ({ data: [] }));
     const studies = await Promise.all(
-      ids.map(async (id) => {
-        const { data } = await axios.get(`${serverUrl}studies/${id}`, config);
+      (ids || []).map(async (id) => {
+        const { data } = await axios.get(`${serverUrl}studies/${id}`, config).catch(() => ({ data: null }));
+        if (!data) return null;
         
         let modality = data.MainDicomTags?.Modality || "";
         let bodyPart = data.MainDicomTags?.BodyPartExamined || "";
@@ -284,6 +300,7 @@ class PacsService {
           AccessionNumber: data.MainDicomTags?.AccessionNumber || "N/A",
           StudyDescription: data.MainDicomTags?.StudyDescription || "No Description",
           StudyDate: data.MainDicomTags?.StudyDate || "N/A",
+          StudyTime: data.MainDicomTags?.StudyTime || "000000",
           Modality: modality.toUpperCase(),
           BodyPartExamined: bodyPart,
           StudyInstanceUID: data.MainDicomTags?.StudyInstanceUID || data.ID,
@@ -292,10 +309,10 @@ class PacsService {
       })
     );
 
-    return studies;
+    return studies.filter(Boolean);
   }
 
-  async fetchDcm4cheeStudies(pacs, { startDate, endDate }) {
+  async fetchDcm4cheeStudies(pacs, { startDate, endDate, forceAll }) {
     const portsToTry = [parseInt(pacs.port, 10)];
     if (pacs.port === 11112 || pacs.port === "11112") {
       portsToTry.unshift(8080, 8085);
@@ -304,11 +321,30 @@ class PacsService {
     }
     const uniquePorts = [...new Set(portsToTry.filter(Boolean))];
 
+    let cleanStart = startDate ? String(startDate).replace(/[^0-9]/g, "") : "";
+    let cleanEnd = endDate ? String(endDate).replace(/[^0-9]/g, "") : "";
+
+    // Default to last 3 days if no dates passed and forceAll is false
+    if (!cleanStart && !cleanEnd && !forceAll) {
+      const today = new Date();
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+      const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+      cleanStart = fmt(threeDaysAgo);
+      cleanEnd = fmt(today);
+    }
+
     let lastError = null;
     for (const port of uniquePorts) {
       const qidoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies`;
-      const params = { includefield: "all", limit: 200 };
-      if (startDate && endDate) params.StudyDate = `${startDate}-${endDate}`;
+      const params = { 
+        includefield: "all", 
+        limit: 500,
+        orderby: "-StudyDate,-StudyTime" 
+      };
+
+      if (cleanStart && cleanEnd) {
+        params.StudyDate = cleanStart === cleanEnd ? cleanStart : `${cleanStart}-${cleanEnd}`;
+      }
 
       try {
         const response = await axios.get(qidoUrl, {
@@ -319,18 +355,24 @@ class PacsService {
         });
 
         if (Array.isArray(response.data)) {
-          return response.data.map((study) => ({
-            PatientID: study["00100020"]?.Value?.[0] || "N/A",
-            PatientName: study["00100010"]?.Value?.[0]?.Alphabetic || study["00100010"]?.Value?.[0] || "N/A",
-            PatientAge: study["00101010"]?.Value?.[0] || "N/A",
-            PatientSex: study["00100040"]?.Value?.[0] || "O",
-            AccessionNumber: study["00080050"]?.Value?.[0] || "N/A",
-            StudyDescription: study["00081030"]?.Value?.[0] || "",
-            StudyDate: study["00080020"]?.Value?.[0] || "",
-            Modality: (study["00080061"]?.Value?.[0] || "CR").toUpperCase(),
-            StudyInstanceUID: study["0020000D"]?.Value?.[0],
-            PACS: pacs.pacs_name || "DCM4CHEE",
-          }));
+          return response.data.map((study) => {
+            const pName = study["00100010"]?.Value?.[0];
+            const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "N/A");
+            
+            return {
+              PatientID: study["00100020"]?.Value?.[0] || "N/A",
+              PatientName: nameStr,
+              PatientAge: study["00101010"]?.Value?.[0] || "N/A",
+              PatientSex: study["00100040"]?.Value?.[0] || "O",
+              AccessionNumber: study["00080050"]?.Value?.[0] || "N/A",
+              StudyDescription: study["00081030"]?.Value?.[0] || "",
+              StudyDate: study["00080020"]?.Value?.[0] || "",
+              StudyTime: study["00080030"]?.Value?.[0] || "000000",
+              Modality: (study["00080060"]?.Value?.[0] || study["00080061"]?.Value?.[0] || "CR").toUpperCase(),
+              StudyInstanceUID: study["0020000D"]?.Value?.[0],
+              PACS: pacs.pacs_name || "DCM4CHEE",
+            };
+          });
         }
       } catch (err) {
         lastError = err;
@@ -342,4 +384,3 @@ class PacsService {
 }
 
 module.exports = PacsService;
-
