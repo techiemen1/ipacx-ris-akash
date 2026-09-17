@@ -23,7 +23,8 @@ import {
   Columns,
   Maximize2,
   Camera,
-  Settings
+  Settings,
+  Image as ImageIcon
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
 import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
