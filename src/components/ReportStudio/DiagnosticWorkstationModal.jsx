@@ -268,8 +268,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const snapResult = await requestViewerSnapshot(".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    let currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
-    let currentSliceNum = overrideSliceNum !== null 
+    const currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
+    const currentSliceNum = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
           snapResult?.sliceNumber || 
@@ -278,7 +278,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           (targetSliceNumber && parseInt(targetSliceNumber, 10) > 1 ? parseInt(targetSliceNumber, 10) : null) ||
           1
         );
-    let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
+    const detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
 
     const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
 
