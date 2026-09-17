@@ -489,40 +489,48 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       setLoading(true);
       let studyData = null;
       let pacsFallback = null;
+      let measurementsMeta = null;
 
       try {
-        const { data: mainStudy } = await api.get(`/api/pacs/study/${encodeURIComponent(studyUID)}`).catch(() => ({ data: null }));
-        studyData = mainStudy;
+        const [mainStudyRes, pacsRes, mRes] = await Promise.all([
+          api.get(`/api/pacs/study/${encodeURIComponent(studyUID)}`).catch(() => ({ data: null })),
+          api.get("/api/pacs/studies").catch(() => ({ data: [] })),
+          api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}`).catch(() => ({ data: null }))
+        ]);
 
-        const pacsRes = await api.get("/api/pacs/studies").catch(() => ({ data: [] }));
+        studyData = mainStudyRes.data;
+        measurementsMeta = mRes.data?.metadata || null;
+
         const list = Array.isArray(pacsRes.data) ? pacsRes.data : (pacsRes.data?.studies || []);
         if (list.length > 0) {
           pacsFallback = list.find(s => 
             (s.StudyInstanceUID && s.StudyInstanceUID === studyUID) ||
             (s.study_uid && s.study_uid === studyUID) ||
             (s.id && String(s.id) === String(studyUID))
-          ) || list[0];
+          );
         }
 
-        const rawName = String(studyData?.PatientName || studyData?.patient_name || pacsFallback?.PatientName || pacsFallback?.patient_name || "Patient").replace(/\^/g, " ").replace(/\s+/g, " ").trim();
-        const pId = studyData?.PatientID || studyData?.patient_id || pacsFallback?.PatientID || pacsFallback?.patient_id || "ID-1001";
-        const pAge = studyData?.PatientAge || studyData?.patient_age || pacsFallback?.PatientAge || pacsFallback?.patient_age || "24Y";
-        const pSex = studyData?.PatientSex || studyData?.patient_sex || pacsFallback?.PatientSex || pacsFallback?.patient_sex || "M";
-        const accNo = studyData?.AccessionNumber || studyData?.accession_number || pacsFallback?.AccessionNumber || pacsFallback?.accession_number || "ACC-1001";
-        const mod = (studyData?.Modality || studyData?.modality || pacsFallback?.Modality || pacsFallback?.modality || initialModality || "CR").toUpperCase().trim();
-        const bPart = studyData?.BodyPartExamined || studyData?.body_part || pacsFallback?.BodyPartExamined || pacsFallback?.body_part || "General";
-        const sDesc = studyData?.StudyDescription || studyData?.study_description || pacsFallback?.StudyDescription || pacsFallback?.study_description || "";
+        const realName = studyData?.PatientName || studyData?.patient_name || measurementsMeta?.patient_name || pacsFallback?.PatientName || pacsFallback?.patient_name;
+        const realId = studyData?.PatientID || studyData?.patient_id || measurementsMeta?.patient_id || pacsFallback?.PatientID || pacsFallback?.patient_id;
+        const realAge = studyData?.PatientAge || studyData?.patient_age || measurementsMeta?.patient_age || pacsFallback?.PatientAge || pacsFallback?.patient_age;
+        const realSex = studyData?.PatientSex || studyData?.patient_sex || measurementsMeta?.patient_sex || pacsFallback?.PatientSex || pacsFallback?.patient_sex;
+        const realAcc = studyData?.AccessionNumber || studyData?.accession_number || measurementsMeta?.accession_number || pacsFallback?.AccessionNumber || pacsFallback?.accession_number;
+        const realDesc = studyData?.StudyDescription || studyData?.study_description || measurementsMeta?.study_description || pacsFallback?.StudyDescription || pacsFallback?.study_description || "";
+        const mod = (studyData?.Modality || studyData?.modality || measurementsMeta?.modality || pacsFallback?.Modality || pacsFallback?.modality || initialModality || "CR").toUpperCase().trim();
+        const bPart = studyData?.BodyPartExamined || studyData?.body_part || measurementsMeta?.body_part || pacsFallback?.BodyPartExamined || pacsFallback?.body_part || "General";
         const refDoc = studyData?.ReferringPhysicianName || studyData?.referring_doctor || pacsFallback?.ReferringPhysicianName || pacsFallback?.referring_doctor || "Self / Desk";
 
+        const formattedName = realName ? String(realName).replace(/\^+/g, " ").replace(/undefined|null/gi, "").trim() : "Patient";
+
         setStudy({
-          PatientName: (rawName === "N/A" || !rawName) ? (pacsFallback?.PatientName || "Patient") : rawName,
-          PatientID: (pId === "N/A" || !pId) ? "ID-1001" : pId,
-          PatientAge: (pAge === "N/A" || !pAge) ? "24Y" : pAge,
-          PatientSex: (pSex === "N/A" || !pSex) ? "M" : pSex,
-          AccessionNumber: (accNo === "N/A" || !accNo) ? "ACC-1001" : accNo,
+          PatientName: formattedName || "Patient",
+          PatientID: (realId && realId !== "N/A") ? realId : "-",
+          PatientAge: (realAge && realAge !== "N/A") ? realAge : "-",
+          PatientSex: (realSex && realSex !== "N/A") ? realSex : "-",
+          AccessionNumber: (realAcc && realAcc !== "N/A") ? realAcc : "-",
           Modality: mod,
           BodyPartExamined: bPart,
-          StudyDescription: sDesc,
+          StudyDescription: realDesc || "Radiology Examination",
           StudyDate: studyData?.StudyDate || studyData?.study_date || pacsFallback?.StudyDate || pacsFallback?.study_date || "-",
           ReferringPhysicianName: refDoc,
           ReportedBy: studyData?.ReportedBy || "",
@@ -599,11 +607,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             const rMod = (reportData.modality || mod).toUpperCase();
             setSelectedModality(getInitialModKey(rMod));
           } else {
-            autoMatchTemplate(mod, bPart, sDesc);
+            autoMatchTemplate(mod, bPart, realDesc);
             setAttachedSnapshots([]);
           }
         } else {
-          autoMatchTemplate(mod, bPart, sDesc);
+          autoMatchTemplate(mod, bPart, realDesc);
           setAttachedSnapshots([]);
         }
       } catch (err) {

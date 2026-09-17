@@ -196,8 +196,8 @@ export default function PACSpage() {
     }
   };
 
-  async function loadStudies(pacs, forceRefresh = false) {
-    const targetPacs = pacs || { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
+  async function loadStudies(pacs, forceRefresh = false, fDate = fromDate, tDate = toDate) {
+    const targetPacs = pacs || activePacs || { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
     setActivePacs(targetPacs);
     sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
     setLoading(true);
@@ -206,6 +206,10 @@ export default function PACSpage() {
     try {
       const params = { pacs_id: targetPacs.id || "all" };
       if (forceRefresh) params.refresh = "true";
+      if (fDate && tDate) {
+        params.startDate = fDate.replace(/-/g, "");
+        params.endDate = tDate.replace(/-/g, "");
+      }
 
       const res = await api.get("/api/pacs/studies", { params }).catch(() => ({ data: [] }));
       let studiesList = Array.isArray(res.data) 
@@ -213,7 +217,7 @@ export default function PACSpage() {
         : (Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data?.studies) ? res.data.studies : []));
 
       if (studiesList.length === 0 && targetPacs.id !== "all" && String(targetPacs.pacs_type).toUpperCase() !== "ORTHANC") {
-        const orthancRes = await api.get("/api/pacs/studies", { params: { pacs_id: "orthanc", refresh: forceRefresh ? "true" : undefined } }).catch(() => ({ data: [] }));
+        const orthancRes = await api.get("/api/pacs/studies", { params: { ...params, pacs_id: "orthanc" } }).catch(() => ({ data: [] }));
         const fallbackList = Array.isArray(orthancRes.data)
           ? orthancRes.data
           : (Array.isArray(orthancRes.data?.data) ? orthancRes.data.data : []);
@@ -223,7 +227,7 @@ export default function PACSpage() {
       }
 
       if (studiesList.length === 0) {
-        const allRes = await api.get("/api/pacs/studies", { params: { refresh: forceRefresh ? "true" : undefined } }).catch(() => ({ data: [] }));
+        const allRes = await api.get("/api/pacs/studies", { params: { ...params, pacs_id: "all" } }).catch(() => ({ data: [] }));
         const allList = Array.isArray(allRes.data)
           ? allRes.data
           : (Array.isArray(allRes.data?.data) ? allRes.data.data : []);
