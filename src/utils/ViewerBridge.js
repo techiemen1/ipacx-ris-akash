@@ -153,7 +153,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         '[class*="left-panel"], [class*="LeftPanel"], [class*="study-browser"], [class*="series-quick-select"], ' +
         '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
         '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"], ' +
-        '[class*="Drawer"], [class*="drawer"]'
+        '[class*="Drawer"], [class*="drawer"], [class*="PanelContent"], [class*="panelContent"], ' +
+        '[class*="SeriesWrapper"], [class*="seriesWrapper"]'
       );
     };
 
@@ -188,12 +189,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       });
 
       if (matches.length > 0) {
-        // Return series with the longest description match
         matches.sort((a, b) => b.len - a.len);
         return matches[0].series;
       }
 
-      // Check series number pattern like "Series 4", "Ser 4", "S: 4", "S:4"
       const serNumMatch = containerText.match(/(?:series|ser|s)\s*:?\s*(\d+)/i);
       if (serNumMatch) {
         const sNum = parseInt(serNumMatch[1], 10);
@@ -215,7 +214,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     let candidateContainers = [];
 
-    // Traverse upwards from each canvas to find ancestor viewport container
     canvases.forEach(c => {
       let vp = c.parentElement;
       while (vp && vp !== bodyEl) {
@@ -238,56 +236,67 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     }
 
     const parseTextNodesForSlice = (textNodes) => {
-      let targetSliceNodeInfo = null;
+      // Priority 1: Parenthesized pattern like "(16/258)" or "I: 243 (16/258)" - unique to viewport overlays
       for (const item of textNodes) {
-        // Pattern 1: "I: 205 (33/237)" or "Im: 205 (33/237)"
-        const fullParenMatch = item.val.match(/(?:i|im|image|slice|frame)?\s*:?\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+        const fullParenMatch = item.val.match(/(?:i|im|image|slice|frame)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
         if (fullParenMatch) {
-          const instNum = parseInt(fullParenMatch[1], 10);
+          const instNum = fullParenMatch[1] ? parseInt(fullParenMatch[1], 10) : null;
           const sNum = parseInt(fullParenMatch[2], 10);
           const tNum = parseInt(fullParenMatch[3], 10);
           if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            targetSliceNodeInfo = { instanceNumber: instNum, sliceNumber: sNum, totalSlices: tNum, item };
-            break;
+            return { instanceNumber: instNum, sliceNumber: sNum, totalSlices: tNum, item };
           }
         }
+      }
 
-        // Pattern 2: "(33/237)"
-        const parenMatch = item.val.match(/(?:i|im|image|slice|frame)?\s*:?\s*\d*\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+      // Priority 2: Simple parenthesized fraction "(16/258)"
+      for (const item of textNodes) {
+        const parenMatch = item.val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
         if (parenMatch) {
           const sNum = parseInt(parenMatch[1], 10);
           const tNum = parseInt(parenMatch[2], 10);
           if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            targetSliceNodeInfo = { sliceNumber: sNum, totalSlices: tNum, item };
-            break;
+            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
           }
         }
+      }
 
-        // Pattern 3: "Slice 33 of 237" or "33/237"
-        const simpleMatch = item.val.match(/(?:slice|im|image|frame|i)?\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
+      // Priority 3: Explicit "Slice 16 of 258" or "Image 16/258"
+      for (const item of textNodes) {
+        const simpleMatch = item.val.match(/(?:slice|im|image|frame)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
         if (simpleMatch) {
           const sNum = parseInt(simpleMatch[1], 10);
           const tNum = parseInt(simpleMatch[2], 10);
           if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            targetSliceNodeInfo = { sliceNumber: sNum, totalSlices: tNum, item };
-            break;
+            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
           }
         }
       }
 
-      if (!targetSliceNodeInfo) {
-        for (const item of textNodes) {
-          const instMatch = item.val.match(/(?:^|\s)(?:i|im|image|instance)\s*:?\s*(\d+)(?:\s|$)/i);
-          if (instMatch) {
-            const instNum = parseInt(instMatch[1], 10);
-            if (instNum > 0) {
-              targetSliceNodeInfo = { instanceNumber: instNum, sliceNumber: instNum, totalSlices: null, item };
-              break;
-            }
+      // Priority 4: Fallback unparenthesized fraction "16/258" (only if outside sidebar)
+      for (const item of textNodes) {
+        const unparenMatch = item.val.match(/(?:^|\s)(\d+)\s*\/\s*(\d+)(?:\s|$)/);
+        if (unparenMatch) {
+          const sNum = parseInt(unparenMatch[1], 10);
+          const tNum = parseInt(unparenMatch[2], 10);
+          if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
           }
         }
       }
-      return targetSliceNodeInfo;
+
+      // Priority 5: Instance number fallback "I: 243"
+      for (const item of textNodes) {
+        const instMatch = item.val.match(/(?:^|\s)(?:i|im|image|instance)\s*:?\s*(\d+)(?:\s|$)/i);
+        if (instMatch) {
+          const instNum = parseInt(instMatch[1], 10);
+          if (instNum > 0) {
+            return { instanceNumber: instNum, sliceNumber: instNum, totalSlices: null, item };
+          }
+        }
+      }
+
+      return null;
     };
 
     // 2. Iterate candidate containers in priority order
@@ -310,7 +319,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
       const { instanceNumber, sliceNumber, totalSlices } = targetSliceNodeInfo;
 
-      // Scoped Series Resolution: Search text within viewport container surrounding matched item FIRST
       let targetVp = targetSliceNodeInfo.item.parentEl;
       while (targetVp && targetVp !== bodyEl) {
         const cls = (targetVp.className || '').toString().toLowerCase();
