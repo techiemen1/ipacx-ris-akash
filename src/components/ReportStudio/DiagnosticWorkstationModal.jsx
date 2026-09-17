@@ -62,7 +62,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   // RBAC Permission Check
   const loggedUser = (() => {
     try { return JSON.parse(sessionStorage.getItem("user") || "{}"); }
-    catch { return {}; }
+    catch (e) { return { role: "DOCTOR" }; }
   })();
   const userRole = String(loggedUser.role || "").toUpperCase();
   const canEditReport = !userRole || ["ADMIN", "RADIOLOGIST", "DOCTOR", "SUPERVISOR"].includes(userRole);
@@ -145,7 +145,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     let currentUser = null;
     try {
       currentUser = userRaw ? JSON.parse(userRaw) : null;
-    } catch (e) {}
+    } catch (e) {
+      /* ignore JSON parse error */
+    }
 
     const doctorName = currentUser?.name || currentUser?.username || currentUser?.doctor_name || "Dr. Radiologist";
     const userId = currentUser?.id || currentUser?.userId || ("doc_" + Date.now());
