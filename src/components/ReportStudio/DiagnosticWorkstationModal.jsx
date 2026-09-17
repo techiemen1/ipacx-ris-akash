@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
 import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
+import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
 
@@ -132,6 +133,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
   const [targetSliceNumber, setTargetSliceNumber] = useState("1");
   const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
+  const [showKeyPickerModal, setShowKeyPickerModal] = useState(false);
   const [pickerSliceNum, setPickerSliceNum] = useState(1);
 
   // Fetch Series & Instances list for exact series/slice tracking
@@ -251,7 +253,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     let currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
     let currentSliceNum = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
-      : (snapResult?.sliceNumber || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null)));
+      : (pickerSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || snapResult?.sliceNumber || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : 1));
     let detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
 
     try {
@@ -1288,26 +1290,47 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
             <Camera size={16} style={{ color: "#0284c7" }} /> Attached Key Images / Snapshots ({attachedSnapshots.length})
           </span>
-          <button
-            type="button"
-            onClick={() => handleAttachTargetSlice()}
-            style={{
-              background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: 8,
-              padding: "7px 14px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
-            }}
-          >
-            <Camera size={14} /> 📸 Capture Active Viewer Slice
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => handleAttachTargetSlice()}
+              style={{
+                background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
+              }}
+            >
+              <Camera size={14} /> 📸 Capture Active Viewer Slice
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowKeyPickerModal(true)}
+              style={{
+                background: "#0f172a",
+                color: "#38bdf8",
+                border: "1px solid #0284c7",
+                borderRadius: 8,
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6
+              }}
+            >
+              🖼️ Browse All Slices Grid
+            </button>
+          </div>
         </div>
 
         {attachedSnapshots.length === 0 ? (
@@ -1885,6 +1908,20 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           </div>
         </div>
       )}
+
+      {/* FULL DICOM KEY IMAGE PICKER MODAL */}
+      <DicomKeyImagePickerModal
+        isOpen={showKeyPickerModal}
+        onClose={() => setShowKeyPickerModal(false)}
+        studyUID={studyUID}
+        attachedSnapshots={attachedSnapshots}
+        onSelectImage={(snap) => {
+          setAttachedSnapshots(prev => {
+            if (prev.some(s => s.instance_id === snap.instance_id || s.preview_url === snap.preview_url)) return prev;
+            return [...prev, snap];
+          });
+        }}
+      />
     </div>
   );
 }

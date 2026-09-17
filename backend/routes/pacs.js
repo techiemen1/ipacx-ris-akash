@@ -357,9 +357,28 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
       const uniquePorts = [...new Set(ports)];
 
       for (const port of uniquePorts) {
+        let targetStudyUID = studyUID;
+        let targetSeriesUID = seriesUID;
+
+        // Auto-discover studyUID & seriesUID for instanceId if not provided in query params
+        if (!targetStudyUID || !targetSeriesUID) {
+          try {
+            const searchUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/instances?SOPInstanceUID=${instanceId}`;
+            const sRes = await axios.get(searchUrl, {
+              ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+              headers: { Accept: "application/dicom+json" },
+              timeout: 3000
+            });
+            if (Array.isArray(sRes.data) && sRes.data.length > 0) {
+              targetStudyUID = sRes.data[0]["0020000D"]?.Value?.[0];
+              targetSeriesUID = sRes.data[0]["0020000E"]?.Value?.[0];
+            }
+          } catch (e) {}
+        }
+
         // A) WADO-URI lookup if studyUID & seriesUID available
-        if (studyUID && seriesUID) {
-          const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${studyUID}&seriesUID=${seriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
+        if (targetStudyUID && targetSeriesUID) {
+          const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${targetStudyUID}&seriesUID=${targetSeriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
           try {
             const wRes = await axios.get(wadoUrl, {
               responseType: "stream",
@@ -373,9 +392,9 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
         }
 
         // B) Rendered frame RS lookup
-        if (studyUID && seriesUID) {
+        if (targetStudyUID && targetSeriesUID) {
           const frameSegment = (frame !== null && frame !== "") ? `/frames/${parseInt(frame, 10) + 1}/rendered` : "/rendered";
-          const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series/${seriesUID}/instances/${instanceId}${frameSegment}`;
+          const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${targetStudyUID}/series/${targetSeriesUID}/instances/${instanceId}${frameSegment}`;
           try {
             const rRes = await axios.get(renderedUrl, {
               responseType: "stream",

@@ -43,10 +43,12 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
   const currentSeries = seriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || seriesList[0];
 
   const handlePick = (inst) => {
+    const pUrl = inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(selectedSeriesId)}`;
     const snapObj = {
       id: `snap_picker_${Date.now()}_${inst.slice_number}`,
       instance_id: inst.instance_id,
-      preview_url: inst.preview_url,
+      preview_url: pUrl,
+      previewUrl: pUrl,
       caption: inst.caption || `Series ${currentSeries?.series_number || 1}: ${currentSeries?.series_description || ''} (Slice ${inst.slice_number}/${currentSeries?.total_slices || 1})`
     };
 
