@@ -2,9 +2,38 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 
+async function ensureClinicsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS clinics (
+      id SERIAL PRIMARY KEY,
+      code VARCHAR(50) UNIQUE NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      ae_title VARCHAR(100),
+      institution_name VARCHAR(255),
+      address TEXT,
+      phone VARCHAR(50),
+      header_text TEXT,
+      footer_text TEXT,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS mrn_prefix VARCHAR(50) DEFAULT 'MRN';
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS mrn_format VARCHAR(50) DEFAULT '{PREFIX}-{YY}{MM}-{SEQ}';
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS mrn_next_seq INTEGER DEFAULT 1001;
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS nabh_id VARCHAR(100);
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS nabl_id VARCHAR(100);
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS registration_no VARCHAR(100);
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS logo_url TEXT;
+  `).catch(() => {});
+}
+
 // GET /api/clinics - Fetch all active clinics with full details
 router.get("/", async (req, res) => {
   try {
+    await ensureClinicsTable();
     const result = await pool.query(
       `SELECT id, code, name, ae_title, institution_name, address, phone, email, 
               header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq, is_active,
@@ -22,6 +51,7 @@ router.get("/", async (req, res) => {
 // GET /api/clinics/active - Fetch default active hospital/clinic for report header letterhead
 router.get("/active", async (req, res) => {
   try {
+    await ensureClinicsTable();
     const result = await pool.query(
       `SELECT id, code, name, ae_title, institution_name, address, phone, email, 
               header_text, footer_text, mrn_prefix, mrn_format, mrn_next_seq,
@@ -69,6 +99,7 @@ router.get("/active", async (req, res) => {
 // GET /api/clinics/user-clinics - Fetch clinics assigned to user
 router.get("/user-clinics", async (req, res) => {
   try {
+    await ensureClinicsTable();
     const username = req.user?.username || req.user?.name || "admin";
     const userRes = await pool.query(
       "SELECT role, assigned_clinics FROM users WHERE username = $1 LIMIT 1",

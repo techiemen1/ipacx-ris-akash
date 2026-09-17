@@ -33,6 +33,7 @@ async function ensureMwlTargetsTable() {
       id SERIAL PRIMARY KEY,
       modality_code VARCHAR(16) NOT NULL UNIQUE,
       target_pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
+      pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
       orthanc_modality_name VARCHAR(64),
       manual_host VARCHAR(128),
       manual_port INTEGER,
@@ -48,6 +49,20 @@ async function ensureMwlTargetsTable() {
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS target_pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL;
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL;
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS orthanc_modality_name VARCHAR(64);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER;
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_protocol VARCHAR(16);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_calling_ae VARCHAR(64);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCHAR(64);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32);
+    ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256);
+  `).catch(() => {});
 }
 
 router.get("/options", async (req, res) => {
@@ -75,7 +90,8 @@ router.get("/", async (req, res) => {
       SELECT
         t.id,
         t.modality_code,
-        t.target_pacs_id,
+        COALESCE(t.target_pacs_id, t.pacs_id) AS target_pacs_id,
+        COALESCE(t.target_pacs_id, t.pacs_id) AS pacs_id,
         t.orthanc_modality_name,
         t.manual_host,
         t.manual_port,
@@ -93,7 +109,7 @@ router.get("/", async (req, res) => {
         p.ip_address,
         p.port
       FROM mwl_modality_targets t
-      LEFT JOIN pacs p ON p.id = t.target_pacs_id
+      LEFT JOIN pacs p ON p.id = COALESCE(t.target_pacs_id, t.pacs_id)
       ORDER BY t.modality_code ASC
     `);
     return res.json({ success: true, data: result.rows });

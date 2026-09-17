@@ -39,22 +39,33 @@ class PacsRepository extends BaseRepository {
       return result.rows[0] || null;
     }
 
-    const result = await this.query(
-      `INSERT INTO pacs (pacs_name, pacs_type, ae_title, ip_address, port, username, password)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (ae_title)
-       DO UPDATE SET
-          pacs_name = EXCLUDED.pacs_name,
-          pacs_type = EXCLUDED.pacs_type,
-          ip_address = EXCLUDED.ip_address,
-          port = EXCLUDED.port,
-          username = EXCLUDED.username,
-          password = EXCLUDED.password,
-          updated_at = NOW()
-       RETURNING *`,
-      [pacs_name, pacs_type, ae_title, ip_address, port, username, password]
-    );
-    return result.rows[0];
+    try {
+      const result = await this.query(
+        `INSERT INTO pacs (pacs_name, pacs_type, ae_title, ip_address, port, username, password)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (ae_title)
+         DO UPDATE SET
+            pacs_name = EXCLUDED.pacs_name,
+            pacs_type = EXCLUDED.pacs_type,
+            ip_address = EXCLUDED.ip_address,
+            port = EXCLUDED.port,
+            username = EXCLUDED.username,
+            password = EXCLUDED.password,
+            updated_at = NOW()
+         RETURNING *`,
+        [pacs_name, pacs_type, ae_title, ip_address, port, username, password]
+      );
+      return result.rows[0];
+    } catch (err) {
+      // Fallback insert if ON CONFLICT (ae_title) constraint is missing
+      const result = await this.query(
+        `INSERT INTO pacs (pacs_name, pacs_type, ae_title, ip_address, port, username, password)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         RETURNING *`,
+        [pacs_name, pacs_type, ae_title, ip_address, port, username, password]
+      );
+      return result.rows[0];
+    }
   }
 
   async deleteById(id) {
