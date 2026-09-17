@@ -37,14 +37,6 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     if (customOhifUrl.includes("StudyInstanceUIDs=")) {
       customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
     }
-    if (customOhifUrl.startsWith("http://") || customOhifUrl.startsWith("https://")) {
-      try {
-        const u = new URL(customOhifUrl);
-        customOhifUrl = u.pathname + u.search;
-      } catch (e) {
-        // Fallback
-      }
-    }
     const separator = customOhifUrl.includes("?") ? "&" : "?";
     return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
   }

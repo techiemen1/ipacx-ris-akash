@@ -257,11 +257,17 @@ export default function PACSpage() {
           ? res.data 
           : (Array.isArray(res.data?.data) ? res.data.data : []);
 
+        const filteredList = list.filter(p => {
+          const pType = String(p.pacs_type || "").toUpperCase();
+          const ae = String(p.ae_title || p.pacs_name || "").toUpperCase();
+          return pType !== "MWL" && !ae.includes("MWL") && !pType.includes("MWL");
+        });
+
         const allNodePill = { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
         let nodePills = [];
 
-        if (list.length > 0) {
-          nodePills = [allNodePill, ...list];
+        if (filteredList.length > 0) {
+          nodePills = [allNodePill, ...filteredList];
         } else {
           nodePills = [
             allNodePill,

@@ -682,6 +682,55 @@ function getMeasurementsForModality(tags = {}, requestedModality = "", extraCont
   };
 }
 
+function parseContentSequence(sequence, tags) {
+  if (!Array.isArray(sequence)) return;
+  sequence.forEach((node) => {
+    const conceptName = node["0040A043"]?.Value?.[0]?.["00080104"]?.Value?.[0] ||
+                        node["0040A043"]?.Value?.[0]?.["00080100"]?.Value?.[0];
+    let val = null;
+    if (node["0040A300"]?.Value?.[0]?.["0040A30A"]?.Value?.[0]) {
+      val = node["0040A300"].Value[0]["0040A30A"].Value[0];
+    } else if (node["0040A160"]?.Value?.[0]) {
+      val = node["0040A160"].Value[0];
+    }
+
+    if (conceptName && val !== null && val !== undefined) {
+      tags[conceptName] = val;
+    }
+
+    if (node["0040A730"]?.Value) {
+      parseContentSequence(node["0040A730"].Value, tags);
+    }
+  });
+}
+
+function convertDcm4cheeMetadataToTags(dcmJsonList) {
+  const tags = {};
+  if (!Array.isArray(dcmJsonList) || dcmJsonList.length === 0) return tags;
+
+  dcmJsonList.forEach((item) => {
+    if (item["00100010"]?.Value?.[0]) {
+      const pName = item["00100010"].Value[0];
+      tags["PatientName"] = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : pName;
+    }
+    if (item["00100020"]?.Value?.[0]) tags["PatientID"] = item["00100020"].Value[0];
+    if (item["00100040"]?.Value?.[0]) tags["PatientSex"] = item["00100040"].Value[0];
+    if (item["00101010"]?.Value?.[0]) tags["PatientAge"] = item["00101010"].Value[0];
+    if (item["00080050"]?.Value?.[0]) tags["AccessionNumber"] = item["00080050"].Value[0];
+    if (item["00080060"]?.Value?.[0]) tags["Modality"] = item["00080060"].Value[0];
+    if (item["00081030"]?.Value?.[0]) tags["StudyDescription"] = item["00081030"].Value[0];
+    if (item["00181030"]?.Value?.[0]) tags["ProtocolName"] = item["00181030"].Value[0];
+    if (item["00080070"]?.Value?.[0]) tags["Manufacturer"] = item["00080070"].Value[0];
+    if (item["00180015"]?.Value?.[0]) tags["BodyPartExamined"] = item["00180015"].Value[0];
+
+    if (item["0040A730"]?.Value) {
+      parseContentSequence(item["0040A730"].Value, tags);
+    }
+  });
+
+  return tags;
+}
+
 router.get("/measurements/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
@@ -707,11 +756,49 @@ router.get("/measurements/:studyUID", async (req, res) => {
       const instancesRes = await axios.get(`${orthancUrl}studies/${orthancId}/instances`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
       const instances = instancesRes.data || [];
 
-      if (instances.length > 0) {
-        const firstInst = instances[0];
-        const instId = typeof firstInst === "string" ? firstInst : firstInst.ID;
+      for (const inst of instances) {
+        const instId = typeof inst === "string" ? inst : inst.ID;
         const tagsRes = await axios.get(`${orthancUrl}instances/${instId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: {} }));
-        tags = tagsRes.data || {};
+        const curTags = tagsRes.data || {};
+        Object.assign(tags, curTags);
+
+        if (curTags["Modality"] === "SR" || String(curTags["SOPClassUID"]).includes("88.")) {
+          try {
+            const srRes = await axios.get(`${orthancUrl}instances/${instId}/content`, { ...orthancAuthConfig(), timeout: 4000 });
+            if (srRes.data && typeof srRes.data === "object") Object.assign(tags, srRes.data);
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (!tags["PatientName"] && !tags["Modality"]) {
+      try {
+        const activePacs = await pacsService.repository.findActive().catch(() => []);
+        const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+
+        for (const pacs of dcm4cheeNodes) {
+          const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
+          const uniquePorts = [...new Set(ports)];
+
+          for (const port of uniquePorts) {
+            const metadataUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
+            try {
+              const res = await axios.get(metadataUrl, {
+                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
+                headers: { Accept: "application/dicom+json" },
+                timeout: 5000
+              });
+              if (Array.isArray(res.data) && res.data.length > 0) {
+                const dcmTags = convertDcm4cheeMetadataToTags(res.data);
+                Object.assign(tags, dcmTags);
+                break;
+              }
+            } catch (e) {}
+          }
+          if (tags["PatientName"]) break;
+        }
+      } catch (e) {
+        console.warn("[PACS Measurements] DCM4CHEE metadata fetch fallback failed:", e.message);
       }
     }
 
