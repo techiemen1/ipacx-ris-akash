@@ -125,7 +125,9 @@ export default function ReportingPage() {
       if (res.data?.success && res.data.locks) {
         setActiveLocks(res.data.locks);
       }
-    } catch (e) {}
+    } catch (e) {
+      /* ignore lock fetch failure */
+    }
   };
 
   const fetchData = async () => {

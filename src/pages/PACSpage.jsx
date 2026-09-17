@@ -144,7 +144,9 @@ export default function PACSpage() {
       if (res.data?.success && res.data.locks) {
         setActiveLocks(res.data.locks);
       }
-    } catch (e) {}
+    } catch (e) {
+      /* ignore lock fetch failure */
+    }
   };
 
   useEffect(() => {

@@ -167,12 +167,16 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     // Maintain 10-second heartbeat
     const hbInterval = setInterval(() => {
-      api.post("/api/reports/session/heartbeat", { studyUID, userId }).catch(() => {});
+      api.post("/api/reports/session/heartbeat", { studyUID, userId }).catch(() => {
+        /* ignore heartbeat failure */
+      });
     }, 10000);
 
     return () => {
       clearInterval(hbInterval);
-      api.post("/api/reports/session/unlock", { studyUID, userId }).catch(() => {});
+      api.post("/api/reports/session/unlock", { studyUID, userId }).catch(() => {
+        /* ignore unlock failure */
+      });
     };
   }, [studyUID]);
 
