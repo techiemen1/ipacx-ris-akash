@@ -178,6 +178,36 @@ class PacsService {
       }, {})
     );
 
+    function parseDicomTs(dateStr, timeStr) {
+      if (!dateStr) return 0;
+      const s = String(dateStr).trim().replace(/\./g, "").replace(/-/g, "");
+      if (/^\d{8}$/.test(s)) {
+        const yyyy = s.slice(0, 4);
+        const mm = s.slice(4, 6);
+        const dd = s.slice(6, 8);
+        let t = "00:00:00";
+        if (timeStr && String(timeStr).trim().length >= 4) {
+          const ts = String(timeStr).trim().replace(/:/g, "");
+          const hh = ts.slice(0, 2) || "00";
+          const min = ts.slice(2, 4) || "00";
+          const sec = ts.slice(4, 6) || "00";
+          t = `${hh}:${min}:${sec}`;
+        }
+        const iso = `${yyyy}-${mm}-${dd}T${t}`;
+        const timestamp = new Date(iso).getTime();
+        return isNaN(timestamp) ? 0 : timestamp;
+      }
+      const d = new Date(dateStr);
+      const timestamp = d.getTime();
+      return isNaN(timestamp) ? 0 : timestamp;
+    }
+
+    unique.sort((a, b) => {
+      const tsA = parseDicomTs(a.StudyDate || a.study_date, a.StudyTime || a.study_time);
+      const tsB = parseDicomTs(b.StudyDate || b.study_date, b.StudyTime || b.study_time);
+      return tsB - tsA;
+    });
+
     if (unique.length > 0) {
       await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 45));
     }

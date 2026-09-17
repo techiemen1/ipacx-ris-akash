@@ -32,23 +32,26 @@ function formatPatientName(name) {
 
 function parseDicomDateTime(dateStr, timeStr) {
   if (!dateStr) return 0;
-  const s = String(dateStr).trim();
+  const s = String(dateStr).trim().replace(/\./g, "").replace(/-/g, "");
 
   if (/^\d{8}$/.test(s)) {
     const yyyy = s.slice(0, 4);
     const mm = s.slice(4, 6);
     const dd = s.slice(6, 8);
     let t = "00:00:00";
-    if (timeStr && String(timeStr).trim().length >= 6) {
-      const ts = String(timeStr).trim();
-      t = `${ts.slice(0, 2)}:${ts.slice(2, 4)}:${ts.slice(4, 6)}`;
+    if (timeStr && String(timeStr).trim().length >= 4) {
+      const ts = String(timeStr).trim().replace(/:/g, "");
+      const hh = ts.slice(0, 2) || "00";
+      const min = ts.slice(2, 4) || "00";
+      const sec = ts.slice(4, 6) || "00";
+      t = `${hh}:${min}:${sec}`;
     }
     const iso = `${yyyy}-${mm}-${dd}T${t}`;
     const timestamp = new Date(iso).getTime();
     return isNaN(timestamp) ? 0 : timestamp;
   }
 
-  const d = new Date(s);
+  const d = new Date(dateStr);
   const timestamp = d.getTime();
   return isNaN(timestamp) ? 0 : timestamp;
 }
@@ -123,10 +126,16 @@ export default function ReportingPage() {
 
       const savedPacs = sessionStorage.getItem("activePacs");
       const pacsObj = savedPacs ? JSON.parse(savedPacs) : null;
-      const pacsId = pacsObj?.id || 1;
+      const pacsId = pacsObj?.id || "all";
 
-      const { data: studiesData } = await api.get("/api/pacs/studies", { params: { pacs_id: pacsId } }).catch(() => ({ data: [] }));
-      const studiesList = Array.isArray(studiesData) ? studiesData : [];
+      const { data: studiesData } = await api.get("/api/pacs/studies", { params: { pacs_id: pacsId, refresh: "true" } }).catch(() => ({ data: [] }));
+      let studiesList = Array.isArray(studiesData) ? studiesData : (Array.isArray(studiesData?.data) ? studiesData.data : []);
+
+      if (studiesList.length === 0) {
+        const fallbackRes = await api.get("/api/pacs/studies", { params: { refresh: "true" } }).catch(() => ({ data: [] }));
+        studiesList = Array.isArray(fallbackRes.data) ? fallbackRes.data : (Array.isArray(fallbackRes.data?.data) ? fallbackRes.data.data : []);
+      }
+
       setStudies(studiesList);
     } catch (err) {
       console.error("Failed to load worklist data:", err);

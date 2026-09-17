@@ -40,23 +40,26 @@ const safeLower = (v) => String(v ?? "").toLowerCase();
 
 function parseDicomDateTime(dateStr, timeStr) {
   if (!dateStr) return 0;
-  const s = String(dateStr).trim();
+  const s = String(dateStr).trim().replace(/\./g, "").replace(/-/g, "");
 
   if (/^\d{8}$/.test(s)) {
     const yyyy = s.slice(0, 4);
     const mm = s.slice(4, 6);
     const dd = s.slice(6, 8);
     let t = "00:00:00";
-    if (timeStr && String(timeStr).trim().length >= 6) {
-      const ts = String(timeStr).trim();
-      t = `${ts.slice(0, 2)}:${ts.slice(2, 4)}:${ts.slice(4, 6)}`;
+    if (timeStr && String(timeStr).trim().length >= 4) {
+      const ts = String(timeStr).trim().replace(/:/g, "");
+      const hh = ts.slice(0, 2) || "00";
+      const min = ts.slice(2, 4) || "00";
+      const sec = ts.slice(4, 6) || "00";
+      t = `${hh}:${min}:${sec}`;
     }
     const iso = `${yyyy}-${mm}-${dd}T${t}`;
     const timestamp = new Date(iso).getTime();
     return isNaN(timestamp) ? 0 : timestamp;
   }
 
-  const d = new Date(s);
+  const d = new Date(dateStr);
   const timestamp = d.getTime();
   return isNaN(timestamp) ? 0 : timestamp;
 }
@@ -194,14 +197,14 @@ export default function PACSpage() {
   };
 
   async function loadStudies(pacs, forceRefresh = false) {
-    const targetPacs = pacs || { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
+    const targetPacs = pacs || { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
     setActivePacs(targetPacs);
     sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
     setLoading(true);
     setCurrentPage(1);
 
     try {
-      const params = { pacs_id: targetPacs.id || "orthanc" };
+      const params = { pacs_id: targetPacs.id || "all" };
       if (forceRefresh) params.refresh = "true";
 
       const res = await api.get("/api/pacs/studies", { params }).catch(() => ({ data: [] }));
@@ -209,7 +212,7 @@ export default function PACSpage() {
         ? res.data 
         : (Array.isArray(res.data?.data) ? res.data.data : (Array.isArray(res.data?.studies) ? res.data.studies : []));
 
-      if (studiesList.length === 0 && String(targetPacs.pacs_type).toUpperCase() !== "ORTHANC") {
+      if (studiesList.length === 0 && targetPacs.id !== "all" && String(targetPacs.pacs_type).toUpperCase() !== "ORTHANC") {
         const orthancRes = await api.get("/api/pacs/studies", { params: { pacs_id: "orthanc", refresh: forceRefresh ? "true" : undefined } }).catch(() => ({ data: [] }));
         const fallbackList = Array.isArray(orthancRes.data)
           ? orthancRes.data
@@ -231,7 +234,10 @@ export default function PACSpage() {
 
       const processed = studiesList.map(s => ({
         ...s,
-        raw_timestamp: parseDicomDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time)
+        raw_timestamp: parseDicomDateTime(
+          s.StudyDate || s.study_date || s.created_at || s.timestamp,
+          s.StudyTime || s.study_time
+        )
       }));
 
       processed.sort((a, b) => (b.raw_timestamp || 0) - (a.raw_timestamp || 0));
@@ -246,11 +252,24 @@ export default function PACSpage() {
   useEffect(() => {
     async function initPacsServers() {
       try {
-        const res = await api.get("/api/mwl-targets").catch(() => ({ data: [] }));
+        const res = await api.get("/api/pacs").catch(() => ({ data: [] }));
         const list = Array.isArray(res.data) 
           ? res.data 
           : (Array.isArray(res.data?.data) ? res.data.data : []);
-        setPacsServers(list);
+
+        const allNodePill = { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
+        let nodePills = [];
+
+        if (list.length > 0) {
+          nodePills = [allNodePill, ...list];
+        } else {
+          nodePills = [
+            allNodePill,
+            { id: "orthanc", ae_title: "ORTHANC", pacs_name: "Default Orthanc", pacs_type: "ORTHANC", is_default: true }
+          ];
+        }
+
+        setPacsServers(nodePills);
 
         const saved = sessionStorage.getItem("activePacs");
         let initialPacs = null;
@@ -262,20 +281,14 @@ export default function PACSpage() {
           }
         }
 
-        if (!initialPacs && list.length > 0) {
-          initialPacs = list.find((s) => String(s.pacs_type).toUpperCase() === "ORTHANC") ||
-                        list.find((s) => s.is_default) ||
-                        list[0];
-        }
-
         if (!initialPacs) {
-          initialPacs = { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
+          initialPacs = allNodePill;
         }
 
         loadStudies(initialPacs, true);
       } catch (err) {
         console.error("Failed to init PACS servers:", err);
-        const fallback = { id: "orthanc", ae_title: "ORTHANC", pacs_type: "ORTHANC", is_default: true };
+        const fallback = { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
         loadStudies(fallback, true);
       }
     }
