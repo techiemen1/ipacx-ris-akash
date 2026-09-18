@@ -268,7 +268,7 @@ export default function ReportingPage() {
   }, [studies, reports]);
 
   const filteredWorklist = useMemo(() => {
-    return mergedWorklist.filter(item => {
+    const list = mergedWorklist.filter(item => {
       const q = searchText.toLowerCase().trim();
       const matchSearch =
         !q ||
