@@ -283,13 +283,13 @@ function PatientList() {
       });
     }
 
-    if (dateQuickFilter !== "ALL" || fromDate || toDate) {
+    if (dateQuickFilter !== "ALL") {
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
       result = result.filter((p) => {
         const ts = getPatientTimestamp(p);
-        if (!ts) return dateQuickFilter === "ALL" && !fromDate && !toDate;
+        if (!ts) return false;
 
         if (dateQuickFilter === "TODAY") {
           return ts >= todayStart;
@@ -300,9 +300,7 @@ function PatientList() {
           return ts >= todayStart - 7 * 86400000;
         } else if (dateQuickFilter === "30DAYS") {
           return ts >= todayStart - 30 * 86400000;
-        }
-
-        if (fromDate || toDate) {
+        } else if (dateQuickFilter === "CUSTOM") {
           let valid = true;
           if (fromDate) {
             const fTs = new Date(fromDate).getTime();

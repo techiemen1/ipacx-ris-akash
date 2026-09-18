@@ -151,7 +151,9 @@ export default function ReportingPage() {
         return `${yyyy}${mm}${dd}`;
       };
 
-      if (fDate || tDate) {
+      if (qFilter === "ALL") {
+        // All Time: Omit date range parameters to fetch all historical studies
+      } else if (qFilter === "CUSTOM") {
         if (fDate) params.startDate = fDate.replace(/-/g, "");
         if (tDate) params.endDate = tDate.replace(/-/g, "");
       } else if (qFilter === "TODAY") {
@@ -172,6 +174,9 @@ export default function ReportingPage() {
         d30.setDate(d30.getDate() - 30);
         params.startDate = formatYMD(d30);
         params.endDate = formatYMD(now);
+      } else if (fDate || tDate) {
+        if (fDate) params.startDate = fDate.replace(/-/g, "");
+        if (tDate) params.endDate = tDate.replace(/-/g, "");
       }
 
       if (qText) params.patientName = qText;
@@ -278,7 +283,7 @@ export default function ReportingPage() {
       let matchDate = true;
       const recordTs = item.raw_timestamp || parseDicomDateTime(item.study_date, item.study_time);
 
-      if (recordTs && (fromDate || toDate || dateQuickFilter !== "ALL")) {
+      if (recordTs) {
         const recordDate = new Date(recordTs);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -298,9 +303,7 @@ export default function ReportingPage() {
           const d30 = new Date(today);
           d30.setDate(d30.getDate() - 30);
           matchDate = recordDate >= d30;
-        }
-
-        if (matchDate && (fromDate || toDate)) {
+        } else if (dateQuickFilter === "CUSTOM") {
           if (fromDate) {
             const fDate = new Date(fromDate);
             fDate.setHours(0, 0, 0, 0);
@@ -443,10 +446,15 @@ export default function ReportingPage() {
                 const val = e.target.value;
                 setDateQuickFilter(val);
                 setCurrentPage(1);
+                let f = fromDate;
+                let t = toDate;
                 if (val !== "CUSTOM") {
+                  f = "";
+                  t = "";
                   setFromDate("");
                   setToDate("");
                 }
+                fetchData(f, t, val, searchText, filterModality);
               }}
               className="rp-select"
             >
@@ -464,9 +472,11 @@ export default function ReportingPage() {
                 value={fromDate}
                 title="From Date"
                 onChange={(e) => {
-                  setFromDate(e.target.value);
+                  const val = e.target.value;
+                  setFromDate(val);
                   setDateQuickFilter("CUSTOM");
                   setCurrentPage(1);
+                  fetchData(val, toDate, "CUSTOM", searchText, filterModality);
                 }}
               />
               <span className="rp-date-sep">to</span>
@@ -475,21 +485,27 @@ export default function ReportingPage() {
                 value={toDate}
                 title="To Date"
                 onChange={(e) => {
-                  setToDate(e.target.value);
+                  const val = e.target.value;
+                  setToDate(val);
                   setDateQuickFilter("CUSTOM");
                   setCurrentPage(1);
+                  fetchData(fromDate, val, "CUSTOM", searchText, filterModality);
                 }}
               />
-              {(fromDate || toDate || dateQuickFilter !== "ALL") && (
+              {(fromDate || toDate || dateQuickFilter !== "ALL" || searchText || filterModality || filterStatus) && (
                 <button
                   onClick={() => {
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
+                    setSearchText("");
+                    setFilterModality("");
+                    setFilterStatus("");
                     setCurrentPage(1);
+                    fetchData("", "", "ALL", "", "");
                   }}
                   className="rp-date-reset"
-                  title="Reset date filter"
+                  title="Reset filters"
                 >
                   Reset
                 </button>

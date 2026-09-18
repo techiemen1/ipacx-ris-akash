@@ -899,15 +899,18 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
     const currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
-    const currentSliceNum = overrideSliceNum !== null 
+    
+    // Resolve detected slice candidate
+    const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
           snapResult?.sliceNumber || 
           (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 
-          (pickerSliceNum && pickerSliceNum > 1 ? pickerSliceNum : null) || 
           (targetSliceNumber && parseInt(targetSliceNumber, 10) > 1 ? parseInt(targetSliceNumber, 10) : null) ||
-          1
+          (pickerSliceNum && parseInt(pickerSliceNum, 10) > 1 ? parseInt(pickerSliceNum, 10) : null) ||
+          null
         );
+
     const detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
 
     const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
@@ -930,14 +933,20 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     const totalSlices = detectedTotal || (seriesObj?.total_slices) || (activeViewportInfo?.totalSlices) || 1;
 
-    let displaySliceNum = currentSliceNum || snapResult?.sliceNumber || snapResult?.instanceNumber || 1;
-    if (isNaN(displaySliceNum) || displaySliceNum < 1) {
-      displaySliceNum = 1;
+    let displaySliceNum = detectedSlice;
+    let isDefaultedSlice = false;
+
+    if (!displaySliceNum || isNaN(displaySliceNum) || displaySliceNum < 1) {
+      isDefaultedSlice = true;
+      // Mid-series fallback if slice detection unavailable for multi-slice series
+      displaySliceNum = totalSlices > 2 ? Math.round(totalSlices / 2) : 1;
     }
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
 
     const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || activeViewportInfo?.seriesDescription || "Diagnostic Series";
-    const fullCaption = totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`;
+    const fullCaption = isDefaultedSlice && capturedDataUrl
+      ? `${seriesDesc} | Active Viewport Image`
+      : (totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`);
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {

@@ -299,7 +299,7 @@ router.post("/settings", asyncHandler(async (req, res) => {
 }));
 
 router.get("/studies", asyncHandler(async (req, res) => {
-  const { startDate, endDate, patientId, patientName, accessionNumber, modality, pacs_id, refresh, force, forceAll } = req.query;
+  const { startDate, endDate, patientId, patientName, accessionNumber, modality, pacs_id, refresh, force, forceAll, searchQuery, query, q, search, description } = req.query;
   const forceRefresh = refresh === "true" || force === "true";
   const studies = await pacsService.listActiveStudies({
     startDate,
@@ -310,7 +310,9 @@ router.get("/studies", asyncHandler(async (req, res) => {
     modality,
     pacsId: pacs_id,
     forceRefresh,
-    forceAll: forceAll === "true"
+    forceAll: forceAll === "true",
+    searchQuery: searchQuery || query || q || search,
+    description
   });
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");

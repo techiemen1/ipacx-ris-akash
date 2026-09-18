@@ -234,7 +234,9 @@ export default function PACSpage() {
         return `${yyyy}${mm}${dd}`;
       };
 
-      if (fDate || tDate) {
+      if (qFilter === "ALL") {
+        // All Time: Omit date range parameters to fetch all historical studies
+      } else if (qFilter === "CUSTOM") {
         if (fDate) params.startDate = fDate.replace(/-/g, "");
         if (tDate) params.endDate = tDate.replace(/-/g, "");
       } else if (qFilter === "TODAY") {
@@ -255,6 +257,9 @@ export default function PACSpage() {
         d30.setDate(d30.getDate() - 30);
         params.startDate = formatYMD(d30);
         params.endDate = formatYMD(now);
+      } else if (fDate || tDate) {
+        if (fDate) params.startDate = fDate.replace(/-/g, "");
+        if (tDate) params.endDate = tDate.replace(/-/g, "");
       }
 
       if (currentFilters?.patientName) params.patientName = currentFilters.patientName;
@@ -533,7 +538,7 @@ export default function PACSpage() {
       let matchDate = true;
       const recordTs = s.raw_timestamp || parseDicomDateTime(s.StudyDate || s.study_date, s.StudyTime || s.study_time);
 
-      if (recordTs && (fromDate || toDate || dateQuickFilter !== "ALL")) {
+      if (recordTs) {
         const recordDate = new Date(recordTs);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -553,9 +558,7 @@ export default function PACSpage() {
           const d30 = new Date(today);
           d30.setDate(d30.getDate() - 30);
           matchDate = recordDate >= d30;
-        }
-
-        if (matchDate && (fromDate || toDate)) {
+        } else if (dateQuickFilter === "CUSTOM") {
           if (fromDate) {
             const fDate = new Date(fromDate);
             fDate.setHours(0, 0, 0, 0);
@@ -765,17 +768,19 @@ export default function PACSpage() {
                   loadStudies(activePacs, true, fromDate, val, "CUSTOM", filters);
                 }}
               />
-              {(fromDate || toDate || dateQuickFilter !== "ALL") && (
+              {(fromDate || toDate || dateQuickFilter !== "ALL" || filters.patientName || filters.modality) && (
                 <button
                   onClick={() => {
+                    const emptyFilters = { patientId: "", patientName: "", accession: "", modality: "" };
+                    setFilters(emptyFilters);
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
                     setCurrentPage(1);
-                    loadStudies(activePacs, true, "", "", "ALL", filters);
+                    loadStudies(activePacs, true, "", "", "ALL", emptyFilters);
                   }}
                   className="pacs-date-reset"
-                  title="Reset date filter"
+                  title="Reset filters"
                 >
                   Reset
                 </button>

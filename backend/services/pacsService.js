@@ -270,21 +270,10 @@ class PacsService {
       payload.Query.StudyDate = `-${cleanEnd}`;
     }
 
-    const textQ = searchQuery || patientName || patientId;
-    if (textQ && textQ.trim().length > 0) {
-      const qVal = textQ.trim();
-      if (/^\d+$/.test(qVal)) {
-        payload.Query.PatientID = `*${qVal}*`;
-      } else {
-        payload.Query.PatientName = `*${qVal}*`;
-      }
-    } else {
-      if (patientId) payload.Query.PatientID = `*${patientId}*`;
-      if (patientName) payload.Query.PatientName = `*${patientName}*`;
-    }
-
-    if (accessionNumber) payload.Query.AccessionNumber = `*${accessionNumber}*`;
-    if (modality) payload.Query.Modality = modality.toUpperCase();
+    if (patientId) payload.Query.PatientID = `*${patientId.trim()}*`;
+    if (patientName) payload.Query.PatientName = `*${patientName.trim()}*`;
+    if (accessionNumber) payload.Query.AccessionNumber = `*${accessionNumber.trim()}*`;
+    if (modality) payload.Query.Modality = modality.trim().toUpperCase();
 
     const { data: ids } = await axios.post(`${serverUrl}tools/find`, payload, config).catch(() => ({ data: [] }));
     const studies = await Promise.all(
