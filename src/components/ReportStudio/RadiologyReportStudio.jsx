@@ -1555,7 +1555,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         <div className="rs-section-card" style={{ padding: 16 }}>
           <div className="rs-section-header" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              <Camera size={16} style={{ color: "#0284c7" }} /> Attached Key Images / Snapshots ({attachedSnapshots.length})
+              <Camera size={16} style={{ color: "#0284c7" }} /> Key Images ({attachedSnapshots.length})
             </span>
             {!isReadOnly && (
               <button
@@ -1565,18 +1565,17 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                   background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                   color: "#ffffff",
                   border: "none",
-                  borderRadius: 8,
-                  padding: "7px 14px",
-                  fontSize: 12,
-                  fontWeight: 700,
+                  borderRadius: 6,
+                  padding: "5px 12px",
+                  fontSize: 11.5,
+                  fontWeight: 800,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
+                  gap: 5
                 }}
               >
-                <Camera size={14} /> 📸 Capture Active Viewer Slice
+                <Camera size={14} /> Key Image
               </button>
             )}
           </div>

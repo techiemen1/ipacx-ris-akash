@@ -1396,7 +1396,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
         <div className="rs-section-header" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-            <Camera size={16} style={{ color: "#0284c7" }} /> Attached Key Images / Snapshots ({attachedSnapshots.length})
+            <Camera size={16} style={{ color: "#0284c7" }} /> Key Images ({attachedSnapshots.length})
           </span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
@@ -1406,18 +1406,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                 color: "#ffffff",
                 border: "none",
-                borderRadius: 8,
-                padding: "7px 14px",
-                fontSize: 12,
-                fontWeight: 700,
+                borderRadius: 6,
+                padding: "5px 12px",
+                fontSize: 11.5,
+                fontWeight: 800,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.25)"
+                gap: 5
               }}
             >
-              <Camera size={14} /> 📸 Attach Key Image (Snapshot)
+              <Camera size={14} /> Key Image
             </button>
           </div>
         </div>
@@ -1576,111 +1575,147 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
       {/* TOP FLOATING ENTERPRISE WORKSTATION BAR */}
       <header className="dws-topbar" style={{
-        background: 'linear-gradient(180deg, #0f172a 0%, #090d16 100%)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        background: '#0f172a',
+        borderBottom: '1px solid #1e293b',
         padding: '8px 16px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: '8px 14px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+        gap: '8px 12px',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.4)',
         zIndex: 10000,
         flexShrink: 0
       }}>
-        {/* PATIENT DEMOGRAPHICS & DICOM TAGS BADGES */}
-        <div className="dws-patient-info" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <h2 className="dws-patient-name" style={{ fontSize: 15, fontWeight: 800, color: '#f8fafc', margin: 0, letterSpacing: '-0.2px', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ color: '#38bdf8' }}>👤</span> {study.PatientName || "Patient Study"}
-          </h2>
+        {/* PATIENT INFO */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+            👤 {study.PatientName || "Patient"}
+          </span>
           {(study.PatientAge && study.PatientAge !== "-") || (study.PatientSex && study.PatientSex !== "-") ? (
-            <span className="dws-badge" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '2px 7px', borderRadius: 4 }}>
               {[study.PatientAge !== "-" && study.PatientAge, study.PatientSex !== "-" && study.PatientSex].filter(Boolean).join(" / ")}
             </span>
           ) : null}
-          <span className="dws-badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(165, 180, 252, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#a5b4fc', background: 'rgba(165, 180, 252, 0.12)', border: '1px solid rgba(165, 180, 252, 0.3)', padding: '2px 7px', borderRadius: 4, fontFamily: 'monospace' }}>
             ID: {study.PatientID || "-"}
           </span>
-          <span className="dws-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24', background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.3)', padding: '2px 7px', borderRadius: 4 }}>
             {study.Modality || initialModality || "CR"}
           </span>
-          <span className="dws-badge" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid rgba(203, 213, 225, 0.25)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
             ACC: {study.AccessionNumber || "-"}
           </span>
         </div>
 
-        {/* VIEW SWITCHER WITH QUICK DOCKING RATIOS */}
-        <div className="dws-mode-switcher" style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#0f172a', padding: '3px 6px', borderRadius: 10, border: '1px solid #334155' }}>
+        {/* VIEW RATIO BUTTONS */}
+        <div style={{ display: 'flex', gap: 3, alignItems: 'center', background: '#1e293b', padding: '3px', borderRadius: 8, border: '1px solid #334155' }}>
           <button
             onClick={() => { handleSetViewMode("split"); setSplitRatio(90); }}
             className={`dws-mode-btn ${viewMode === "split" && splitRatio === 90 ? "active" : ""}`}
-            title="90% DICOM Viewer, 10% Report Studio"
+            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+            title="90% Viewer"
           >
-            🔍 90% Viewer
+            90% Viewer
           </button>
           <button
             onClick={() => { handleSetViewMode("split"); setSplitRatio(50); }}
             className={`dws-mode-btn ${viewMode === "split" && splitRatio === 50 ? "active" : ""}`}
-            title="50% Viewer / 50% Studio Split"
+            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+            title="50/50 Split"
           >
-            <Columns size={13} /> ⚡ 50/50 Split
+            50/50 Split
           </button>
           <button
             onClick={() => { handleSetViewMode("split"); setSplitRatio(10); }}
             className={`dws-mode-btn ${viewMode === "split" && splitRatio === 10 ? "active" : ""}`}
-            title="10% DICOM Viewer, 90% Report Studio"
+            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+            title="90% Studio"
           >
-            📝 90% Studio
+            90% Studio
           </button>
           <button
             onClick={() => handleSetViewMode("viewer")}
             className={`dws-mode-btn ${viewMode === "viewer" ? "active" : ""}`}
-            title="Full Screen DICOM Viewer"
+            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+            title="Viewer Only"
           >
-            <Maximize2 size={13} /> Viewer Only
+            Viewer Only
           </button>
           <button
             onClick={() => handleSetViewMode("studio")}
             className={`dws-mode-btn ${viewMode === "studio" ? "active" : ""}`}
-            title="Full Screen Report Studio"
+            style={{ padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+            title="Studio Only"
           >
-            <FileText size={13} /> Studio Only
+            Studio Only
           </button>
         </div>
 
-        {/* TOP ACTIONS & CLOSE BUTTON */}
-        <div className="dws-top-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', color: '#ffffff', fontWeight: 800, boxShadow: '0 2px 8px rgba(2, 132, 199, 0.4)' }} title="Instantly capture and attach currently viewed DICOM viewer slice as key image to report">
-            <Camera size={14} /> 📸 Attach Key Image (Snapshot)
+        {/* ACTION BUTTONS */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => handleAttachTargetSlice()}
+            style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '6px 12px',
+              fontSize: 11.5,
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+            title="Capture current viewer slice image to report"
+          >
+            <Camera size={14} /> Key Image
           </button>
 
-          <button onClick={() => setShowPrintModal(true)} className="dws-btn dws-btn-dark">
-            <Printer size={14} /> Print Preview
+          <button onClick={() => setShowPrintModal(true)} className="dws-btn dws-btn-dark" style={{ padding: '6px 10px', fontSize: 11.5 }}>
+            <Printer size={13} /> Print
           </button>
 
-          <button onClick={autoFillDicomSR} disabled={isSyncingSR} className="dws-btn dws-btn-dark">
-            <Zap size={14} /> {isSyncingSR ? "Syncing..." : "Auto-Fill SR"}
+          <button onClick={autoFillDicomSR} disabled={isSyncingSR} className="dws-btn dws-btn-dark" style={{ padding: '6px 10px', fontSize: 11.5 }}>
+            <Zap size={13} /> {isSyncingSR ? "Sync..." : "Auto-SR"}
           </button>
 
           {canEditReport ? (
             <>
-              <button onClick={() => handleSaveReport("Draft")} className="dws-btn dws-btn-dark">
-                <Save size={14} /> Save Draft
+              <button onClick={() => handleSaveReport("Draft")} className="dws-btn dws-btn-dark" style={{ padding: '6px 10px', fontSize: 11.5 }}>
+                <Save size={13} /> Save Draft
               </button>
 
-              <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }}>
-                <CheckCircle size={14} /> Final Sign-Off
+              <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald" style={{ padding: '6px 12px', fontSize: 11.5, background: '#059669' }}>
+                <CheckCircle size={13} /> Sign-Off
               </button>
             </>
           ) : (
-            <span style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 700 }}>
-              🔒 Read-Only Access ({userRole || "STAFF"})
+            <span style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', padding: '4px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+              Read-Only
             </span>
           )}
 
-          {/* ❌ PROMINENT CLOSE BUTTON */}
-          <button onClick={onClose} className="dws-btn-close" title="Close Workstation (Esc)">
-            <X size={18} /> CLOSE WORKSTATION
+          <button
+            onClick={onClose}
+            style={{
+              background: '#ef4444',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: 6,
+              padding: '6px 10px',
+              fontSize: 12,
+              fontWeight: 900,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}
+            title="Close Workstation"
+          >
+            <X size={15} /> Close
           </button>
         </div>
       </header>

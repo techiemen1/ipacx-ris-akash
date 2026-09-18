@@ -123,10 +123,23 @@ class PacsService {
     return { success: false, message: tcpResult.error || `Could not connect to ${host}:${port}` };
   }
 
-  async listActiveStudies({ startDate, endDate, patientId, patientName, accessionNumber, modality, pacsId, forceRefresh, forceAll } = {}) {
-    const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}:${patientId || ""}:${patientName || ""}:${accessionNumber || ""}:${modality || ""}`;
+  async listActiveStudies({ startDate, endDate, patientId, patientName, accessionNumber, modality, pacsId, forceRefresh, forceAll, searchQuery, query, q, search, description } = {}) {
+    const textQuery = searchQuery || query || q || search || "";
+    const searchOpts = { 
+      startDate, 
+      endDate, 
+      patientId: patientId || (textQuery && /^\d+$/.test(textQuery) ? textQuery : ""), 
+      patientName: patientName || (textQuery && !/^\d+$/.test(textQuery) ? textQuery : ""), 
+      accessionNumber, 
+      modality, 
+      forceAll,
+      searchQuery: textQuery,
+      description 
+    };
+
+    const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}:${searchOpts.patientId || ""}:${searchOpts.patientName || ""}:${accessionNumber || ""}:${modality || ""}:${textQuery}`;
     
-    if (forceRefresh) {
+    if (forceRefresh || textQuery || (startDate && startDate !== "all")) {
       await cacheService.del("pacs:*").catch(() => {});
     } else {
       const cached = await cacheService.get(cacheKey);
@@ -142,8 +155,6 @@ class PacsService {
       const filtered = activePacs.filter(p => String(p.id) === String(pacsId) || p.ae_title === pacsId);
       if (filtered.length > 0) targetNodes = filtered;
     }
-
-    const searchOpts = { startDate, endDate, patientId, patientName, accessionNumber, modality, forceAll };
 
     for (const pacs of targetNodes) {
       try {
@@ -204,35 +215,49 @@ class PacsService {
       return isNaN(timestamp) ? 0 : timestamp;
     }
 
-    unique.sort((a, b) => {
+    let filteredStudies = unique;
+
+    if (textQuery && textQuery.trim().length > 0) {
+      const qLower = textQuery.trim().toLowerCase();
+      filteredStudies = filteredStudies.filter(s => {
+        const pName = String(s.PatientName || "").toLowerCase();
+        const pId = String(s.PatientID || "").toLowerCase();
+        const acc = String(s.AccessionNumber || "").toLowerCase();
+        const mod = String(s.Modality || "").toLowerCase();
+        const desc = String(s.StudyDescription || "").toLowerCase();
+        return pName.includes(qLower) || pId.includes(qLower) || acc.includes(qLower) || mod.includes(qLower) || desc.includes(qLower);
+      });
+    }
+
+    filteredStudies.sort((a, b) => {
       const tsA = parseDicomTs(a.StudyDate || a.study_date, a.StudyTime || a.study_time);
       const tsB = parseDicomTs(b.StudyDate || b.study_date, b.StudyTime || b.study_time);
       return tsB - tsA;
     });
 
-    if (unique.length > 0) {
-      await cacheService.set(cacheKey, unique, Number(process.env.PACS_CACHE_TTL_SECONDS || 30));
+    if (filteredStudies.length > 0) {
+      await cacheService.set(cacheKey, filteredStudies, Number(process.env.PACS_CACHE_TTL_SECONDS || 30));
     }
-    return unique;
+    return filteredStudies;
   }
 
-  async fetchOrthancStudies(pacs, { startDate, endDate, forceAll }) {
+  async fetchOrthancStudies(pacs, searchOpts = {}) {
     let serverUrl = `http://${pacs.ip_address}:${pacs.port}/`;
     if (pacs.ip_address === "localhost" || pacs.ip_address === "127.0.0.1") {
       serverUrl = await getOrthancUrl();
     }
     try {
-      return await this.fetchOrthancFromUrl(serverUrl, { startDate, endDate, forceAll });
+      return await this.fetchOrthancFromUrl(serverUrl, searchOpts);
     } catch (err) {
       console.warn(`[PacsService] Failed to fetch from ${serverUrl}, falling back to dynamic Orthanc URL:`, err.message);
       const fallbackUrl = await getOrthancUrl();
-      return this.fetchOrthancFromUrl(fallbackUrl, { startDate, endDate, forceAll });
+      return this.fetchOrthancFromUrl(fallbackUrl, searchOpts);
     }
   }
 
-  async fetchOrthancFromUrl(serverUrl, { startDate, endDate, patientId, patientName, accessionNumber, modality, forceAll } = {}) {
+  async fetchOrthancFromUrl(serverUrl, { startDate, endDate, patientId, patientName, accessionNumber, modality, searchQuery, forceAll } = {}) {
     const config = orthancAuthConfig();
-    const payload = { Level: "Study", Query: {}, Limit: 1000 };
+    const payload = { Level: "Study", Query: {}, Limit: 1000, CaseSensitive: false };
     
     let cleanStart = startDate && startDate !== "all" ? String(startDate).replace(/[^0-9]/g, "") : "";
     let cleanEnd = endDate && endDate !== "all" ? String(endDate).replace(/[^0-9]/g, "") : "";
@@ -245,8 +270,19 @@ class PacsService {
       payload.Query.StudyDate = `-${cleanEnd}`;
     }
 
-    if (patientId) payload.Query.PatientID = `*${patientId}*`;
-    if (patientName) payload.Query.PatientName = `*${patientName}*`;
+    const textQ = searchQuery || patientName || patientId;
+    if (textQ && textQ.trim().length > 0) {
+      const qVal = textQ.trim();
+      if (/^\d+$/.test(qVal)) {
+        payload.Query.PatientID = `*${qVal}*`;
+      } else {
+        payload.Query.PatientName = `*${qVal}*`;
+      }
+    } else {
+      if (patientId) payload.Query.PatientID = `*${patientId}*`;
+      if (patientName) payload.Query.PatientName = `*${patientName}*`;
+    }
+
     if (accessionNumber) payload.Query.AccessionNumber = `*${accessionNumber}*`;
     if (modality) payload.Query.Modality = modality.toUpperCase();
 
