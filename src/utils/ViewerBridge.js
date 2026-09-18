@@ -203,6 +203,50 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       return null;
     };
 
+    // 0. Direct Overlay Element InnerText Inspection (Priority 0)
+    const overlayElements = Array.from(iframeDoc.querySelectorAll(
+      '[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], [class*="viewport-overlay"], [class*="cornerstone-viewport-overlay"], [class*="vp-overlay"]'
+    )).filter(el => !isSidebarElement(el));
+
+    for (const overlayEl of overlayElements) {
+      const text = (overlayEl.innerText || overlayEl.textContent || '').trim();
+      if (!text || text.length > 250) continue;
+
+      // Match "81/453" or "81 / 453" or "(81/453)" or "Im: 81 (81/453)" or "Slice 81/453"
+      const fracMatch = text.match(/(?:slice|im|image|frame|instance|f)?\s*:?\s*(\d+)?\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
+      if (fracMatch) {
+        const instNum = fracMatch[1] ? parseInt(fracMatch[1], 10) : null;
+        const sNum = parseInt(fracMatch[2], 10);
+        const tNum = parseInt(fracMatch[3], 10);
+        if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          return {
+            instanceNumber: instNum || null,
+            sliceNumber: sNum,
+            totalSlices: tNum,
+            matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+            seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
+          };
+        }
+      }
+
+      // Match "Slice: 81" or "Im: 81" or "Frame: 81" or "I: 81"
+      const singleMatch = text.match(/(?:slice|im|image|frame|instance|i|f)\s*:?\s*(\d+)/i);
+      if (singleMatch) {
+        const sNum = parseInt(singleMatch[1], 10);
+        if (sNum > 0) {
+          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          return {
+            instanceNumber: sNum,
+            sliceNumber: sNum,
+            totalSlices: null,
+            matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+            seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
+          };
+        }
+      }
+    }
+
     // 1. Gather viewports / canvas containers outside sidebars, prioritizing active/selected canvas
     const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
       .filter(c => !isSidebarElement(c))
@@ -388,19 +432,69 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
 /**
  * Trigger active viewer viewport capture from parent window to iframe.
- * Tries same-origin canvas extraction and DOM overlay slice index detection.
+ * Tries postMessage listener RPC, same-origin canvas extraction, and DOM overlay slice index detection.
  */
 export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeriesList = []) {
   const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
   if (!iframeEl) return { dataUrl: null, instanceNumber: null, sliceNumber: null, totalSlices: null, matchedSeriesId: null, seriesDescription: null };
 
+  // Listen for iframe postMessage response with a 200ms timeout
+  const waitPostMessage = new Promise((resolve) => {
+    const handler = (event) => {
+      let data = event.data;
+      if (typeof data === 'string') {
+        try { data = JSON.parse(data); } catch (e) { return; }
+      }
+      if (!data || typeof data !== 'object') return;
+
+      if (
+        data.type === MESSAGE_TYPES.SNAPSHOT_CAPTURED ||
+        data.type === MESSAGE_TYPES.OHIF_SNAPSHOT ||
+        data.type === MESSAGE_TYPES.ADD_KEY_IMAGE ||
+        data.eventName === 'SNAPSHOT_CAPTURED' ||
+        data.type === MESSAGE_TYPES.VIEWPORT_CHANGE
+      ) {
+        const payload = data.payload || data;
+        const dUrl = payload.dataUrl || payload.imageUrl || payload.url;
+        const fNum = payload.frameNumber || payload.sliceNumber || payload.sliceIndex || payload.instanceNumber;
+        const tSlices = payload.totalSlices || payload.total_slices;
+        const sDesc = payload.seriesDescription || payload.seriesDesc;
+        const sUid = payload.seriesInstanceUid || payload.seriesInstanceUID;
+        const iNum = payload.instanceNumber || payload.sopInstanceUid;
+
+        if (dUrl || fNum) {
+          window.removeEventListener('message', handler);
+          resolve({
+            dataUrl: dUrl || null,
+            instanceNumber: iNum || null,
+            sliceNumber: fNum ? parseInt(fNum, 10) : null,
+            totalSlices: tSlices ? parseInt(tSlices, 10) : null,
+            matchedSeriesId: sUid || null,
+            seriesDescription: sDesc || null
+          });
+        }
+      }
+    };
+
+    window.addEventListener('message', handler);
+    setTimeout(() => {
+      window.removeEventListener('message', handler);
+      resolve(null);
+    }, 200);
+  });
+
   try {
     if (iframeEl.contentWindow) {
       iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.REQUEST_SNAPSHOT, action: 'CAPTURE' }, '*');
-      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT }, '*');
+      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT, action: 'CAPTURE' }, '*');
     }
   } catch (e) {
     // Ignore postMessage error
+  }
+
+  const postMsgRes = await waitPostMessage;
+  if (postMsgRes && (postMsgRes.sliceNumber || postMsgRes.dataUrl)) {
+    return postMsgRes;
   }
 
   let dataUrl = null;

@@ -129,7 +129,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   // Auxiliary Features State
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [isSyncingSR, setIsSyncingSR] = useState(false);
 
@@ -555,7 +555,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     }
 
     const loadStudyData = async () => {
-      setLoading(true);
+      // Non-blocking background load
       let studyData = null;
       const pacsFallback = null;
       let measurementsMeta = null;
@@ -1574,17 +1574,43 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
       )}
 
-      {/* TOP FLOATING BAR */}
-      <header className="dws-topbar">
-        <div className="dws-patient-info">
-          <h2 className="dws-patient-name">{study.PatientName || "Patient Study"}</h2>
-          <span className="dws-badge dws-badge-id">ID: {study.PatientID || "-"}</span>
-          <span className="dws-badge dws-badge-modality">{study.Modality || initialModality || "CR"}</span>
-          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Acc: {study.AccessionNumber || "-"}</span>
+      {/* TOP FLOATING ENTERPRISE WORKSTATION BAR */}
+      <header className="dws-topbar" style={{
+        background: 'linear-gradient(180deg, #0f172a 0%, #090d16 100%)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        padding: '8px 16px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '8px 14px',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+        zIndex: 10000,
+        flexShrink: 0
+      }}>
+        {/* PATIENT DEMOGRAPHICS & DICOM TAGS BADGES */}
+        <div className="dws-patient-info" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h2 className="dws-patient-name" style={{ fontSize: 15, fontWeight: 800, color: '#f8fafc', margin: 0, letterSpacing: '-0.2px', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: '#38bdf8' }}>👤</span> {study.PatientName || "Patient Study"}
+          </h2>
+          {(study.PatientAge && study.PatientAge !== "-") || (study.PatientSex && study.PatientSex !== "-") ? (
+            <span className="dws-badge" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800 }}>
+              {[study.PatientAge !== "-" && study.PatientAge, study.PatientSex !== "-" && study.PatientSex].filter(Boolean).join(" / ")}
+            </span>
+          ) : null}
+          <span className="dws-badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(165, 180, 252, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>
+            ID: {study.PatientID || "-"}
+          </span>
+          <span className="dws-badge" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.35)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 800 }}>
+            {study.Modality || initialModality || "CR"}
+          </span>
+          <span className="dws-badge" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid rgba(203, 213, 225, 0.25)', padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>
+            ACC: {study.AccessionNumber || "-"}
+          </span>
         </div>
 
         {/* VIEW SWITCHER WITH QUICK DOCKING RATIOS */}
-        <div className="dws-mode-switcher" style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
+        <div className="dws-mode-switcher" style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#0f172a', padding: '3px 6px', borderRadius: 10, border: '1px solid #334155' }}>
           <button
             onClick={() => { handleSetViewMode("split"); setSplitRatio(90); }}
             className={`dws-mode-btn ${viewMode === "split" && splitRatio === 90 ? "active" : ""}`}
@@ -1623,8 +1649,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
 
         {/* TOP ACTIONS & CLOSE BUTTON */}
-        <div className="dws-top-actions">
-          <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', color: '#ffffff', fontWeight: 800 }} title="Instantly capture and attach currently viewed DICOM viewer slice as key image to report">
+        <div className="dws-top-actions" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', color: '#ffffff', fontWeight: 800, boxShadow: '0 2px 8px rgba(2, 132, 199, 0.4)' }} title="Instantly capture and attach currently viewed DICOM viewer slice as key image to report">
             <Camera size={14} /> 📸 Attach Key Image (Snapshot)
           </button>
 
@@ -1642,7 +1668,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 <Save size={14} /> Save Draft
               </button>
 
-              <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald">
+              <button onClick={() => handleSaveReport("Final")} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)' }}>
                 <CheckCircle size={14} /> Final Sign-Off
               </button>
             </>

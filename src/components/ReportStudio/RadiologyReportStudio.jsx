@@ -74,8 +74,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .catch(e => console.warn("Active clinic branding fetch notice:", e.message));
   }, []);
 
-  // Fetch list of PACS studies for auto-fallback & study switching
+  // Fetch list of PACS studies for study switching (non-blocking)
   useEffect(() => {
+    if (activeStudyUID) return;
     api.get("/api/pacs/studies")
       .then(res => {
         const list = Array.isArray(res.data) ? res.data : (res.data?.studies || []);
@@ -88,7 +89,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         }
       })
       .catch(e => console.warn("PACS studies fetch notice:", e.message));
-  }, []);
+  }, [activeStudyUID]);
 
 
 
