@@ -130,7 +130,7 @@ export default function ReportingPage() {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (fDate = fromDate, tDate = toDate, qFilter = dateQuickFilter, qText = searchText, mod = filterModality) => {
     setLoading(true);
     try {
       fetchActiveLocks();
@@ -142,11 +142,46 @@ export default function ReportingPage() {
       const pacsObj = savedPacs ? JSON.parse(savedPacs) : null;
       const pacsId = pacsObj?.id || "all";
 
-      const { data: studiesData } = await api.get("/api/pacs/studies", { params: { pacs_id: pacsId, refresh: "true" } }).catch(() => ({ data: [] }));
+      const params = { pacs_id: pacsId, refresh: "true" };
+      const now = new Date();
+      const formatYMD = (d) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}${mm}${dd}`;
+      };
+
+      if (fDate || tDate) {
+        if (fDate) params.startDate = fDate.replace(/-/g, "");
+        if (tDate) params.endDate = tDate.replace(/-/g, "");
+      } else if (qFilter === "TODAY") {
+        params.startDate = formatYMD(now);
+        params.endDate = formatYMD(now);
+      } else if (qFilter === "YESTERDAY") {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        params.startDate = formatYMD(yest);
+        params.endDate = formatYMD(yest);
+      } else if (qFilter === "7DAYS") {
+        const d7 = new Date(now);
+        d7.setDate(d7.getDate() - 7);
+        params.startDate = formatYMD(d7);
+        params.endDate = formatYMD(now);
+      } else if (qFilter === "30DAYS") {
+        const d30 = new Date(now);
+        d30.setDate(d30.getDate() - 30);
+        params.startDate = formatYMD(d30);
+        params.endDate = formatYMD(now);
+      }
+
+      if (qText) params.patientName = qText;
+      if (mod) params.modality = mod;
+
+      const { data: studiesData } = await api.get("/api/pacs/studies", { params }).catch(() => ({ data: [] }));
       let studiesList = Array.isArray(studiesData) ? studiesData : (Array.isArray(studiesData?.data) ? studiesData.data : []);
 
       if (studiesList.length === 0) {
-        const fallbackRes = await api.get("/api/pacs/studies", { params: { refresh: "true" } }).catch(() => ({ data: [] }));
+        const fallbackRes = await api.get("/api/pacs/studies", { params: { ...params, pacs_id: "all" } }).catch(() => ({ data: [] }));
         studiesList = Array.isArray(fallbackRes.data) ? fallbackRes.data : (Array.isArray(fallbackRes.data?.data) ? fallbackRes.data.data : []);
       }
 

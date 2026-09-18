@@ -253,14 +253,64 @@ router.get("/c-echo", asyncHandler(async (req, res) => {
   socket.connect(port, host);
 }));
 
+// Ensure system_settings table exists for persistent PACS & OHIF configuration
+pool.query(`
+  CREATE TABLE IF NOT EXISTS public.system_settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )
+`).catch(err => console.warn("system_settings table init notice:", err.message));
+
+router.get("/settings", asyncHandler(async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT setting_key, setting_value FROM public.system_settings");
+    const settings = {};
+    (rows || []).forEach(r => { settings[r.setting_key] = r.setting_value; });
+    res.json({ success: true, settings });
+  } catch (err) {
+    res.json({ success: true, settings: {} });
+  }
+}));
+
+router.post("/settings", asyncHandler(async (req, res) => {
+  try {
+    const { external_ohif_url, key, value } = req.body || {};
+    if (external_ohif_url !== undefined) {
+      await pool.query(
+        `INSERT INTO public.system_settings (setting_key, setting_value, updated_at)
+         VALUES ('external_ohif_url', $1, NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()`,
+        [String(external_ohif_url).trim()]
+      );
+    }
+    if (key && value !== undefined) {
+      await pool.query(
+        `INSERT INTO public.system_settings (setting_key, setting_value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()`,
+        [String(key).trim(), String(value).trim()]
+      );
+    }
+    res.json({ success: true, message: "PACS settings saved successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
+
 router.get("/studies", asyncHandler(async (req, res) => {
-  const { startDate, endDate, pacs_id, refresh, force } = req.query;
+  const { startDate, endDate, patientId, patientName, accessionNumber, modality, pacs_id, refresh, force, forceAll } = req.query;
   const forceRefresh = refresh === "true" || force === "true";
   const studies = await pacsService.listActiveStudies({
     startDate,
     endDate,
+    patientId,
+    patientName,
+    accessionNumber,
+    modality,
     pacsId: pacs_id,
-    forceRefresh
+    forceRefresh,
+    forceAll: forceAll === "true"
   });
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");

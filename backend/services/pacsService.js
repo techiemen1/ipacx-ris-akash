@@ -123,8 +123,8 @@ class PacsService {
     return { success: false, message: tcpResult.error || `Could not connect to ${host}:${port}` };
   }
 
-  async listActiveStudies({ startDate, endDate, pacsId, forceRefresh, forceAll } = {}) {
-    const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}`;
+  async listActiveStudies({ startDate, endDate, patientId, patientName, accessionNumber, modality, pacsId, forceRefresh, forceAll } = {}) {
+    const cacheKey = `pacs:studies:${pacsId || "all"}:${startDate || "any"}:${endDate || "any"}:${patientId || ""}:${patientName || ""}:${accessionNumber || ""}:${modality || ""}`;
     
     if (forceRefresh) {
       await cacheService.del("pacs:*").catch(() => {});
@@ -143,14 +143,16 @@ class PacsService {
       if (filtered.length > 0) targetNodes = filtered;
     }
 
+    const searchOpts = { startDate, endDate, patientId, patientName, accessionNumber, modality, forceAll };
+
     for (const pacs of targetNodes) {
       try {
         const pacsTypeUpper = String(pacs.pacs_type || "").toUpperCase().trim();
         if (pacsTypeUpper === "ORTHANC") {
-          const studies = await this.fetchOrthancStudies(pacs, { startDate, endDate, forceAll });
+          const studies = await this.fetchOrthancStudies(pacs, searchOpts);
           allStudies.push(...studies);
         } else if (pacsTypeUpper === "DCM4CHEE") {
-          const studies = await this.fetchDcm4cheeStudies(pacs, { startDate, endDate, forceAll });
+          const studies = await this.fetchDcm4cheeStudies(pacs, searchOpts);
           allStudies.push(...studies);
         }
       } catch (err) {
@@ -162,7 +164,7 @@ class PacsService {
     if (allStudies.length === 0) {
       try {
         const dynamicUrl = await getOrthancUrl();
-        const fallbackStudies = await this.fetchOrthancFromUrl(dynamicUrl, { startDate, endDate, forceAll });
+        const fallbackStudies = await this.fetchOrthancFromUrl(dynamicUrl, searchOpts);
         allStudies.push(...fallbackStudies);
       } catch (e) {
         console.error("[PacsService] Dynamic Orthanc fallback failed:", e.message);
@@ -228,25 +230,25 @@ class PacsService {
     }
   }
 
-  async fetchOrthancFromUrl(serverUrl, { startDate, endDate, forceAll }) {
+  async fetchOrthancFromUrl(serverUrl, { startDate, endDate, patientId, patientName, accessionNumber, modality, forceAll } = {}) {
     const config = orthancAuthConfig();
-    const payload = { Level: "Study", Query: {}, Limit: 500 };
+    const payload = { Level: "Study", Query: {}, Limit: 1000 };
     
-    let cleanStart = startDate ? String(startDate).replace(/[^0-9]/g, "") : "";
-    let cleanEnd = endDate ? String(endDate).replace(/[^0-9]/g, "") : "";
-
-    // Default to last 3 days if no dates passed and forceAll is false
-    if (!cleanStart && !cleanEnd && !forceAll) {
-      const today = new Date();
-      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-      const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
-      cleanStart = fmt(threeDaysAgo);
-      cleanEnd = fmt(today);
-    }
+    let cleanStart = startDate && startDate !== "all" ? String(startDate).replace(/[^0-9]/g, "") : "";
+    let cleanEnd = endDate && endDate !== "all" ? String(endDate).replace(/[^0-9]/g, "") : "";
 
     if (cleanStart && cleanEnd) {
       payload.Query.StudyDate = cleanStart === cleanEnd ? cleanStart : `${cleanStart}-${cleanEnd}`;
+    } else if (cleanStart) {
+      payload.Query.StudyDate = `${cleanStart}-`;
+    } else if (cleanEnd) {
+      payload.Query.StudyDate = `-${cleanEnd}`;
     }
+
+    if (patientId) payload.Query.PatientID = `*${patientId}*`;
+    if (patientName) payload.Query.PatientName = `*${patientName}*`;
+    if (accessionNumber) payload.Query.AccessionNumber = `*${accessionNumber}*`;
+    if (modality) payload.Query.Modality = modality.toUpperCase();
 
     const { data: ids } = await axios.post(`${serverUrl}tools/find`, payload, config).catch(() => ({ data: [] }));
     const studies = await Promise.all(
@@ -254,7 +256,7 @@ class PacsService {
         const { data } = await axios.get(`${serverUrl}studies/${id}`, config).catch(() => ({ data: null }));
         if (!data) return null;
         
-        let modality = data.MainDicomTags?.Modality || "";
+        let modalityVal = data.MainDicomTags?.Modality || "";
         let bodyPart = data.MainDicomTags?.BodyPartExamined || "";
 
         if (Array.isArray(data.Series) && data.Series.length > 0) {
@@ -262,13 +264,13 @@ class PacsService {
             try {
               const seriesRes = await axios.get(`${serverUrl}series/${sId}`, config);
               if (seriesRes.data?.MainDicomTags) {
-                if (!modality && seriesRes.data.MainDicomTags.Modality) {
-                  modality = seriesRes.data.MainDicomTags.Modality;
+                if (!modalityVal && seriesRes.data.MainDicomTags.Modality) {
+                  modalityVal = seriesRes.data.MainDicomTags.Modality;
                 }
                 if (!bodyPart && seriesRes.data.MainDicomTags.BodyPartExamined) {
                   bodyPart = seriesRes.data.MainDicomTags.BodyPartExamined;
                 }
-                if (modality) break;
+                if (modalityVal) break;
               }
             } catch (e) {
               // fallback
@@ -276,20 +278,20 @@ class PacsService {
           }
         }
 
-        const normMod = String(modality).toUpperCase().trim();
+        const normMod = String(modalityVal).toUpperCase().trim();
         if (normMod && ["CR", "DX", "XR", "CT", "MR", "MRI", "US", "USG", "MG", "EC", "ECHO"].includes(normMod)) {
-          if (normMod === "MRI") modality = "MR";
-          else if (normMod === "USG") modality = "US";
-          else if (normMod === "ECHO") modality = "EC";
-          else modality = normMod;
+          if (normMod === "MRI") modalityVal = "MR";
+          else if (normMod === "USG") modalityVal = "US";
+          else if (normMod === "ECHO") modalityVal = "EC";
+          else modalityVal = normMod;
         } else {
           // Description Fallback
           const desc = String(data.MainDicomTags?.StudyDescription || "").toUpperCase();
-          if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) modality = "CR";
-          else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) modality = "MR";
-          else if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) modality = "US";
-          else if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) modality = "CT";
-          else modality = "CR";
+          if (desc.includes("X-RAY") || desc.includes("XRAY") || desc.includes("CHEST PA") || desc.includes("RADIOGRAPH") || desc.includes("XR") || desc.includes("CR") || desc.includes("DX")) modalityVal = "CR";
+          else if (desc.includes("MRI") || desc.includes("MR") || desc.includes("SPINE") || desc.includes("BRAIN") || desc.includes("KNEE")) modalityVal = "MR";
+          else if (desc.includes("USG") || desc.includes("ULTRASOUND") || desc.includes("US")) modalityVal = "US";
+          else if (desc.includes("CT") || desc.includes("TOMOGRAPHY") || desc.includes("HEAD") || desc.includes("SINUS") || desc.includes("ABDOMEN")) modalityVal = "CT";
+          else modalityVal = "CR";
         }
 
         return {
@@ -301,7 +303,7 @@ class PacsService {
           StudyDescription: data.MainDicomTags?.StudyDescription || "No Description",
           StudyDate: data.MainDicomTags?.StudyDate || "N/A",
           StudyTime: data.MainDicomTags?.StudyTime || "000000",
-          Modality: modality.toUpperCase(),
+          Modality: modalityVal.toUpperCase(),
           BodyPartExamined: bodyPart,
           StudyInstanceUID: data.MainDicomTags?.StudyInstanceUID || data.ID,
           PACS: "ORTHANC",
@@ -312,7 +314,7 @@ class PacsService {
     return studies.filter(Boolean);
   }
 
-  async fetchDcm4cheeStudies(pacs, { startDate, endDate, forceAll }) {
+  async fetchDcm4cheeStudies(pacs, { startDate, endDate, patientId, patientName, accessionNumber, modality, forceAll } = {}) {
     const portsToTry = [parseInt(pacs.port, 10)];
     if (pacs.port === 11112 || pacs.port === "11112") {
       portsToTry.unshift(8080, 8085);
@@ -321,30 +323,30 @@ class PacsService {
     }
     const uniquePorts = [...new Set(portsToTry.filter(Boolean))];
 
-    let cleanStart = startDate ? String(startDate).replace(/[^0-9]/g, "") : "";
-    let cleanEnd = endDate ? String(endDate).replace(/[^0-9]/g, "") : "";
-
-    // Default to last 3 days if no dates passed and forceAll is false
-    if (!cleanStart && !cleanEnd && !forceAll) {
-      const today = new Date();
-      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-      const fmt = (d) => d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
-      cleanStart = fmt(threeDaysAgo);
-      cleanEnd = fmt(today);
-    }
+    let cleanStart = startDate && startDate !== "all" ? String(startDate).replace(/[^0-9]/g, "") : "";
+    let cleanEnd = endDate && endDate !== "all" ? String(endDate).replace(/[^0-9]/g, "") : "";
 
     let lastError = null;
     for (const port of uniquePorts) {
       const qidoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies`;
       const params = { 
         includefield: "all", 
-        limit: 500,
+        limit: 1000,
         orderby: "-StudyDate,-StudyTime" 
       };
 
       if (cleanStart && cleanEnd) {
         params.StudyDate = cleanStart === cleanEnd ? cleanStart : `${cleanStart}-${cleanEnd}`;
+      } else if (cleanStart) {
+        params.StudyDate = `${cleanStart}-`;
+      } else if (cleanEnd) {
+        params.StudyDate = `-${cleanEnd}`;
       }
+
+      if (patientId) params.PatientID = `*${patientId}*`;
+      if (patientName) params.PatientName = `*${patientName}*`;
+      if (accessionNumber) params.AccessionNumber = `*${accessionNumber}*`;
+      if (modality) params.Modality = modality.toUpperCase();
 
       try {
         const response = await axios.get(qidoUrl, {

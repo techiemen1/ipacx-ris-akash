@@ -215,7 +215,7 @@ export default function PACSpage() {
     }
   };
 
-  async function loadStudies(pacs, forceRefresh = false, fDate = fromDate, tDate = toDate) {
+  async function loadStudies(pacs, forceRefresh = false, fDate = fromDate, tDate = toDate, qFilter = dateQuickFilter, currentFilters = filters) {
     const targetPacs = pacs || activePacs || { id: "all", ae_title: "ALL NODES", pacs_name: "All PACS Nodes", pacs_type: "ALL" };
     setActivePacs(targetPacs);
     sessionStorage.setItem("activePacs", JSON.stringify(targetPacs));
@@ -225,10 +225,42 @@ export default function PACSpage() {
     try {
       const params = { pacs_id: targetPacs.id || "all" };
       if (forceRefresh) params.refresh = "true";
-      if (fDate && tDate) {
-        params.startDate = fDate.replace(/-/g, "");
-        params.endDate = tDate.replace(/-/g, "");
+
+      const now = new Date();
+      const formatYMD = (d) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}${mm}${dd}`;
+      };
+
+      if (fDate || tDate) {
+        if (fDate) params.startDate = fDate.replace(/-/g, "");
+        if (tDate) params.endDate = tDate.replace(/-/g, "");
+      } else if (qFilter === "TODAY") {
+        params.startDate = formatYMD(now);
+        params.endDate = formatYMD(now);
+      } else if (qFilter === "YESTERDAY") {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        params.startDate = formatYMD(yest);
+        params.endDate = formatYMD(yest);
+      } else if (qFilter === "7DAYS") {
+        const d7 = new Date(now);
+        d7.setDate(d7.getDate() - 7);
+        params.startDate = formatYMD(d7);
+        params.endDate = formatYMD(now);
+      } else if (qFilter === "30DAYS") {
+        const d30 = new Date(now);
+        d30.setDate(d30.getDate() - 30);
+        params.startDate = formatYMD(d30);
+        params.endDate = formatYMD(now);
       }
+
+      if (currentFilters?.patientName) params.patientName = currentFilters.patientName;
+      if (currentFilters?.patientId) params.patientId = currentFilters.patientId;
+      if (currentFilters?.accession) params.accessionNumber = currentFilters.accession;
+      if (currentFilters?.modality) params.modality = currentFilters.modality;
 
       const res = await api.get("/api/pacs/studies", { params }).catch(() => ({ data: [] }));
       let studiesList = Array.isArray(res.data) 
@@ -687,10 +719,15 @@ export default function PACSpage() {
                 const val = e.target.value;
                 setDateQuickFilter(val);
                 setCurrentPage(1);
+                let newFrom = fromDate;
+                let newTo = toDate;
                 if (val !== "CUSTOM") {
+                  newFrom = "";
+                  newTo = "";
                   setFromDate("");
                   setToDate("");
                 }
+                loadStudies(activePacs, true, newFrom, newTo, val, filters);
               }}
               className="pacs-select"
             >
@@ -708,9 +745,11 @@ export default function PACSpage() {
                 value={fromDate}
                 title="From Date"
                 onChange={(e) => {
-                  setFromDate(e.target.value);
+                  const val = e.target.value;
+                  setFromDate(val);
                   setDateQuickFilter("CUSTOM");
                   setCurrentPage(1);
+                  loadStudies(activePacs, true, val, toDate, "CUSTOM", filters);
                 }}
               />
               <span className="pacs-date-sep">to</span>
@@ -719,9 +758,11 @@ export default function PACSpage() {
                 value={toDate}
                 title="To Date"
                 onChange={(e) => {
-                  setToDate(e.target.value);
+                  const val = e.target.value;
+                  setToDate(val);
                   setDateQuickFilter("CUSTOM");
                   setCurrentPage(1);
+                  loadStudies(activePacs, true, fromDate, val, "CUSTOM", filters);
                 }}
               />
               {(fromDate || toDate || dateQuickFilter !== "ALL") && (
@@ -731,6 +772,7 @@ export default function PACSpage() {
                     setFromDate("");
                     setToDate("");
                     setCurrentPage(1);
+                    loadStudies(activePacs, true, "", "", "ALL", filters);
                   }}
                   className="pacs-date-reset"
                   title="Reset date filter"

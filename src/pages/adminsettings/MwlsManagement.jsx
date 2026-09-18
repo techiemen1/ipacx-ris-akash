@@ -52,14 +52,21 @@ function MwlsManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [mappingsRes, optionsRes, pacsRes] = await Promise.all([
-        api.get("/api/mwl-targets"),
-        api.get("/api/mwl-targets/options"),
-        api.get("/api/pacs")
+      const [mappingsRes, optionsRes, pacsRes, settingsRes] = await Promise.all([
+        api.get("/api/pacs/mwl-targets").catch(() => api.get("/api/mwl-targets")),
+        api.get("/api/mwl-targets/options").catch(() => ({ data: {} })),
+        api.get("/api/pacs"),
+        api.get("/api/pacs/settings").catch(() => ({ data: {} }))
       ]);
 
       setMappings(mappingsRes.data?.data || []);
       setPacsList(pacsRes.data || []);
+
+      if (settingsRes.data?.settings?.external_ohif_url) {
+        const dbOhifUrl = settingsRes.data.settings.external_ohif_url;
+        setOhifUrl(dbOhifUrl);
+        localStorage.setItem("OHIF_VIEWER_URL", dbOhifUrl);
+      }
 
       const options = Array.isArray(optionsRes.data?.modalities) ? optionsRes.data.modalities : [];
       const normalized = options.map((m) => ({
@@ -168,13 +175,22 @@ function MwlsManagement() {
     }
   };
 
-  const handleSaveOhifUrl = () => {
-    if (ohifUrl.trim()) {
-      localStorage.setItem("OHIF_VIEWER_URL", ohifUrl.trim());
-      alert("External OHIF Viewer URL saved!");
-    } else {
-      localStorage.removeItem("OHIF_VIEWER_URL");
-      alert("Reset to default OHIF path.");
+  const handleSaveOhifUrl = async () => {
+    const cleanUrl = ohifUrl.trim();
+    try {
+      await api.post("/api/pacs/settings", { external_ohif_url: cleanUrl });
+      if (cleanUrl) {
+        localStorage.setItem("OHIF_VIEWER_URL", cleanUrl);
+        alert("External OHIF Viewer URL saved globally across all system workstations!");
+      } else {
+        localStorage.removeItem("OHIF_VIEWER_URL");
+        alert("Reset to default OHIF path.");
+      }
+    } catch (err) {
+      console.error("Failed to save global PACS settings:", err);
+      if (cleanUrl) localStorage.setItem("OHIF_VIEWER_URL", cleanUrl);
+      else localStorage.removeItem("OHIF_VIEWER_URL");
+      alert("Saved to local browser setting.");
     }
   };
 

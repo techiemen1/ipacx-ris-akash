@@ -1,4 +1,14 @@
 import { detectDeviceType, isTouchSupported } from "./deviceDetector";
+import api from "../api/axios";
+
+// Auto-sync global PACS OHIF viewer setting from backend
+if (typeof window !== "undefined") {
+  api.get("/api/pacs/settings").then((res) => {
+    if (res.data?.success && res.data?.settings?.external_ohif_url) {
+      localStorage.setItem("OHIF_VIEWER_URL", res.data.settings.external_ohif_url);
+    }
+  }).catch(() => {});
+}
 
 export const isMobileDevice = () => {
   return detectDeviceType() !== "desktop" || isTouchSupported();

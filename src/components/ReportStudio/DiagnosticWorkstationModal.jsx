@@ -41,6 +41,44 @@ function getInitialModKey(rawMod) {
 
 export default function DiagnosticWorkstationModal({ studyUID, initialModality = "CR", onClose }) {
   const [viewMode, setViewMode] = useState("split"); // "split" | "viewer" | "studio"
+  const [splitRatio, setSplitRatio] = useState(50); // Percentage for left viewer in split mode
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef(null);
+
+  const startResizing = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const offsetX = clientX - rect.left;
+      let newRatio = Math.round((offsetX / rect.width) * 100);
+      if (newRatio < 10) newRatio = 10;
+      if (newRatio > 90) newRatio = 90;
+      setSplitRatio(newRatio);
+    };
+
+    const stopResizing = () => {
+      if (isResizing) setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", stopResizing);
+      window.addEventListener("touchmove", handleMouseMove);
+      window.addEventListener("touchend", stopResizing);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizing);
+      window.removeEventListener("touchmove", handleMouseMove);
+      window.removeEventListener("touchend", stopResizing);
+    };
+  }, [isResizing]);
 
   // Study & Patient Demographics State
   const [study, setStudy] = useState({
@@ -122,8 +160,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       })
       .catch(e => console.warn("Active clinic branding fetch notice:", e.message));
   }, []);
-
-
 
   // Key Images / Snapshots State
   const [attachedSnapshots, setAttachedSnapshots] = useState([]);
@@ -604,6 +640,34 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
+          // Merge key images captured from mobile or desktop DICOM viewer
+          try {
+            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            if (localStr) {
+              const parsed = JSON.parse(localStr);
+              if (Array.isArray(parsed)) {
+                parsed.forEach((item, idx) => {
+                  if (typeof item === "object" && item.studyUID && item.studyUID !== studyUID) return;
+                  const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url || item.dataUrl);
+                  if (url && !normalizedSnapshots.some(s => s.preview_url === url || s.dataUrl === url)) {
+                    const sliceNum = typeof item === "object" ? (item.sliceNumber || item.slice_number) : null;
+                    const seriesDesc = typeof item === "object" ? (item.seriesDesc || item.series_desc) : null;
+                    const caption = item.caption || ((sliceNum && seriesDesc) ? `${seriesDesc} | Slice ${sliceNum}` : (sliceNum ? `Slice ${sliceNum}` : `Key Image ${normalizedSnapshots.length + 1}`));
+                    normalizedSnapshots.push({
+                      id: item.id || `local_${Date.now()}_${idx}`,
+                      instance_id: item.instance_id || item.id || `inst_${Date.now()}`,
+                      preview_url: url,
+                      dataUrl: url,
+                      caption: caption
+                    });
+                  }
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse local key images:", e);
+          }
+
           if (savedFindings || savedConclusion || savedHistory || normalizedSnapshots.length > 0) {
             setHistory(savedHistory);
             
@@ -624,11 +688,34 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             setSelectedModality(getInitialModKey(rMod));
           } else {
             autoMatchTemplate(mod, bPart, realDesc);
-            setAttachedSnapshots([]);
+            setAttachedSnapshots(normalizedSnapshots);
           }
         } else {
           autoMatchTemplate(mod, bPart, realDesc);
-          setAttachedSnapshots([]);
+          // Still try to restore local key images if report fetch fails
+          let fallbackSnaps = [];
+          try {
+            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            if (localStr) {
+              const parsed = JSON.parse(localStr);
+              if (Array.isArray(parsed)) {
+                fallbackSnaps = parsed
+                  .filter(item => typeof item !== "object" || !item.studyUID || item.studyUID === studyUID)
+                  .map((item, idx) => {
+                    const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url || item.dataUrl);
+                    return {
+                      id: `fallback_${Date.now()}_${idx}`,
+                      instance_id: item.instance_id || `inst_${Date.now()}`,
+                      preview_url: url,
+                      caption: item.caption || `Key Image #${idx + 1}`
+                    };
+                  }).filter(s => !!s.preview_url);
+              }
+            }
+          } catch (e) {
+            console.warn("Failed to parse local key images fallback:", e);
+          }
+          setAttachedSnapshots(fallbackSnaps);
         }
       } catch (err) {
         console.error("Failed to load study for Workstation Modal:", err);
@@ -1489,25 +1576,42 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Acc: {study.AccessionNumber || "-"}</span>
         </div>
 
-        {/* VIEW SWITCHER */}
-        <div className="dws-mode-switcher">
+        {/* VIEW SWITCHER WITH QUICK DOCKING RATIOS */}
+        <div className="dws-mode-switcher" style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#0f172a', padding: 4, borderRadius: 8, border: '1px solid #334155' }}>
           <button
-            onClick={() => handleSetViewMode("split")}
-            className={`dws-mode-btn ${viewMode === "split" ? "active" : ""}`}
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(90); }}
+            className={`dws-mode-btn ${viewMode === "split" && splitRatio === 90 ? "active" : ""}`}
+            title="90% DICOM Viewer, 10% Report Studio"
           >
-            <Columns size={14} /> ⚡ Split View 50/50
+            🔍 90% Viewer
+          </button>
+          <button
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(50); }}
+            className={`dws-mode-btn ${viewMode === "split" && splitRatio === 50 ? "active" : ""}`}
+            title="50% Viewer / 50% Studio Split"
+          >
+            <Columns size={13} /> ⚡ 50/50 Split
+          </button>
+          <button
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(10); }}
+            className={`dws-mode-btn ${viewMode === "split" && splitRatio === 10 ? "active" : ""}`}
+            title="10% DICOM Viewer, 90% Report Studio"
+          >
+            📝 90% Studio
           </button>
           <button
             onClick={() => handleSetViewMode("viewer")}
             className={`dws-mode-btn ${viewMode === "viewer" ? "active" : ""}`}
+            title="Full Screen DICOM Viewer"
           >
-            <Maximize2 size={14} /> OHIF Viewer Only
+            <Maximize2 size={13} /> Viewer Only
           </button>
           <button
             onClick={() => handleSetViewMode("studio")}
             className={`dws-mode-btn ${viewMode === "studio" ? "active" : ""}`}
+            title="Full Screen Report Studio"
           >
-            <FileText size={14} /> Studio Only
+            <FileText size={13} /> Studio Only
           </button>
         </div>
 
@@ -1516,8 +1620,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <button onClick={() => handleAttachTargetSlice()} className="dws-btn dws-btn-emerald" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', border: 'none', color: '#ffffff', fontWeight: 800 }} title="Instantly capture and attach currently viewed DICOM viewer slice as key image to report">
             <Camera size={14} /> 📸 Attach Key Image (Snapshot)
           </button>
-
-
 
           <button onClick={() => setShowPrintModal(true)} className="dws-btn dws-btn-dark">
             <Printer size={14} /> Print Preview
@@ -1550,18 +1652,72 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
       </header>
 
-      {/* MAIN VIEWPORT CANVAS - PERSISTENT SINGLE IFRAME */}
-      <main className="dws-viewport">
-        <div className="dws-split-pane" style={{ gridTemplateColumns: viewMode === "split" ? "50% 50%" : viewMode === "viewer" ? "100% 0%" : "0% 100%" }}>
-          <div className="dws-left-viewer" style={{ display: viewMode === "studio" ? "none" : "block", height: '100%' }}>
+      {/* MAIN VIEWPORT CANVAS - PERSISTENT SINGLE IFRAME WITH DRAGGABLE RESIZER */}
+      <main className="dws-viewport" ref={containerRef} style={{ position: 'relative', width: '100%', height: 'calc(100vh - 60px)', overflow: 'hidden' }}>
+        <div
+          className="dws-split-pane"
+          style={{
+            display: 'flex',
+            width: '100%',
+            height: '100%',
+            position: 'relative'
+          }}
+        >
+          <div
+            className="dws-left-viewer"
+            style={{
+              width: viewMode === "split" ? `${splitRatio}%` : viewMode === "viewer" ? "100%" : "0%",
+              display: viewMode === "studio" ? "none" : "block",
+              height: '100%',
+              position: 'relative',
+              overflow: 'hidden',
+              pointerEvents: isResizing ? 'none' : 'auto'
+            }}
+          >
             <iframe
               src={viewerUrl}
               title="OHIF DICOM Viewer"
               className="dws-iframe"
+              style={{ width: '100%', height: '100%', border: 'none' }}
             />
           </div>
 
-          <div className="dws-right-studio" style={{ display: viewMode === "viewer" ? "none" : "block", height: '100%', overflowY: 'auto', background: '#f8fafc', padding: viewMode === "studio" ? '20px 24px' : '16px 20px', maxWidth: viewMode === "studio" ? 1240 : 'none', margin: viewMode === "studio" ? '0 auto' : '0' }}>
+          {/* DRAGGABLE RESIZER BAR */}
+          {viewMode === "split" && (
+            <div
+              onMouseDown={startResizing}
+              onTouchStart={startResizing}
+              style={{
+                width: 8,
+                cursor: 'col-resize',
+                background: isResizing ? '#0284c7' : '#1e293b',
+                transition: 'background 0.2s',
+                zIndex: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                userSelect: 'none'
+              }}
+              title="Drag left/right to resize DICOM Viewer and Report Studio"
+            >
+              <div style={{ width: 2, height: 28, background: '#64748b', borderRadius: 2 }} />
+            </div>
+          )}
+
+          <div
+            className="dws-right-studio"
+            style={{
+              width: viewMode === "split" ? `${100 - splitRatio}%` : viewMode === "viewer" ? "0%" : "100%",
+              flex: 1,
+              display: viewMode === "viewer" ? "none" : "block",
+              height: '100%',
+              overflowY: 'auto',
+              background: '#f8fafc',
+              padding: viewMode === "studio" ? '20px 24px' : '16px 20px',
+              maxWidth: viewMode === "studio" ? 1240 : 'none',
+              margin: viewMode === "studio" ? '0 auto' : '0'
+            }}
+          >
             {renderFormContent()}
           </div>
         </div>

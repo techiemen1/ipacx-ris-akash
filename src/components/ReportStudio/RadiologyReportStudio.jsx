@@ -96,6 +96,45 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
   // View Mode: "studio" | "split" | "viewer" (Default to clean Studio Only)
   const [viewMode, setViewMode] = useState("studio"); // "studio" | "split" | "viewer"
+  const [splitRatio, setSplitRatio] = useState(50); // Percentage for left viewer in split mode
+  const [isResizing, setIsResizing] = useState(false);
+  const studioContainerRef = useRef(null);
+
+  const startResizing = (e) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizing || !studioContainerRef.current) return;
+      const rect = studioContainerRef.current.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const offsetX = clientX - rect.left;
+      let newRatio = Math.round((offsetX / rect.width) * 100);
+      if (newRatio < 10) newRatio = 10;
+      if (newRatio > 90) newRatio = 90;
+      setSplitRatio(newRatio);
+    };
+
+    const stopResizing = () => {
+      if (isResizing) setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", stopResizing);
+      window.addEventListener("touchmove", handleMouseMove);
+      window.addEventListener("touchend", stopResizing);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizing);
+      window.removeEventListener("touchmove", handleMouseMove);
+      window.removeEventListener("touchend", stopResizing);
+    };
+  }, [isResizing]);
+
   const [showFlashSplitModal, setShowFlashSplitModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isAddendumMode, setIsAddendumMode] = useState(false);
@@ -1653,25 +1692,42 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </div>
         </div>
 
-        {/* VIEW MODE TOGGLE BAR */}
-        <div className="rs-viewmode-bar">
+        {/* VIEW MODE TOGGLE BAR WITH DOCKING RATIOS */}
+        <div className="rs-viewmode-bar" style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           <button
-            onClick={() => handleSetViewMode("studio")}
-            className={`rs-viewmode-btn ${viewMode === "studio" ? "active" : ""}`}
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(90); }}
+            className={`rs-viewmode-btn ${viewMode === "split" && splitRatio === 90 ? "active" : ""}`}
+            title="90% DICOM Viewer, 10% Report Studio"
           >
-            <FileText size={14} /> Studio Only
+            🔍 90% Viewer
           </button>
           <button
-            onClick={() => handleSetViewMode("split")}
-            className={`rs-viewmode-btn ${viewMode === "split" ? "active" : ""}`}
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(50); }}
+            className={`rs-viewmode-btn ${viewMode === "split" && splitRatio === 50 ? "active" : ""}`}
+            title="50% Viewer / 50% Studio Split"
           >
-            <Zap size={14} /> Split View 50/50
+            <Zap size={14} /> ⚡ 50/50 Split
+          </button>
+          <button
+            onClick={() => { handleSetViewMode("split"); setSplitRatio(10); }}
+            className={`rs-viewmode-btn ${viewMode === "split" && splitRatio === 10 ? "active" : ""}`}
+            title="10% DICOM Viewer, 90% Report Studio"
+          >
+            📝 90% Studio
           </button>
           <button
             onClick={() => handleSetViewMode("viewer")}
             className={`rs-viewmode-btn ${viewMode === "viewer" ? "active" : ""}`}
+            title="Full Screen Viewer"
           >
             <Maximize2 size={14} /> Viewer Only
+          </button>
+          <button
+            onClick={() => handleSetViewMode("studio")}
+            className={`rs-viewmode-btn ${viewMode === "studio" ? "active" : ""}`}
+            title="Full Screen Report Studio"
+          >
+            <FileText size={14} /> Studio Only
           </button>
         </div>
 
@@ -1695,8 +1751,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
               <Camera size={16} /> 📸 Key Image / Snapshot
             </button>
           )}
-
-
 
           <button onClick={() => setShowPrintModal(true)} className="rs-btn rs-btn-outline">
             <FileText size={16} /> Print Preview
@@ -1742,16 +1796,63 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
       </header>
 
-      {/* DYNAMIC VIEW MODE RENDER — PERSISTENT SINGLE IFRAME */}
-      <div className="rs-split-layout" style={{ gridTemplateColumns: viewMode === "split" ? "1fr 1fr" : viewMode === "viewer" ? "1fr 0fr" : "0fr 1fr", display: viewMode === "studio" ? "block" : "grid" }}>
-        <div className="rs-viewer-pane" style={{ display: viewMode === "studio" ? "none" : "block", height: 'calc(100vh - 120px)' }}>
+      {/* DYNAMIC VIEW MODE RENDER — PERSISTENT SINGLE IFRAME WITH DRAGGABLE RESIZER */}
+      <div
+        className="rs-split-layout"
+        ref={studioContainerRef}
+        style={{
+          display: viewMode === "studio" ? "block" : "flex",
+          width: '100%',
+          position: 'relative'
+        }}
+      >
+        <div
+          className="rs-viewer-pane"
+          style={{
+            width: viewMode === "split" ? `${splitRatio}%` : viewMode === "viewer" ? "100%" : "0%",
+            display: viewMode === "studio" ? "none" : "block",
+            height: 'calc(100vh - 120px)',
+            pointerEvents: isResizing ? 'none' : 'auto'
+          }}
+        >
           <iframe
             src={viewerUrl}
             title="OHIF Viewer"
             className="rs-viewer-iframe"
+            style={{ width: '100%', height: '100%', border: 'none' }}
           />
         </div>
-        <div className="rs-studio-pane" style={{ display: viewMode === "viewer" ? "none" : "block" }}>
+
+        {/* DRAGGABLE RESIZER BAR */}
+        {viewMode === "split" && (
+          <div
+            onMouseDown={startResizing}
+            onTouchStart={startResizing}
+            style={{
+              width: 8,
+              cursor: 'col-resize',
+              background: isResizing ? '#0284c7' : '#cbd5e1',
+              transition: 'background 0.2s',
+              zIndex: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}
+            title="Drag left/right to resize DICOM Viewer and Report Studio"
+          >
+            <div style={{ width: 2, height: 28, background: '#64748b', borderRadius: 2 }} />
+          </div>
+        )}
+
+        <div
+          className="rs-studio-pane"
+          style={{
+            width: viewMode === "split" ? `${100 - splitRatio}%` : viewMode === "viewer" ? "0%" : "100%",
+            flex: 1,
+            display: viewMode === "viewer" ? "none" : "block"
+          }}
+        >
           {renderStudioForm()}
         </div>
       </div>
