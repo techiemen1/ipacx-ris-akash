@@ -8,6 +8,10 @@ const { getOrthancUrl, orthancAuthConfig } = require("../utils/orthancHelper");
  * Supports Orthanc, DICOMWeb (QIDO-RS / WADO-RS), C-FIND adapters, and local database fallback.
  */
 class PacsGateway {
+  constructor() {
+    this.tagsCache = new Map();
+  }
+
   /**
    * Extract DICOM Age from PatientName or PatientAge tag
    */
@@ -32,6 +36,13 @@ class PacsGateway {
    * Fetch full standardized DICOM metadata dictionary for any studyUID across any PACS
    */
   async getFullDicomTags(studyUID) {
+    if (!studyUID) return {};
+    const now = Date.now();
+    const cached = this.tagsCache.get(String(studyUID));
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
     let orthancData = null;
     let seriesData = null;
     let instanceData = null;
@@ -211,6 +222,10 @@ class PacsGateway {
         WindowWidth: instanceData?.["0028,1051"] || seriesData?.MainDicomTags?.WindowWidth || "-"
       }
     };
+
+    if (tagsDictionary && (tagsDictionary.patient?.PatientName || tagsDictionary.study?.AccessionNumber)) {
+      this.tagsCache.set(String(studyUID), { data: tagsDictionary, expiresAt: Date.now() + 120000 });
+    }
 
     return tagsDictionary;
   }

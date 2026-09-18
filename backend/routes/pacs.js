@@ -1067,10 +1067,25 @@ router.get("/measurements/:studyUID", async (req, res) => {
   }
 });
 
+const studySeriesCache = new Map();
+
 router.get("/study-series-instances/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
+    const now = Date.now();
+    const cached = studySeriesCache.get(String(studyUID));
+    if (cached && cached.expiresAt > now) {
+      return res.json({
+        success: true,
+        studyUID,
+        series: cached.series
+      });
+    }
+
     const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
+    if (Array.isArray(seriesList) && seriesList.length > 0) {
+      studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 60000 });
+    }
 
     res.json({
       success: true,

@@ -309,39 +309,60 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const snapResult = await requestViewerSnapshot(".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const currentSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || activeViewportInfo?.seriesInstanceUid || selectedSeriesId;
+    // Resolve active series with strict priority:
+    // 1. Explicit parameter override (e.g. from user clicking series/slice control)
+    // 2. Verified series match from live iframe DOM inspection (if available)
+    // 3. Current selectedSeriesId state explicitly chosen by radiologist in workstation
+    // 4. Default non-scout series
+    const activeSeriesId = overrideSeriesId || (snapResult?.matchedSeriesId ? snapResult.matchedSeriesId : selectedSeriesId);
     
-    // Resolve detected slice candidate
+    let seriesObj = null;
+    if (studySeriesList && studySeriesList.length > 0) {
+      if (activeSeriesId) {
+        seriesObj = studySeriesList.find(s => 
+          String(s.series_id) === String(activeSeriesId) ||
+          String(s.series_instance_uid) === String(activeSeriesId) ||
+          String(s.orthanc_series_id) === String(activeSeriesId)
+        );
+      }
+      if (!seriesObj && snapResult?.seriesDescription) {
+        seriesObj = studySeriesList.find(s => 
+          s.series_description && String(s.series_description).toLowerCase().trim() === String(snapResult.seriesDescription).toLowerCase().trim()
+        );
+      }
+      if (!seriesObj && selectedSeriesId) {
+        seriesObj = studySeriesList.find(s => 
+          String(s.series_id) === String(selectedSeriesId) ||
+          String(s.series_instance_uid) === String(selectedSeriesId) ||
+          String(s.orthanc_series_id) === String(selectedSeriesId)
+        );
+      }
+      if (!seriesObj) {
+        const nonScoutSeries = studySeriesList.filter(s => {
+          const d = String(s.series_description || "").toLowerCase();
+          return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+        });
+        seriesObj = nonScoutSeries.length > 0 ? nonScoutSeries[0] : studySeriesList[0];
+      }
+    }
+
+    // Resolve detected slice candidate with strict priority:
+    // 1. Explicit parameter override (e.g., from slice thumbnail/slider)
+    // 2. Verified slice number from live iframe snapshot
+    // 3. Active pickerSliceNum state set by user
+    // 4. Active targetSliceNumber state
+    // 5. activeViewportInfo frame number (only if matching the target series)
     const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
           snapResult?.sliceNumber || 
-          (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 
-          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 1 ? parseInt(targetSliceNumber, 10) : null) ||
-          (pickerSliceNum && parseInt(pickerSliceNum, 10) > 1 ? parseInt(pickerSliceNum, 10) : null) ||
+          (pickerSliceNum ? parseInt(pickerSliceNum, 10) : null) ||
+          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
+          (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
           null
         );
 
-    const detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
-    const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
-
-    const nonScoutSeries = (studySeriesList || []).filter(s => {
-      const d = String(s.series_description || "").toLowerCase();
-      return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
-    });
-    const defaultSeries = nonScoutSeries.length > 0 ? nonScoutSeries[0] : (studySeriesList[0] || null);
-
-    const seriesObj = (studySeriesList && studySeriesList.length > 0)
-      ? (studySeriesList.find(s => 
-          (currentSeriesId && String(s.series_id) === String(currentSeriesId)) ||
-          (currentSeriesId && String(s.series_instance_uid) === String(currentSeriesId)) ||
-          (currentSeriesId && String(s.orthanc_series_id) === String(currentSeriesId)) ||
-          (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().trim() === String(targetSeriesDesc).toLowerCase().trim()) ||
-          (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().includes(String(targetSeriesDesc).toLowerCase()))
-        ) || (selectedSeriesId ? studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) : null) || defaultSeries)
-      : null;
-
-    const totalSlices = detectedTotal || (seriesObj?.total_slices) || (activeViewportInfo?.totalSlices) || 1;
+    const totalSlices = snapResult?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 
     let displaySliceNum = detectedSlice;
     let isDefaultedSlice = false;
@@ -353,7 +374,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     }
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
 
-    const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || activeViewportInfo?.seriesDescription || "Diagnostic Series";
+    const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
     const fullCaption = isDefaultedSlice && capturedDataUrl
       ? `${seriesDesc} | Active Viewport Image`
       : (totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`);
@@ -1406,6 +1427,12 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                         const mid = s.total_slices > 2 ? Math.round(s.total_slices / 2) : 1;
                         setPickerSliceNum(mid);
                         setTargetSliceNumber(String(mid));
+                        setActiveViewportInfo({
+                          seriesInstanceUid: s.series_id || s.series_instance_uid,
+                          seriesDescription: s.series_description,
+                          frameNumber: mid,
+                          totalSlices: s.total_slices
+                        });
                       }}
                       style={{
                         padding: '4px 10px',
@@ -1524,7 +1551,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               type="button"
-              onClick={() => handleAttachTargetSlice()}
+              onClick={() => handleAttachTargetSlice(pickerSliceNum, selectedSeriesId)}
               style={{
                 background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                 color: "#ffffff",
@@ -1778,7 +1805,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         {/* ACTION BUTTONS */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <button
-            onClick={() => handleAttachTargetSlice()}
+            type="button"
+            onClick={() => handleAttachTargetSlice(pickerSliceNum, selectedSeriesId)}
             style={{
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
