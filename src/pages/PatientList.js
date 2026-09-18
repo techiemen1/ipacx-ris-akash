@@ -582,6 +582,8 @@ function PatientList() {
                 if (val !== "CUSTOM") {
                   setFromDate("");
                   setToDate("");
+                } else {
+                  setSortOrder("ASC");
                 }
               }}
               className="pl-modality-select"
@@ -602,6 +604,7 @@ function PatientList() {
                 onChange={(e) => {
                   setFromDate(e.target.value);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                 }}
               />
@@ -613,15 +616,35 @@ function PatientList() {
                 onChange={(e) => {
                   setToDate(e.target.value);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                 }}
               />
-              {(fromDate || toDate || dateQuickFilter !== "ALL") && (
+              <button
+                type="button"
+                onClick={() => setSortOrder(prev => prev === "ASC" ? "DESC" : "ASC")}
+                className="pl-modality-select"
+                style={{
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: sortOrder === "ASC" ? "#e0f2fe" : "#ffffff",
+                  color: sortOrder === "ASC" ? "#0369a1" : "#334155",
+                  borderColor: sortOrder === "ASC" ? "#0284c7" : "#cbd5e1"
+                }}
+                title="Toggle Date Search Order (Start Date First vs Newest First)"
+              >
+                {sortOrder === "ASC" ? "⬆️ Date: Start -> End" : "⬇️ Date: Newest First"}
+              </button>
+              {(fromDate || toDate || dateQuickFilter !== "ALL" || searchTerm || selectedModality !== "ALL") && (
                 <button
                   onClick={() => {
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
+                    setSearchTerm("");
+                    setSelectedModality("ALL");
+                    setSortOrder("DESC");
                     setCurrentPage(1);
                   }}
                   className="pl-date-reset"
