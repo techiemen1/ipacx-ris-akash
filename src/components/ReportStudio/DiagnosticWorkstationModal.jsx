@@ -315,8 +315,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           1
         );
     const detectedTotal = snapResult?.totalSlices || activeViewportInfo?.totalSlices;
-
     const targetSeriesDesc = snapResult?.seriesDescription || activeViewportInfo?.seriesDescription;
+
+    const nonScoutSeries = (studySeriesList || []).filter(s => {
+      const d = String(s.series_description || "").toLowerCase();
+      return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+    });
+    const defaultSeries = nonScoutSeries.length > 0 ? nonScoutSeries[0] : (studySeriesList[0] || null);
 
     const seriesObj = (studySeriesList && studySeriesList.length > 0)
       ? (studySeriesList.find(s => 
@@ -325,7 +330,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           (currentSeriesId && String(s.orthanc_series_id) === String(currentSeriesId)) ||
           (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().trim() === String(targetSeriesDesc).toLowerCase().trim()) ||
           (targetSeriesDesc && s.series_description && String(s.series_description).toLowerCase().includes(String(targetSeriesDesc).toLowerCase()))
-        ) || (selectedSeriesId ? studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) : null) || studySeriesList[0])
+        ) || (selectedSeriesId ? studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId)) : null) || defaultSeries)
       : null;
 
     const totalSlices = detectedTotal || (seriesObj?.total_slices) || (activeViewportInfo?.totalSlices) || 1;
@@ -341,14 +346,12 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
-      // Priority 1: Match instance by 1-based index (slice_index) or slice_number matching displaySliceNum
       targetInst = seriesObj.instances.find(inst => 
         parseInt(inst.slice_index, 10) === displaySliceNum || 
         parseInt(inst.slice_number, 10) === displaySliceNum ||
         parseInt(inst.instanceNumber, 10) === displaySliceNum
       );
 
-      // Priority 2: Match by DICOM InstanceNumber (e.g. 217)
       if (!targetInst && snapResult?.instanceNumber) {
         targetInst = seriesObj.instances.find(inst => 
           parseInt(inst.slice_number, 10) === snapResult.instanceNumber || 
@@ -357,7 +360,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         );
       }
 
-      // Priority 3: Bounded 0-based array index fallback
       if (!targetInst) {
         const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
         targetInst = seriesObj.instances[boundedIndex];
@@ -380,8 +382,23 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       dataUrl: validDataUrl,
       preview_url: previewUrl,
       fallback_preview_url: fallbackUrl,
-      caption: fullCaption
+      caption: fullCaption,
+      sliceNumber: displaySliceNum,
+      seriesDesc: seriesDesc,
+      studyUID: studyUID
     };
+
+    if (studyUID) {
+      try {
+        const localStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
+        let parsed = [];
+        try { parsed = JSON.parse(localStr); } catch (e) { parsed = []; }
+        const updated = [snapObj, ...(Array.isArray(parsed) ? parsed.filter(s => (s.id || s.instance_id) !== snapObj.id) : [])];
+        localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
+      } catch (e) {
+        // ignore localStorage errors
+      }
+    }
 
     setAttachedSnapshots(prev => [...prev, snapObj]);
     setToastMsg(`✓ Key Image (${fullCaption}) attached to report!`);
@@ -540,27 +557,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const loadStudyData = async () => {
       setLoading(true);
       let studyData = null;
-      let pacsFallback = null;
+      const pacsFallback = null;
       let measurementsMeta = null;
 
       try {
-        const [mainStudyRes, pacsRes, mRes] = await Promise.all([
+        const [mainStudyRes, mRes] = await Promise.all([
           api.get(`/api/pacs/study/${encodeURIComponent(studyUID)}`).catch(() => ({ data: null })),
-          api.get("/api/pacs/studies").catch(() => ({ data: [] })),
           api.get(`/api/pacs/measurements/${encodeURIComponent(studyUID)}`).catch(() => ({ data: null }))
         ]);
 
         studyData = mainStudyRes.data;
         measurementsMeta = mRes.data?.metadata || null;
-
-        const list = Array.isArray(pacsRes.data) ? pacsRes.data : (pacsRes.data?.studies || []);
-        if (list.length > 0) {
-          pacsFallback = list.find(s => 
-            (s.StudyInstanceUID && s.StudyInstanceUID === studyUID) ||
-            (s.study_uid && s.study_uid === studyUID) ||
-            (s.id && String(s.id) === String(studyUID))
-          );
-        }
 
         const realName = studyData?.PatientName || studyData?.patient_name || measurementsMeta?.patient_name || pacsFallback?.PatientName || pacsFallback?.patient_name;
         const realId = studyData?.PatientID || studyData?.patient_id || measurementsMeta?.patient_id || pacsFallback?.PatientID || pacsFallback?.patient_id;
@@ -1416,17 +1423,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         </div>
 
         {attachedSnapshots.length === 0 ? (
-          <div style={{ padding: "20px 16px", textAlign: "center", color: "#64748b", fontSize: 12, border: "1.5px dashed #cbd5e1", borderRadius: 10, background: "#f8fafc" }}>
-            No key images attached yet. Open any slice in the DICOM Viewer on the left and click <b>"📸 Capture Active Viewer Slice"</b> (or <b>"📸 Key Image / Snapshot"</b> in top bar) to attach it to your report.
+          <div style={{ padding: "14px 12px", textAlign: "center", color: "#64748b", fontSize: 11.5, border: "1.5px dashed #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
+            No key images attached yet. Open any slice in DICOM Viewer and click <b>"📸 Attach Key Image"</b> to add it to your report.
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
             {attachedSnapshots.map((snap, idx) => (
-              <div key={snap.id || idx} style={{ position: "relative", borderRadius: 10, border: "1px solid #cbd5e1", overflow: "hidden", background: "#ffffff", boxShadow: "0 2px 4px rgba(0,0,0,0.06)" }}>
+              <div key={snap.id || idx} style={{ position: "relative", borderRadius: 8, border: "1px solid #cbd5e1", overflow: "hidden", background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
                 <img
                   src={snap.preview_url || snap.url || snap.image_path || snap.dataUrl}
                   alt={snap.caption || `Key Image #${idx + 1}`}
-                  style={{ width: "100%", height: 130, objectFit: "cover", display: "block", background: "#000000" }}
+                  style={{ width: "100%", height: 80, objectFit: "cover", display: "block", background: "#000000" }}
                   onError={(e) => {
                     e.target.onerror = null;
                     if (snap.fallback_preview_url) {
@@ -1439,25 +1446,25 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                   onClick={() => removeSnapshot(snap.id)}
                   style={{
                     position: "absolute",
-                    top: 6,
-                    right: 6,
+                    top: 4,
+                    right: 4,
                     background: "rgba(239, 68, 68, 0.9)",
                     color: "#ffffff",
                     border: "none",
                     borderRadius: "50%",
-                    width: 22,
-                    height: 22,
+                    width: 18,
+                    height: 18,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     cursor: "pointer",
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.4)"
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
                   }}
                   title="Remove Image"
                 >
-                  <X size={13} />
+                  <X size={11} />
                 </button>
-                <div style={{ padding: '6px 8px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                <div style={{ padding: '4px 6px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
                   <input
                     type="text"
                     value={snap.caption || ''}
@@ -1469,9 +1476,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                     style={{
                       width: '100%',
                       border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      padding: '3px 6px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      padding: '2px 4px',
                       color: '#1e293b',
                       fontWeight: '600'
                     }}
@@ -1479,7 +1486,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                   <button
                     type="button"
                     onClick={() => {
-                      const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 6px; font-weight: 700; font-size: 11px;" contenteditable="false">📸 [Key Image #${idx + 1}: ${snap.caption || 'Diagnostic Slice'}]</span> `;
+                      const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 5px; font-weight: 700; font-size: 10px;" contenteditable="false">📸 [Key Image #${idx + 1}: ${snap.caption || 'Diagnostic Slice'}]</span> `;
                       if (findingsRef.current) {
                         findingsRef.current.focus();
                         document.execCommand('insertHTML', false, chipHtml);
@@ -1488,19 +1495,19 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                     }}
                     style={{
                       width: '100%',
-                      marginTop: 4,
+                      marginTop: 3,
                       background: '#f0f9ff',
                       color: '#0369a1',
                       border: '1px solid #bae6fd',
-                      borderRadius: 4,
-                      padding: '3px 6px',
-                      fontSize: 10.5,
+                      borderRadius: 3,
+                      padding: '2px 4px',
+                      fontSize: 9.5,
                       fontWeight: 700,
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: 4
+                      gap: 3
                     }}
                     title="Insert in-text citation tag into report findings"
                   >
