@@ -102,6 +102,7 @@ export default function ReportingPage() {
   const [dateQuickFilter, setDateQuickFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [sortOrder, setSortOrder] = useState("DESC"); // "DESC" = Newest first, "ASC" = Start Date / Oldest first
 
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -319,7 +320,13 @@ export default function ReportingPage() {
 
       return matchSearch && matchModality && matchStatus && matchDate;
     });
-  }, [mergedWorklist, searchText, filterModality, filterStatus, dateQuickFilter, fromDate, toDate]);
+
+    return list.sort((a, b) => {
+      const tsA = a.raw_timestamp || 0;
+      const tsB = b.raw_timestamp || 0;
+      return sortOrder === "ASC" ? tsA - tsB : tsB - tsA;
+    });
+  }, [mergedWorklist, searchText, filterModality, filterStatus, dateQuickFilter, fromDate, toDate, sortOrder]);
 
   const pagedWorklist = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
@@ -453,6 +460,8 @@ export default function ReportingPage() {
                   t = "";
                   setFromDate("");
                   setToDate("");
+                } else {
+                  setSortOrder("ASC");
                 }
                 fetchData(f, t, val, searchText, filterModality);
               }}
@@ -475,6 +484,7 @@ export default function ReportingPage() {
                   const val = e.target.value;
                   setFromDate(val);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                   fetchData(val, toDate, "CUSTOM", searchText, filterModality);
                 }}
@@ -488,10 +498,27 @@ export default function ReportingPage() {
                   const val = e.target.value;
                   setToDate(val);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                   fetchData(fromDate, val, "CUSTOM", searchText, filterModality);
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setSortOrder(prev => prev === "ASC" ? "DESC" : "ASC")}
+                className="rp-select"
+                style={{
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: sortOrder === "ASC" ? "#e0f2fe" : "#ffffff",
+                  color: sortOrder === "ASC" ? "#0369a1" : "#334155",
+                  borderColor: sortOrder === "ASC" ? "#0284c7" : "#cbd5e1"
+                }}
+                title="Toggle Date Search Order (Start Date First vs Newest First)"
+              >
+                {sortOrder === "ASC" ? "⬆️ Date: Start -> End" : "⬇️ Date: Newest First"}
+              </button>
               {(fromDate || toDate || dateQuickFilter !== "ALL" || searchText || filterModality || filterStatus) && (
                 <button
                   onClick={() => {
@@ -501,6 +528,7 @@ export default function ReportingPage() {
                     setSearchText("");
                     setFilterModality("");
                     setFilterStatus("");
+                    setSortOrder("DESC");
                     setCurrentPage(1);
                     fetchData("", "", "ALL", "", "");
                   }}

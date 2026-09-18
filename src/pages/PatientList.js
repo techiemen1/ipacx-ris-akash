@@ -127,13 +127,14 @@ function PatientList() {
   const [dateQuickFilter, setDateQuickFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [sortOrder, setSortOrder] = useState("DESC"); // "DESC" = Newest first, "ASC" = Start Date / Oldest first
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 10;
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedModality, dateQuickFilter, fromDate, toDate]);
+  }, [searchTerm, selectedModality, dateQuickFilter, fromDate, toDate, sortOrder]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -317,8 +318,12 @@ function PatientList() {
       });
     }
 
-    return result;
-  }, [patients, searchTerm, selectedModality, dateQuickFilter, fromDate, toDate]);
+    return [...result].sort((a, b) => {
+      const tsA = getPatientTimestamp(a);
+      const tsB = getPatientTimestamp(b);
+      return sortOrder === "ASC" ? tsA - tsB : tsB - tsA;
+    });
+  }, [patients, searchTerm, selectedModality, dateQuickFilter, fromDate, toDate, sortOrder]);
 
   const pagedPatients = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;

@@ -578,8 +578,13 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
-          const mainSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
+          const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
+          const diagSeries = res.data.series.filter(s => !isScout(s));
+          const mainSeries = (diagSeries.length > 0 ? (diagSeries.find(s => s.total_slices > 1) || diagSeries[0]) : res.data.series[0]);
           setSelectedSeriesId(mainSeries.series_id);
+          const initialSlice = mainSeries.total_slices > 2 ? Math.round(mainSeries.total_slices / 2) : 1;
+          setPickerSliceNum(initialSlice);
+          setTargetSliceNumber(String(initialSlice));
         }
       })
       .catch((err) => console.error("Failed to load study series:", err));
@@ -1562,9 +1567,149 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
         {/* ATTACHED KEY DIAGNOSTIC IMAGES CARD */}
         <div className="rs-section-card" style={{ padding: 16 }}>
+          {/* INTERACTIVE DICOM SERIES & INSTANCE THUMBNAIL PICKER */}
+          {studySeriesList.length > 0 && (() => {
+            const currentSeries = studySeriesList.find(s => 
+              String(s.series_id) === String(selectedSeriesId) || 
+              String(s.series_instance_uid) === String(selectedSeriesId)
+            ) || studySeriesList.find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || '')) || studySeriesList[0];
+
+            const instances = currentSeries?.instances || [];
+            const activeSliceVal = parseInt(pickerSliceNum || targetSliceNumber || 1, 10);
+
+            return (
+              <div style={{ marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                {/* SERIES SELECTOR TABS */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Select Series:</span>
+                  {studySeriesList.map(s => {
+                    const isScout = /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
+                    const isSel = String(s.series_id) === String(currentSeries?.series_id);
+                    return (
+                      <button
+                        key={s.series_id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSeriesId(s.series_id);
+                          const mid = s.total_slices > 2 ? Math.round(s.total_slices / 2) : 1;
+                          setPickerSliceNum(mid);
+                          setTargetSliceNumber(String(mid));
+                        }}
+                        style={{
+                          padding: '4px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          border: isSel ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                          background: isSel ? '#0284c7' : isScout ? '#f1f5f9' : '#ffffff',
+                          color: isSel ? '#ffffff' : isScout ? '#94a3b8' : '#334155',
+                          cursor: 'pointer',
+                          opacity: isScout ? 0.75 : 1
+                        }}
+                      >
+                        {isScout ? "🔍 Scout: " : ""}{s.series_description || `Series ${s.series_number}`} ({s.total_slices})
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* SLICE RANGE SLIDER & THUMBNAIL STRIP */}
+                {currentSeries && instances.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#0369a1' }}>
+                        Selected Image: <b>Slice {activeSliceVal} of {currentSeries.total_slices}</b> ({currentSeries.series_description || 'Diagnostic Series'})
+                      </span>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleAttachKeyImage(activeSliceVal, currentSeries.series_id)}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: 5,
+                            padding: '4px 10px',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                        >
+                          <Camera size={13} /> Attach Slice #{activeSliceVal}
+                        </button>
+                      )}
+                    </div>
+
+                    {/* RANGE SLIDER */}
+                    {currentSeries.total_slices > 1 && (
+                      <input
+                        type="range"
+                        min={1}
+                        max={currentSeries.total_slices}
+                        value={activeSliceVal}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          setPickerSliceNum(val);
+                          setTargetSliceNumber(String(val));
+                        }}
+                        style={{ width: '100%', accentColor: '#0284c7', marginBottom: 8, cursor: 'pointer' }}
+                      />
+                    )}
+
+                    {/* INSTANCE THUMBNAILS STRIP */}
+                    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'thin' }}>
+                      {instances.slice(0, 50).map((inst, iIdx) => {
+                        const sliceNum = inst.slice_number || inst.slice_index || (iIdx + 1);
+                        const isSelectedSlice = sliceNum === activeSliceVal;
+                        return (
+                          <div
+                            key={inst.id || iIdx}
+                            onClick={() => {
+                              setPickerSliceNum(sliceNum);
+                              setTargetSliceNumber(String(sliceNum));
+                              if (!isReadOnly) handleAttachKeyImage(sliceNum, currentSeries.series_id);
+                            }}
+                            style={{
+                              flex: '0 0 auto',
+                              width: 72,
+                              cursor: isReadOnly ? 'default' : 'pointer',
+                              borderRadius: 6,
+                              border: isSelectedSlice ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                              background: isSelectedSlice ? '#e0f2fe' : '#ffffff',
+                              padding: 3,
+                              textAlign: 'center',
+                              boxShadow: isSelectedSlice ? '0 0 0 2px rgba(2, 132, 199, 0.3)' : 'none'
+                            }}
+                            title={`Click to Attach Slice ${sliceNum}`}
+                          >
+                            <img
+                              src={inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id || inst.id}?studyUID=${encodeURIComponent(studyUID)}`}
+                              alt={`Slice ${sliceNum}`}
+                              style={{ width: '100%', height: 50, objectFit: 'cover', borderRadius: 4, background: '#000000', display: 'block' }}
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = `/api/pacs/instance-preview/${inst.instance_id || inst.id}`;
+                              }}
+                            />
+                            <div style={{ fontSize: 9.5, fontWeight: 700, color: isSelectedSlice ? '#0369a1' : '#475569', marginTop: 2 }}>
+                              Slice {sliceNum}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="rs-section-header" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              <Camera size={16} style={{ color: "#0284c7" }} /> Key Images ({attachedSnapshots.length})
+              <Camera size={16} style={{ color: "#0284c7" }} /> Key Images Attached ({attachedSnapshots.length})
             </span>
             {!isReadOnly && (
               <button
@@ -1584,7 +1729,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
                   gap: 5
                 }}
               >
-                <Camera size={14} /> Key Image
+                <Camera size={14} /> Attach Active Slice
               </button>
             )}
           </div>

@@ -119,6 +119,7 @@ export default function PACSpage() {
   const [dateQuickFilter, setDateQuickFilter] = useState("ALL");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [sortOrder, setSortOrder] = useState("DESC"); // "DESC" = Newest first, "ASC" = Start Date / Oldest first
   const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const activeFilterCount = useMemo(() => {
@@ -575,8 +576,12 @@ export default function PACSpage() {
       return matchSearch && matchMod && matchDate;
     });
 
-    return result.sort((a, b) => (b.raw_timestamp || 0) - (a.raw_timestamp || 0));
-  }, [studies, filters, dateQuickFilter, fromDate, toDate]);
+    return result.sort((a, b) => {
+      const tsA = a.raw_timestamp || 0;
+      const tsB = b.raw_timestamp || 0;
+      return sortOrder === "ASC" ? tsA - tsB : tsB - tsA;
+    });
+  }, [studies, filters, dateQuickFilter, fromDate, toDate, sortOrder]);
 
   const pagedStudies = filteredStudies.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
 
@@ -729,6 +734,8 @@ export default function PACSpage() {
                   newTo = "";
                   setFromDate("");
                   setToDate("");
+                } else {
+                  setSortOrder("ASC");
                 }
                 loadStudies(activePacs, true, newFrom, newTo, val, filters);
               }}
@@ -751,6 +758,7 @@ export default function PACSpage() {
                   const val = e.target.value;
                   setFromDate(val);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                   loadStudies(activePacs, true, val, toDate, "CUSTOM", filters);
                 }}
@@ -764,10 +772,27 @@ export default function PACSpage() {
                   const val = e.target.value;
                   setToDate(val);
                   setDateQuickFilter("CUSTOM");
+                  setSortOrder("ASC");
                   setCurrentPage(1);
                   loadStudies(activePacs, true, fromDate, val, "CUSTOM", filters);
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setSortOrder(prev => prev === "ASC" ? "DESC" : "ASC")}
+                className="pacs-select"
+                style={{
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: sortOrder === "ASC" ? "#e0f2fe" : "#ffffff",
+                  color: sortOrder === "ASC" ? "#0369a1" : "#334155",
+                  borderColor: sortOrder === "ASC" ? "#0284c7" : "#cbd5e1"
+                }}
+                title="Toggle Date Search Order (Start Date First vs Newest First)"
+              >
+                {sortOrder === "ASC" ? "⬆️ Date: Start -> End" : "⬇️ Date: Newest First"}
+              </button>
               {(fromDate || toDate || dateQuickFilter !== "ALL" || filters.patientName || filters.modality) && (
                 <button
                   onClick={() => {
@@ -776,6 +801,7 @@ export default function PACSpage() {
                     setDateQuickFilter("ALL");
                     setFromDate("");
                     setToDate("");
+                    setSortOrder("DESC");
                     setCurrentPage(1);
                     loadStudies(activePacs, true, "", "", "ALL", emptyFilters);
                   }}
