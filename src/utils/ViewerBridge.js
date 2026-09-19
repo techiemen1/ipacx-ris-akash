@@ -156,6 +156,26 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       );
     };
 
+    // Helper to find enclosing viewport container box for an overlay or canvas element
+    const getViewportContainer = (el) => {
+      let curr = el;
+      while (curr && curr !== bodyEl) {
+        if (isSidebarElement(curr)) return null;
+        const cls = (curr.className || '').toString().toLowerCase();
+        const cy = (curr.getAttribute?.('data-cy') || '').toLowerCase();
+        const id = (curr.id || '').toLowerCase();
+        if (
+          cls.includes('viewport') || cls.includes('cornerstone') || cls.includes('pane') ||
+          cy.includes('viewport') || cy.includes('cornerstone') || id.includes('viewport') ||
+          cls.includes('active') || cls.includes('selected')
+        ) {
+          return curr;
+        }
+        curr = curr.parentElement;
+      }
+      return el ? (el.parentElement || el) : null;
+    };
+
     // Helper to resolve matching series from text within a specific container element
     const resolveSeriesFromContainer = (containerEl) => {
       if (!containerEl || !Array.isArray(studySeriesList) || studySeriesList.length === 0) return null;
@@ -174,23 +194,31 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       const containerText = textNodes.join(' ');
       if (!containerText) return null;
 
-      const lowerText = containerText.toLowerCase();
+      const lowerText = containerText.toLowerCase().replace(/\s+/g, ' ');
 
-      // Collect all series descriptions that match container text with position
+      // 1. Exact full series description match
+      const exactMatch = studySeriesList.find(s => {
+        if (!s.series_description) return false;
+        const dClean = String(s.series_description).toLowerCase().replace(/\s+/g, ' ').trim();
+        return dClean.length >= 2 && lowerText.includes(dClean);
+      });
+      if (exactMatch) return exactMatch;
+
+      // 2. Substring matches sorted by longest description length
       const matches = [];
       studySeriesList.forEach(s => {
         if (!s.series_description) return;
-        const descLower = s.series_description.toLowerCase().trim();
+        const descLower = String(s.series_description).toLowerCase().trim();
         if (descLower.length >= 3 && lowerText.includes(descLower)) {
           matches.push({ series: s, len: descLower.length });
         }
       });
-
       if (matches.length > 0) {
         matches.sort((a, b) => b.len - a.len);
         return matches[0].series;
       }
 
+      // 3. Match by series number (e.g. "Series 5", "Ser 5", "S:5", "S: 5", "S5")
       const serNumMatch = containerText.match(/(?:series|ser|s)\s*:?\s*(\d+)/i);
       if (serNumMatch) {
         const sNum = parseInt(serNumMatch[1], 10);
@@ -198,7 +226,42 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         if (matchByNum) return matchByNum;
       }
 
+      // 4. Token match for distinctive series labels (e.g. "B60s" vs "B20s")
+      for (const s of studySeriesList) {
+        if (!s.series_description) continue;
+        const tokens = String(s.series_description).toLowerCase().split(/[\s_-]+/).filter(t => t.length >= 3);
+        const matchCount = tokens.filter(t => lowerText.includes(t)).length;
+        if (tokens.length > 0 && matchCount === tokens.length) {
+          return s;
+        }
+      }
+
       return null;
+    };
+
+    // Ancestor series resolver: tries viewport container -> parent chain -> active canvas container -> document body
+    const resolveSeriesFromElementAncestors = (el) => {
+      if (!el) return resolveSeriesFromContainer(bodyEl);
+      const vpContainer = getViewportContainer(el);
+      let matched = resolveSeriesFromContainer(vpContainer);
+      if (matched) return matched;
+
+      let curr = el;
+      while (curr && curr !== bodyEl) {
+        if (isSidebarElement(curr)) break;
+        matched = resolveSeriesFromContainer(curr);
+        if (matched) return matched;
+        curr = curr.parentElement;
+      }
+
+      // Try active viewport canvas container
+      const activeVp = iframeDoc.querySelector('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]');
+      if (activeVp) {
+        matched = resolveSeriesFromContainer(activeVp);
+        if (matched) return matched;
+      }
+
+      return resolveSeriesFromContainer(bodyEl);
     };
 
     // 0. Direct Overlay & Viewport Text Element InnerText Inspection (Priority 0)
@@ -222,7 +285,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
           const instLeadMatch = text.match(/(?:i|im|image|slice|frame|instance|f)?\s*:?\s*(\d+)\s*\(/i);
           const instNum = instLeadMatch ? parseInt(instLeadMatch[1], 10) : sNum;
-          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl);
           return {
             instanceNumber: instNum,
             sliceNumber: sNum,
@@ -239,7 +302,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         const sNum = parseInt(ofMatch[1], 10);
         const tNum = parseInt(ofMatch[2], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
@@ -256,7 +319,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         const sNum = parseInt(slashMatch[1], 10);
         const tNum = parseInt(slashMatch[2], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
@@ -272,7 +335,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       if (singleMatch) {
         const sNum = parseInt(singleMatch[1], 10);
         if (sNum > 0) {
-          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
@@ -411,7 +474,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         targetVp = targetVp.parentElement;
       }
 
-      const matchedSeriesObj = resolveSeriesFromContainer(targetVp) || resolveSeriesFromContainer(container);
+      const matchedSeriesObj = resolveSeriesFromElementAncestors(targetVp) || resolveSeriesFromElementAncestors(container);
       const matchedSeriesId = matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null;
       const seriesDescription = matchedSeriesObj ? matchedSeriesObj.series_description : null;
 
@@ -449,7 +512,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         targetVp = targetVp.parentElement;
       }
 
-      const matchedSeriesObj = resolveSeriesFromContainer(targetVp) || resolveSeriesFromContainer(bodyEl);
+      const matchedSeriesObj = resolveSeriesFromElementAncestors(targetVp) || resolveSeriesFromElementAncestors(bodyEl);
       const matchedSeriesId = matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null;
       const seriesDescription = matchedSeriesObj ? matchedSeriesObj.series_description : null;
 

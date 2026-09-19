@@ -337,10 +337,25 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         );
       }
       if (!seriesObj && (directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription)) {
-        const targetDesc = directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription;
-        seriesObj = studySeriesList.find(s => 
-          s.series_description && String(s.series_description).toLowerCase().trim() === String(targetDesc).toLowerCase().trim()
-        );
+        const targetDesc = String(directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription).toLowerCase().replace(/\s+/g, ' ').trim();
+        seriesObj = studySeriesList.find(s => {
+          if (!s.series_description) return false;
+          const sDescClean = String(s.series_description).toLowerCase().replace(/\s+/g, ' ').trim();
+          return sDescClean === targetDesc || sDescClean.includes(targetDesc) || targetDesc.includes(sDescClean);
+        });
+
+        if (!seriesObj) {
+          const targetTokens = targetDesc.split(/[\s_-]+/).filter(t => t.length >= 3);
+          for (const s of studySeriesList) {
+            if (!s.series_description) continue;
+            const sClean = String(s.series_description).toLowerCase();
+            const matchCount = targetTokens.filter(t => sClean.includes(t)).length;
+            if (targetTokens.length > 0 && matchCount === targetTokens.length) {
+              seriesObj = s;
+              break;
+            }
+          }
+        }
       }
       if (!seriesObj && selectedSeriesId) {
         seriesObj = studySeriesList.find(s => 
