@@ -357,10 +357,22 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       return resolveSeriesFromElementAncestors(overlayEl);
     };
 
-    // 0. Direct Overlay & Viewport Text Element InnerText Inspection (Priority 0)
-    const overlayElements = Array.from(iframeDoc.querySelectorAll(
-      '[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], [class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="bottom-right"], [class*="bottomRight"], div, span, p'
-    )).filter(el => {
+    // 0. Active/Focused Viewport Inspection FIRST (prevents unfocused Viewport 0 from hijacking slice detection)
+    const activeVpContainer = 
+      iframeDoc.querySelector(
+        '[class*="viewport"][class*="active"], [class*="Viewport"][class*="active"], ' +
+        '[class*="viewport"][class*="selected"], [class*="Viewport"][class*="selected"], ' +
+        '[class*="viewport-pane"][class*="active"], [class*="ViewportPane"][class*="active"], ' +
+        '[class*="viewport-wrapper"][class*="active"], [class*="cornerstone-canvas-wrapper"][class*="active"], ' +
+        '[data-cy*="viewport"][class*="active"], [data-cy*="viewport-element"][class*="active"]'
+      ) ||
+      iframeDoc.querySelector('canvas.active, canvas[class*="active"], canvas[class*="selected"]')?.closest('[class*="viewport"], [class*="Viewport"], [class*="pane"], [class*="Pane"], div');
+
+    const overlayElementsToInspect = activeVpContainer
+      ? Array.from(activeVpContainer.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], div, span, p'))
+      : Array.from(iframeDoc.querySelectorAll('[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], div, span, p'));
+
+    const overlayElements = overlayElementsToInspect.filter(el => {
       if (isSidebarElement(el)) return false;
       const text = (el.innerText || el.textContent || '').trim();
       return text && text.length > 0 && text.length < 250 && (text.includes('/') || text.includes('(') || text.includes('of') || /\b(slice|im|image|frame|instance|i)\b/i.test(text));
@@ -378,7 +390,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
           const instLeadMatch = text.match(/(?:i|im|image|slice|frame|instance|f)?\s*:?\s*(\d+)\s*\(/i);
           const instNum = instLeadMatch ? parseInt(instLeadMatch[1], 10) : sNum;
-          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl);
+          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl) || (activeVpContainer ? resolveSeriesFromContainer(activeVpContainer) : null);
           return {
             instanceNumber: instNum,
             sliceNumber: sNum,
@@ -395,7 +407,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         const sNum = parseInt(ofMatch[1], 10);
         const tNum = parseInt(ofMatch[2], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl);
+          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl) || (activeVpContainer ? resolveSeriesFromContainer(activeVpContainer) : null);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
@@ -412,7 +424,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         const sNum = parseInt(slashMatch[1], 10);
         const tNum = parseInt(slashMatch[2], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl);
+          const matchedSeriesObj = resolveSeriesForOverlay(tNum, overlayEl) || (activeVpContainer ? resolveSeriesFromContainer(activeVpContainer) : null);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
@@ -428,7 +440,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       if (singleMatch) {
         const sNum = parseInt(singleMatch[1], 10);
         if (sNum > 0) {
-          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl);
+          const matchedSeriesObj = resolveSeriesFromElementAncestors(overlayEl) || (activeVpContainer ? resolveSeriesFromContainer(activeVpContainer) : null);
           return {
             instanceNumber: sNum,
             sliceNumber: sNum,
