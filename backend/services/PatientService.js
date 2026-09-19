@@ -55,6 +55,10 @@ function normalizeIdValue(value) {
 }
 
 class PatientService {
+  constructor() {
+    this.lookupCache = new Map();
+  }
+
   async generateCustomMRN(clinicId = null) {
     let prefix = "MRN";
     let format = "{PREFIX}-{YY}{MM}-{SEQ}";
@@ -382,6 +386,13 @@ class PatientService {
       return [];
     }
 
+    const cacheKey = `${scope.clinicId}_${field}_${q}_${limit}`;
+    const now = Date.now();
+    const cached = this.lookupCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
     const result = await patientRepository.lookupPatients(field, q, limit, req);
 
     await logAction(req, {
@@ -397,11 +408,14 @@ class PatientService {
       },
     });
 
-    return result.rows.map((row) => ({
+    const mapped = result.rows.map((row) => ({
       ...row,
       patient_id: normalizeIdValue(row.patient_id),
       uhid: normalizeIdValue(row.uhid),
     }));
+
+    this.lookupCache.set(cacheKey, { data: mapped, expiresAt: Date.now() + 30000 });
+    return mapped;
   }
 
   async getPatientDetails(req, identifier) {
