@@ -852,7 +852,37 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
 }
 
 async function processKeyImageSave(payload, reqUser = {}) {
-  const { studyUID, seriesUID, sopInstanceUid, sliceNumber, totalSlices, seriesDescription, instanceId, dataUrl, caption } = payload;
+  const { 
+    reportId,
+    patientId,
+    studyUID, 
+    seriesUID, 
+    sopInstanceUid, 
+    sopClassUid,
+    sliceNumber, 
+    totalSlices, 
+    seriesNumber,
+    instanceNumber,
+    modality,
+    seriesDescription, 
+    studyDate,
+    instanceId, 
+    dataUrl, 
+    caption,
+    windowCenter,
+    windowWidth,
+    zoom,
+    panX,
+    panY,
+    rotation,
+    flipHorizontal,
+    flipVertical,
+    viewportType,
+    frameNumber,
+    annotationData,
+    measurementData
+  } = payload;
+
   if (!studyUID) {
     throw new Error("studyUID is required");
   }
@@ -867,7 +897,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
   const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_s${targetSlice}_${Date.now()}.jpg`;
   const filePath = path.join(reportImagesDir, filename);
 
-  const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+  const targetInstId = instanceId || sopInstanceUid || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
 
   // Priority 1: High-resolution PACS rendered DICOM slice (guarantees crystal-clear medical image & avoids pitch-black WebGL canvas)
   if (targetInstId) {
@@ -934,34 +964,56 @@ async function processKeyImageSave(payload, reqUser = {}) {
   const totSlices = totalSlices || 1;
   const finalCaption = caption || (totSlices > 1 ? `${sDesc} | Slice ${targetSlice}/${totSlices}` : `${sDesc} | Slice ${targetSlice}`);
   const clinicId = reqUser?.clinic_id || 1;
+  const createdBy = reqUser?.id || null;
 
-  // DB Persistence to study_key_images table
+  // DB Persistence to study_key_images table with presentation state & annotations JSONB
   let dbRow = null;
   try {
     const studyMatch = await pool.query(
-      "SELECT id FROM studies WHERE study_uid = $1 OR accession_number = $1 OR id::text = $1 LIMIT 1",
+      "SELECT id, patient_id FROM studies WHERE study_uid = $1 OR accession_number = $1 OR id::text = $1 LIMIT 1",
       [studyUID]
     ).catch(() => ({ rows: [] }));
     const studyDbId = studyMatch.rows[0]?.id || null;
+    const resolvedPatientId = patientId || studyMatch.rows[0]?.patient_id || null;
 
     const insertRes = await pool.query(
       `INSERT INTO public.study_key_images 
-       (study_id, study_uid, series_uid, sop_instance_uid, instance_id, clinic_id, slice_number, total_slices, series_description, caption, image_path, preview_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       (report_id, patient_id, study_id, study_uid, series_uid, sop_instance_uid, sop_class_uid, instance_id, clinic_id, slice_number, total_slices, series_number, instance_number, modality, series_description, study_date, caption, image_path, preview_url, window_center, window_width, zoom, pan_x, pan_y, rotation, flip_horizontal, flip_vertical, viewport_type, frame_number, annotation_data, measurement_data, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
        RETURNING *`,
       [
+        reportId ? parseInt(reportId, 10) : null,
+        resolvedPatientId,
         studyDbId,
         studyUID,
         seriesUID || null,
-        sopInstanceUid || null,
+        sopInstanceUid || targetInstId || null,
+        sopClassUid || null,
         targetInstId || null,
         clinicId,
         targetSlice,
         totSlices,
+        seriesNumber ? parseInt(seriesNumber, 10) : 1,
+        instanceNumber ? parseInt(instanceNumber, 10) : targetSlice,
+        modality || "CT",
         sDesc,
+        studyDate || null,
         finalCaption,
         filePath,
-        finalUrl
+        finalUrl,
+        windowCenter ? parseFloat(windowCenter) : null,
+        windowWidth ? parseFloat(windowWidth) : null,
+        zoom ? parseFloat(zoom) : 1.0,
+        panX ? parseFloat(panX) : 0.0,
+        panY ? parseFloat(panY) : 0.0,
+        rotation ? parseInt(rotation, 10) : 0,
+        !!flipHorizontal,
+        !!flipVertical,
+        viewportType || 'STACK',
+        frameNumber ? parseInt(frameNumber, 10) : 1,
+        JSON.stringify(annotationData || {}),
+        JSON.stringify(measurementData || {}),
+        createdBy
       ]
     ).catch(e => {
       console.warn("study_key_images DB insert notice:", e.message);
@@ -976,7 +1028,9 @@ async function processKeyImageSave(payload, reqUser = {}) {
   return {
     id: dbRow?.id ? `key_db_${dbRow.id}` : `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     db_id: dbRow?.id || null,
+    report_id: dbRow?.report_id || reportId || null,
     instance_id: targetInstId || instanceId || `inst_${Date.now()}`,
+    sop_instance_uid: sopInstanceUid || targetInstId,
     preview_url: finalUrl,
     previewUrl: finalUrl,
     url: finalUrl,
@@ -984,7 +1038,15 @@ async function processKeyImageSave(payload, reqUser = {}) {
     sliceNumber: targetSlice,
     totalSlices: totSlices,
     seriesDesc: sDesc,
-    studyUID
+    studyUID,
+    windowCenter,
+    windowWidth,
+    zoom,
+    panX,
+    panY,
+    rotation,
+    annotationData: annotationData || {},
+    measurementData: measurementData || {}
   };
 }
 
@@ -1011,7 +1073,7 @@ router.get("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT * FROM public.study_key_images 
        WHERE (study_uid = $1 OR id::text = $1) AND (clinic_id = $2 OR $2 IS NULL)
-       ORDER BY id ASC`,
+       ORDER BY display_order ASC, id ASC`,
       [studyId, clinicId]
     );
     res.json({ success: true, data: rows });
@@ -1037,6 +1099,116 @@ router.delete("/v1/studies/:studyId/key-images/:imageId", asyncHandler(async (re
       await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
     }
     res.json({ success: true, message: "Key image removed" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
+
+/* ======================================================
+   ENTERPRISE REPORT KEY-IMAGE REST APIs
+====================================================== */
+router.post("/v1/reports/:reportId/key-images", asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+  const payload = { ...req.body, reportId };
+  const result = await processKeyImageSave(payload, req.user);
+  res.json({ success: true, data: result });
+}));
+
+router.get("/v1/reports/:reportId/key-images", asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+  const clinicId = req.user?.clinic_id || 1;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM public.study_key_images 
+       WHERE report_id = $1 AND (clinic_id = $2 OR $2 IS NULL)
+       ORDER BY display_order ASC, id ASC`,
+      [reportId, clinicId]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.json({ success: true, data: [] });
+  }
+}));
+
+router.delete("/v1/reports/:reportId/key-images/:imageId", asyncHandler(async (req, res) => {
+  const { reportId, imageId } = req.params;
+  const clinicId = req.user?.clinic_id || 1;
+  try {
+    const cleanId = String(imageId).replace(/^key_db_/, '');
+    const { rows } = await pool.query(
+      "SELECT * FROM public.study_key_images WHERE (id::text = $1 OR preview_url = $2) AND (clinic_id = $3 OR $3 IS NULL)",
+      [cleanId, imageId, clinicId]
+    );
+    if (rows.length > 0) {
+      const imgRow = rows[0];
+      if (imgRow.image_path && fs.existsSync(imgRow.image_path)) {
+        try { fs.unlinkSync(imgRow.image_path); } catch (e) {}
+      }
+      await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
+    }
+    res.json({ success: true, message: "Key image deleted from report" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
+
+router.post("/v1/reports/:reportId/key-images/reorder", asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+  const { keyImageIds } = req.body;
+  if (!Array.isArray(keyImageIds)) {
+    return res.status(400).json({ success: false, error: "keyImageIds must be an array" });
+  }
+
+  try {
+    for (let i = 0; i < keyImageIds.length; i++) {
+      const cleanId = String(keyImageIds[i]).replace(/^key_db_/, '');
+      await pool.query(
+        "UPDATE public.study_key_images SET display_order = $1 WHERE id::text = $2 OR preview_url = $2",
+        [i, cleanId]
+      );
+    }
+    res.json({ success: true, message: "Key images reordered successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
+
+router.get("/v1/key-images/:imageId/launch-target", asyncHandler(async (req, res) => {
+  const { imageId } = req.params;
+  try {
+    const cleanId = String(imageId).replace(/^key_db_/, '');
+    const { rows } = await pool.query(
+      "SELECT * FROM public.study_key_images WHERE id::text = $1 OR preview_url = $1 LIMIT 1",
+      [cleanId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Key image not found" });
+    }
+    const img = rows[0];
+    res.json({
+      success: true,
+      data: {
+        studyUID: img.study_uid,
+        seriesUID: img.series_uid,
+        sopInstanceUid: img.sop_instance_uid,
+        sliceNumber: img.slice_number,
+        totalSlices: img.total_slices,
+        seriesDescription: img.series_description,
+        modality: img.modality,
+        presentationState: {
+          windowCenter: img.window_center,
+          windowWidth: img.window_width,
+          zoom: img.zoom,
+          panX: img.pan_x,
+          panY: img.pan_y,
+          rotation: img.rotation,
+          flipHorizontal: img.flip_horizontal,
+          flipVertical: img.flip_vertical
+        },
+        annotationData: img.annotation_data,
+        measurementData: img.measurement_data
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

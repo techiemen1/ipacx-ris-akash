@@ -364,21 +364,77 @@ const MobileLiteViewer = () => {
     touchDeltaAccumulator.current = { x: 0, y: 0 };
   };
 
+  // Listen for RPC postMessage snapshot requests from parent RIS window
+  useEffect(() => {
+    const handleWindowMessage = (event) => {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "REQUEST_SNAPSHOT" || data.type === "OHIF_CAPTURE_VIEWPORT") {
+        try {
+          const canvas = mainCanvasRef.current;
+          const canvasDataUrl = canvas ? canvas.toDataURL("image/jpeg", 0.95) : null;
+          const snapshotPayload = {
+            type: "SNAPSHOT_CAPTURED",
+            payload: {
+              dataUrl: canvasDataUrl || imageUrl,
+              sopInstanceUid: currentInstance?.id || currentInstance?.instance_id,
+              seriesInstanceUid: activeSeries?.seriesId,
+              studyInstanceUid: studyUID,
+              frameNumber: currentIndex + 1,
+              sliceNumber: currentIndex + 1,
+              totalSlices: currentInstances.length || 1,
+              seriesDescription: activeSeries?.seriesDescription || "Series",
+              caption: `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`,
+              brightness,
+              contrast,
+              zoom,
+              rotation,
+              flipH
+            }
+          };
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(snapshotPayload, "*");
+          }
+        } catch (e) {
+          console.warn("Snapshot event handling error:", e);
+        }
+      }
+    };
+    window.addEventListener("message", handleWindowMessage);
+    return () => window.removeEventListener("message", handleWindowMessage);
+  }, [imageUrl, activeSeries, currentInstance, currentIndex, currentInstances.length, studyUID, brightness, contrast, zoom, rotation, flipH]);
+
   const captureSnapshot = async () => {
     if (!imageUrl) return;
     const snapId = `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const fullCaption = `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`;
-    
+
+    const canvas = mainCanvasRef.current;
+    let canvasDataUrl = null;
+    try {
+      if (canvas) canvasDataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    } catch (e) {
+      console.warn("Canvas toDataURL failed:", e);
+    }
+
     let snapshotObj = null;
     try {
       const capturePayload = {
         studyUID: studyUID,
         seriesUID: activeSeries?.seriesId,
+        sopInstanceUid: currentInstance?.id || currentInstance?.instance_id,
         sliceNumber: currentIndex + 1,
         totalSlices: currentInstances.length || 1,
         seriesDescription: activeSeries?.seriesDescription || "Series",
         instanceId: currentInstance?.id || currentInstance?.instance_id,
-        caption: fullCaption
+        caption: fullCaption,
+        dataUrl: canvasDataUrl || imageUrl,
+        windowCenter: brightness,
+        windowWidth: contrast,
+        zoom,
+        rotation,
+        flipHorizontal: flipH,
+        measurementData: { measurements }
       };
       const res = await api.post("/api/pacs/capture-key-image", capturePayload);
       if (res.data?.success && res.data?.data) {
@@ -392,10 +448,10 @@ const MobileLiteViewer = () => {
       snapshotObj = {
         id: snapId,
         instance_id: currentInstance?.id || snapId,
-        previewUrl: imageUrl,
-        preview_url: imageUrl,
-        url: imageUrl,
-        dataUrl: imageUrl,
+        previewUrl: canvasDataUrl || imageUrl,
+        preview_url: canvasDataUrl || imageUrl,
+        url: canvasDataUrl || imageUrl,
+        dataUrl: canvasDataUrl || imageUrl,
         sliceNumber: currentIndex + 1,
         slice_number: currentIndex + 1,
         seriesDesc: activeSeries?.seriesDescription || "Series",
@@ -404,6 +460,17 @@ const MobileLiteViewer = () => {
         studyUID: studyUID,
         capturedAt: new Date().toISOString()
       };
+    }
+
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage({
+          type: "ADD_KEY_IMAGE",
+          payload: snapshotObj
+        }, "*");
+      } catch (e) {
+        console.warn("PostMessage to parent failed:", e);
+      }
     }
 
     if (studyUID) {

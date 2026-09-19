@@ -247,8 +247,29 @@ module.exports = async function generateFinalReportPDF(
         for (let i = 0; i < keyImages.length; i++) {
           const img = keyImages[i];
           let rawPath = typeof img === "string" ? img : (img.image_path || img.preview_url || img.previewUrl || img.url || "");
-          let captionText = typeof img === "object" ? (img.caption || `Key Image ${i + 1}`) : `Key Image ${i + 1}`;
           
+          let title = `Key Image ${i + 1}`;
+          let metaLines = [];
+          if (typeof img === "object" && img !== null) {
+            if (img.caption) {
+              title = img.caption;
+            } else if (img.series_description || img.seriesDescription) {
+              title = img.series_description || img.seriesDescription;
+            }
+
+            const mod = img.modality || "";
+            const sNum = img.series_number ?? img.seriesNumber ?? "";
+            const iNum = img.instance_number ?? img.instanceNumber ?? img.slice_index ?? img.sliceIndex ?? "";
+            const sDesc = (img.series_description || img.seriesDescription || "").trim();
+
+            let line1Parts = [];
+            if (mod) line1Parts.push(mod);
+            if (sNum !== "") line1Parts.push(`Series ${sNum}`);
+            if (iNum !== "") line1Parts.push(`Slice ${iNum}`);
+            if (line1Parts.length > 0) metaLines.push(line1Parts.join(" | "));
+            if (sDesc && sDesc !== title) metaLines.push(sDesc);
+          }
+
           let imgSource = null;
           if (rawPath.startsWith("data:image/")) {
             const base64Data = rawPath.split(",")[1];
@@ -265,7 +286,7 @@ module.exports = async function generateFinalReportPDF(
           if (imgSource) {
             const xPos = marginSize + colIdx * (imgWidth + gap);
 
-            if (currentY + imgHeight + 35 > pageHeight - marginSize) {
+            if (currentY + imgHeight + 40 > pageHeight - marginSize) {
               addNewPage();
               doc.font("Helvetica-Bold").fontSize(10).text("Key Diagnostic Images (Cont.):", marginSize, currentY);
               currentY += 16;
@@ -275,7 +296,10 @@ module.exports = async function generateFinalReportPDF(
             try {
               doc.rect(xPos - 2, currentY - 2, imgWidth + 4, imgHeight + 4).lineWidth(0.5).strokeColor("#cbd5e1").stroke();
               doc.image(imgSource, xPos, currentY, { width: imgWidth, height: imgHeight, fit: [imgWidth, imgHeight], align: 'center', valign: 'center' });
-              doc.font("Helvetica").fontSize(8).fillColor("#334155").text(captionText, xPos, currentY + imgHeight + 4, { width: imgWidth, align: "center" });
+              doc.font("Helvetica-Bold").fontSize(8).fillColor("#1e293b").text(title, xPos, currentY + imgHeight + 4, { width: imgWidth, align: "center" });
+              if (metaLines.length > 0) {
+                doc.font("Helvetica").fontSize(7).fillColor("#64748b").text(metaLines.join(" • "), xPos, currentY + imgHeight + 16, { width: imgWidth, align: "center" });
+              }
             } catch (e) {
               console.warn("PDF Image draw notice:", e.message);
             }
@@ -283,13 +307,13 @@ module.exports = async function generateFinalReportPDF(
             colIdx++;
             if (colIdx >= 2) {
               colIdx = 0;
-              currentY += imgHeight + 30;
+              currentY += imgHeight + 35;
             }
           }
         }
 
         if (colIdx > 0) {
-          currentY += imgHeight + 30;
+          currentY += imgHeight + 35;
         }
         currentY += 10;
         doc.fillColor("#000000"); // Reset fill color
