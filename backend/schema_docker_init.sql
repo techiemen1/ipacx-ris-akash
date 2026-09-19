@@ -441,3 +441,51 @@ CREATE INDEX IF NOT EXISTS idx_mwl_schedulingdate ON mwl(schedulingdate);
 CREATE INDEX IF NOT EXISTS idx_mwl_modality ON mwl(modality);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_log_date ON audit_logs(log_date);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON audit_logs(event);
+
+-- 10. Study Key Images
+CREATE TABLE IF NOT EXISTS public.study_key_images (
+  id SERIAL PRIMARY KEY,
+  study_id INTEGER REFERENCES public.studies(id) ON DELETE CASCADE,
+  report_id INTEGER REFERENCES public.reports(id) ON DELETE CASCADE,
+  study_uid VARCHAR(128) NOT NULL,
+  series_uid VARCHAR(128),
+  sop_instance_uid VARCHAR(128),
+  instance_id VARCHAR(128),
+  patient_id VARCHAR(64),
+  clinic_id INTEGER DEFAULT 1,
+  slice_number INTEGER DEFAULT 1,
+  total_slices INTEGER DEFAULT 1,
+  series_description VARCHAR(255),
+  caption TEXT,
+  image_path TEXT NOT NULL,
+  preview_url TEXT NOT NULL,
+  sop_class_uid VARCHAR(128),
+  modality VARCHAR(16) DEFAULT 'CT',
+  series_number INTEGER DEFAULT 1,
+  instance_number INTEGER DEFAULT 1,
+  study_date VARCHAR(32),
+  display_order INTEGER DEFAULT 0,
+  window_center NUMERIC(10, 2),
+  window_width NUMERIC(10, 2),
+  zoom NUMERIC(10, 4) DEFAULT 1.0,
+  pan_x NUMERIC(10, 2) DEFAULT 0.0,
+  pan_y NUMERIC(10, 2) DEFAULT 0.0,
+  rotation INTEGER DEFAULT 0,
+  flip_horizontal BOOLEAN DEFAULT FALSE,
+  flip_vertical BOOLEAN DEFAULT FALSE,
+  viewport_type VARCHAR(32) DEFAULT 'STACK',
+  frame_number INTEGER DEFAULT 1,
+  annotation_data JSONB DEFAULT '{}'::jsonb,
+  measurement_data JSONB DEFAULT '{}'::jsonb,
+  created_by INTEGER REFERENCES public.users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_study_key_images_study_uid ON public.study_key_images(study_uid);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_study_id ON public.study_key_images(study_id);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_clinic_id ON public.study_key_images(clinic_id);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_report_id ON public.study_key_images(report_id);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_sop_uid ON public.study_key_images(sop_instance_uid);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_series_uid ON public.study_key_images(series_uid);
+CREATE INDEX IF NOT EXISTS idx_study_key_images_display_order ON public.study_key_images(report_id, display_order ASC);

@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS clinics (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS hospital_id INTEGER REFERENCES hospitals(id) ON DELETE CASCADE;
+
 -- Seed Default Hospital & Clinic
 INSERT INTO hospitals (id, code, name, is_active)
 VALUES (1, 'DEFAULT_HOSP', 'Default Healthcare Network', true)

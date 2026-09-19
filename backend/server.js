@@ -330,6 +330,8 @@ startHl7MllpServer(process.env.HL7_MLLP_PORT || 6060);
 app.use(sentry.errorHandler);
 app.use(errorHandler);
 
+const { runMigrations } = require("./migrations/runner");
+
 // Database Connection & Server Listener Startup
 pool
   .connect()
@@ -345,6 +347,13 @@ pool
       }
     } catch (dbErr) {
       logger.warn("Auto-schema initialization notice:", dbErr.message);
+    }
+
+    try {
+      await runMigrations();
+      logger.info("✅ Database schema migrations executed successfully.");
+    } catch (migErr) {
+      logger.warn("Migration execution notice:", migErr.message);
     }
 
     client.release();

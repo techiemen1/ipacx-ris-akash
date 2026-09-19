@@ -12,6 +12,7 @@ const { logAction } = require("../utils/auditLogger");
 const PacsService = require("../services/pacsService");
 const pacsGateway = require("../services/pacsGateway");
 const asyncHandler = require("../middleware/asyncHandler");
+const cacheService = require("../services/cacheService");
 
 const pacsService = new PacsService(pool);
 
