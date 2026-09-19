@@ -25,19 +25,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Lowercase Repository Name
+        id: repo
+        run: |
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
       - name: Log in to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub (Optional)
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # 1. Build and Push Backend Image
       - name: Build & Push Backend
@@ -47,8 +45,8 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ipacx-backend:latest
-            ghcr.io/${{ github.repository }}/ipacx-backend:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-backend:latest
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-backend:${{ github.sha }}
 
       # 2. Build and Push Frontend Image
       - name: Build & Push Frontend
@@ -58,8 +56,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ipacx-frontend:latest
-            ghcr.io/${{ github.repository }}/ipacx-frontend:${{ github.sha }}
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-frontend:latest
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-frontend:${{ github.sha }}
 
       # 3. Build and Push MWL Service Image
       - name: Build & Push MWL Service
@@ -69,6 +67,5 @@ jobs:
           file: ./mwl-service/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/ipacx-mwl-service:latest
-            ghcr.io/${{ github.repository }}/ipacx-mwl-service:${{ github.sha }}
-
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-mwl-service:latest
+            ghcr.io/${{ env.REPO_LOWER }}/ipacx-mwl-service:${{ github.sha }}

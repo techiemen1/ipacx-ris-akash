@@ -6,7 +6,6 @@ import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import VoiceDictationManager from "../dictation/VoiceDictationManager";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
-import ShareReportModal from "../ShareReportModal";
 import {
   Sparkles,
   Zap,
@@ -30,7 +29,7 @@ import {
   QrCode
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot } from "../../utils/ViewerBridge";
 import "./ReportStudio.css";
 
 export default function RadiologyReportStudio({ studyUIDOverride }) {

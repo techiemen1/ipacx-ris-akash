@@ -20,13 +20,11 @@ import {
   ListOrdered,
   RotateCcw,
   QrCode,
-  Columns,
-  Maximize2,
   Camera,
   Settings
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot } from "../../utils/ViewerBridge";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
 
