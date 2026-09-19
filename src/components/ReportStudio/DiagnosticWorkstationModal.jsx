@@ -310,12 +310,16 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
     // Resolve active series with strict priority:
-    // 1. Explicit parameter override (e.g. from user clicking series/slice control)
-    // 2. Verified series match from live iframe DOM inspection (if available)
-    // 3. Current selectedSeriesId state explicitly chosen by radiologist in workstation
-    // 4. Default non-scout series
-    const activeSeriesId = overrideSeriesId || (snapResult?.matchedSeriesId ? snapResult.matchedSeriesId : selectedSeriesId);
-    
+    // 1. Explicit parameter override (e.g. from user picking series)
+    // 2. Verified series match from live iframe DOM/postMessage snapshot (snapResult?.matchedSeriesId)
+    // 3. Active viewport info series from live postMessage listener (activeViewportInfo?.seriesInstanceUid)
+    // 4. Current selectedSeriesId state
+    // 5. Default non-scout series
+    const activeSeriesId = overrideSeriesId || 
+      snapResult?.matchedSeriesId || 
+      activeViewportInfo?.seriesInstanceUid || 
+      selectedSeriesId;
+
     let seriesObj = null;
     if (studySeriesList && studySeriesList.length > 0) {
       if (activeSeriesId) {
@@ -347,18 +351,18 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     }
 
     // Resolve detected slice candidate with strict priority:
-    // 1. Explicit parameter override (e.g., from slice thumbnail/slider)
-    // 2. Verified slice number from live iframe snapshot
-    // 3. Active pickerSliceNum state set by user
+    // 1. Explicit parameter override (e.g. from picker modal)
+    // 2. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
+    // 3. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
     // 4. Active targetSliceNumber state
-    // 5. activeViewportInfo frame number (only if matching the target series)
+    // 5. ONLY IF ALL THE ABOVE ARE ABSENT: null (will fall back to active viewport image caption)
     const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
-          snapResult?.sliceNumber || 
-          (pickerSliceNum ? parseInt(pickerSliceNum, 10) : null) ||
+          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
+          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
+          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
           (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
-          (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
           null
         );
 
@@ -369,13 +373,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     if (!displaySliceNum || isNaN(displaySliceNum) || displaySliceNum < 1) {
       isDefaultedSlice = true;
-      // Mid-series fallback if slice detection unavailable for multi-slice series
-      displaySliceNum = totalSlices > 2 ? Math.round(totalSlices / 2) : 1;
+      // Default to slice 1 / active viewport, NEVER fabricate fake mid-series slice numbers (157, 102, etc.)
+      displaySliceNum = 1;
     }
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
 
     const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
-    const fullCaption = isDefaultedSlice && capturedDataUrl
+    const fullCaption = isDefaultedSlice
       ? `${seriesDesc} | Active Viewport Image`
       : (totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`);
 
@@ -384,19 +388,21 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       targetInst = seriesObj.instances.find(inst => 
         parseInt(inst.slice_index, 10) === displaySliceNum || 
         parseInt(inst.slice_number, 10) === displaySliceNum ||
-        parseInt(inst.instanceNumber, 10) === displaySliceNum
+        parseInt(inst.instanceNumber, 10) === displaySliceNum ||
+        parseInt(inst.instance_number, 10) === displaySliceNum
       );
 
       if (!targetInst && snapResult?.instanceNumber) {
         targetInst = seriesObj.instances.find(inst => 
           parseInt(inst.slice_number, 10) === snapResult.instanceNumber || 
           parseInt(inst.instance_number, 10) === snapResult.instanceNumber ||
-          parseInt(inst.instanceNumber, 10) === snapResult.instanceNumber
+          parseInt(inst.instanceNumber, 10) === snapResult.instanceNumber ||
+          parseInt(inst.slice_index, 10) === snapResult.instanceNumber
         );
       }
 
       if (!targetInst) {
-        const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
+        const boundedIndex = isDefaultedSlice ? 0 : Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
         targetInst = seriesObj.instances[boundedIndex];
       }
     }

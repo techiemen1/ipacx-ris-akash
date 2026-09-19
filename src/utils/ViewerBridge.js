@@ -203,25 +203,29 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       return null;
     };
 
-    // 0. Direct Overlay Element InnerText Inspection (Priority 0)
+    // 0. Direct Overlay & Viewport Text Element InnerText Inspection (Priority 0)
     const overlayElements = Array.from(iframeDoc.querySelectorAll(
-      '[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], [class*="viewport-overlay"], [class*="cornerstone-viewport-overlay"], [class*="vp-overlay"]'
-    )).filter(el => !isSidebarElement(el));
+      '[class*="overlay"], [class*="Overlay"], [class*="info"], [class*="Info"], [class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="bottom-right"], [class*="bottomRight"], div, span, p'
+    )).filter(el => {
+      if (isSidebarElement(el)) return false;
+      const text = (el.innerText || el.textContent || '').trim();
+      return text && text.length > 0 && text.length < 250 && (text.includes('/') || text.includes('(') || text.includes('of') || /\b(slice|im|image|frame|instance|i)\b/i.test(text));
+    });
 
     for (const overlayEl of overlayElements) {
       const text = (overlayEl.innerText || overlayEl.textContent || '').trim();
       if (!text || text.length > 250) continue;
 
-      // Match "81/453" or "81 / 453" or "(81/453)" or "Im: 81 (81/453)" or "Slice 81/453"
-      const fracMatch = text.match(/(?:slice|im|image|frame|instance|f)?\s*:?\s*(\d+)?\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
-      if (fracMatch) {
-        const instNum = fracMatch[1] ? parseInt(fracMatch[1], 10) : null;
-        const sNum = parseInt(fracMatch[2], 10);
-        const tNum = parseInt(fracMatch[3], 10);
+      // Match "43 (43/313)" or "22 (22/204)" or "I: 43 (43/313)" or "(43/313)"
+      const parenMatch = text.match(/(?:i|im|image|slice|frame|instance|f)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+      if (parenMatch) {
+        const instNum = parenMatch[1] ? parseInt(parenMatch[1], 10) : null;
+        const sNum = parseInt(parenMatch[2], 10);
+        const tNum = parseInt(parenMatch[3], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
           const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
           return {
-            instanceNumber: instNum || null,
+            instanceNumber: instNum || sNum,
             sliceNumber: sNum,
             totalSlices: tNum,
             matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
@@ -230,7 +234,41 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         }
       }
 
-      // Match "Slice: 81" or "Im: 81" or "Frame: 81" or "I: 81"
+      // Match "43 of 313" or "Slice 43 of 313"
+      const ofMatch = text.match(/(?:slice|im|image|frame|instance|i|f)?\s*:?\s*(\d+)\s+of\s+(\d+)/i);
+      if (ofMatch) {
+        const sNum = parseInt(ofMatch[1], 10);
+        const tNum = parseInt(ofMatch[2], 10);
+        if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          return {
+            instanceNumber: sNum,
+            sliceNumber: sNum,
+            totalSlices: tNum,
+            matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+            seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
+          };
+        }
+      }
+
+      // Match "43/313" or "Slice 43/313"
+      const slashMatch = text.match(/(?:slice|im|image|frame|instance|i|f)?\s*:?\s*(\d+)\s*\/\s*(\d+)/i);
+      if (slashMatch) {
+        const sNum = parseInt(slashMatch[1], 10);
+        const tNum = parseInt(slashMatch[2], 10);
+        if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+          const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
+          return {
+            instanceNumber: sNum,
+            sliceNumber: sNum,
+            totalSlices: tNum,
+            matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+            seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
+          };
+        }
+      }
+
+      // Match "Slice: 43" or "Im: 43" or "Frame: 43" or "I: 43"
       const singleMatch = text.match(/(?:slice|im|image|frame|instance|i|f)\s*:?\s*(\d+)/i);
       if (singleMatch) {
         const sNum = parseInt(singleMatch[1], 10);
