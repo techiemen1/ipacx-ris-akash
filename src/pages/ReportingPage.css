@@ -430,62 +430,76 @@
 }
 
 .rp-btn-action {
-  padding: 4px 9px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
   font-size: 11px;
   font-weight: 800;
   cursor: pointer;
   border: 1px solid transparent;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  transition: all 0.15s ease;
+  gap: 5px;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rp-btn-action:active {
+  transform: scale(0.95);
 }
 
 .rp-btn-action.workstation {
-  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
   color: #ffffff;
-  border-color: #3730a3;
-  box-shadow: 0 1px 4px rgba(79, 70, 229, 0.25);
+  border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
 }
 
 .rp-btn-action.workstation:hover {
-  background: #4338ca;
-  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45);
+  transform: translateY(-1px);
 }
 
-.rp-btn-action.ghost {
-  background: #ffffff;
-  color: #334155;
-  border-color: #cbd5e1;
+.rp-btn-action.viewer {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: #ffffff;
+  border-color: #8b5cf6;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
 }
 
-.rp-btn-action.ghost:hover {
-  background: #f1f5f9;
-  color: #4338ca;
-  border-color: #c7d2fe;
+.rp-btn-action.viewer:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.45);
+  transform: translateY(-1px);
 }
 
-.rp-btn-action.primary {
+.rp-btn-action.mobile {
   background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
   color: #ffffff;
-  border-color: #0284c7;
-  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.25);
+  border-color: #38bdf8;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
 }
 
-.rp-btn-action.primary:hover {
-  background: #0369a1;
+.rp-btn-action.mobile:hover {
+  background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
 }
 
-.rp-btn-action.share {
-  background: #ffffff;
-  color: #4338ca;
-  border-color: #c7d2fe;
+.rp-btn-action.report {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  border-color: #10b981;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
 }
 
-.rp-btn-action.share:hover {
-  background: #e0e7ff;
+.rp-btn-action.report:hover {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45);
+  transform: translateY(-1px);
 }
 
 .rp-loading, .rp-empty {

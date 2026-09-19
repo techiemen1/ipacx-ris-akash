@@ -925,32 +925,31 @@ export default function PACSpage() {
                                 <button
                                   onClick={() => setActiveWorkstationItem({ studyUID: uid, modality: mod })}
                                   className="pacs-btn-action workstation"
-                                  title="Launch Workstation"
+                                  title="Workstation: Diagnostic Workstation & Key Image Studio"
                                 >
                                   <Zap size={13} /> Workstation
                                 </button>
 
                                 <button
                                   onClick={() => openStudyViewer(uid)}
-                                  className="pacs-btn-action ghost"
-                                  title="Open Full OHIF DICOM Viewer"
+                                  className="pacs-btn-action viewer"
+                                  title="Viewer: PACS Full DICOM Viewer"
                                 >
                                   <Eye size={13} /> Viewer
                                 </button>
 
                                 <button
                                   onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
-                                  className="pacs-btn-action ghost"
-                                  style={{ color: "#38bdf8", borderColor: "#0284c7" }}
-                                  title="Open Mobile DICOM Viewer"
+                                  className="pacs-btn-action mobile"
+                                  title="Mobile: Mobile Lite MPR Viewer"
                                 >
                                   <Smartphone size={13} /> Mobile
                                 </button>
 
                                 <button
                                   onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(uid)}`)}
-                                  className="pacs-btn-action primary"
-                                  title="Report Editor"
+                                  className="pacs-btn-action report"
+                                  title="Report: Radiology Report Studio & Findings"
                                 >
                                   <FileText size={13} /> Report
                                 </button>

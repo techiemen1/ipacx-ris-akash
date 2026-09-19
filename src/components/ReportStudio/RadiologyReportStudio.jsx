@@ -6,6 +6,7 @@ import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import VoiceDictationManager from "../dictation/VoiceDictationManager";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
+import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import {
   Sparkles,
   Zap,
@@ -1586,176 +1587,54 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
         {/* ATTACHED KEY DIAGNOSTIC IMAGES CARD */}
         <div className="rs-section-card" style={{ padding: 16 }}>
-          {/* INTERACTIVE DICOM SERIES & INSTANCE THUMBNAIL PICKER */}
-          {studySeriesList.length > 0 && (() => {
-            const currentSeries = studySeriesList.find(s => 
-              String(s.series_id) === String(selectedSeriesId) || 
-              String(s.series_instance_uid) === String(selectedSeriesId)
-            ) || studySeriesList.find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || '')) || studySeriesList[0];
-
-            const instances = currentSeries?.instances || [];
-            const activeSliceVal = parseInt(pickerSliceNum || targetSliceNumber || 1, 10);
-
-            return (
-              <div style={{ marginBottom: 14, padding: 12, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-                {/* SERIES SELECTOR TABS */}
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Select Series:</span>
-                  {studySeriesList.map(s => {
-                    const isScout = /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
-                    const isSel = String(s.series_id) === String(currentSeries?.series_id);
-                    return (
-                      <button
-                        key={s.series_id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedSeriesId(s.series_id);
-                          const mid = s.total_slices > 2 ? Math.round(s.total_slices / 2) : 1;
-                          setPickerSliceNum(mid);
-                          setTargetSliceNumber(String(mid));
-                          setActiveViewportInfo({
-                            seriesInstanceUid: s.series_id || s.series_instance_uid,
-                            seriesDescription: s.series_description,
-                            frameNumber: mid,
-                            totalSlices: s.total_slices
-                          });
-                        }}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: 11,
-                          fontWeight: 700,
-                          borderRadius: 6,
-                          border: isSel ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
-                          background: isSel ? '#0284c7' : isScout ? '#f1f5f9' : '#ffffff',
-                          color: isSel ? '#ffffff' : isScout ? '#94a3b8' : '#334155',
-                          cursor: 'pointer',
-                          opacity: isScout ? 0.75 : 1
-                        }}
-                      >
-                        {isScout ? "🔍 Scout: " : ""}{s.series_description || `Series ${s.series_number}`} ({s.total_slices})
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* SLICE RANGE SLIDER & THUMBNAIL STRIP */}
-                {currentSeries && instances.length > 0 && (
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#0369a1' }}>
-                        Selected Image: <b>Slice {activeSliceVal} of {currentSeries.total_slices}</b> ({currentSeries.series_description || 'Diagnostic Series'})
-                      </span>
-                      {!isReadOnly && (
-                        <button
-                          type="button"
-                          onClick={() => handleAttachKeyImage(activeSliceVal, currentSeries.series_id)}
-                          style={{
-                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: 5,
-                            padding: '4px 10px',
-                            fontSize: 11,
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }}
-                        >
-                          <Camera size={13} /> Attach Slice #{activeSliceVal}
-                        </button>
-                      )}
-                    </div>
-
-                    {/* RANGE SLIDER */}
-                    {currentSeries.total_slices > 1 && (
-                      <input
-                        type="range"
-                        min={1}
-                        max={currentSeries.total_slices}
-                        value={activeSliceVal}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          setPickerSliceNum(val);
-                          setTargetSliceNumber(String(val));
-                        }}
-                        style={{ width: '100%', accentColor: '#0284c7', marginBottom: 8, cursor: 'pointer' }}
-                      />
-                    )}
-
-                    {/* INSTANCE THUMBNAILS STRIP */}
-                    <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6, scrollbarWidth: 'thin' }}>
-                      {instances.slice(0, 50).map((inst, iIdx) => {
-                        const sliceNum = inst.slice_number || inst.slice_index || (iIdx + 1);
-                        const isSelectedSlice = sliceNum === activeSliceVal;
-                        return (
-                          <div
-                            key={inst.id || iIdx}
-                            onClick={() => {
-                              setPickerSliceNum(sliceNum);
-                              setTargetSliceNumber(String(sliceNum));
-                              if (!isReadOnly) handleAttachKeyImage(sliceNum, currentSeries.series_id);
-                            }}
-                            style={{
-                              flex: '0 0 auto',
-                              width: 72,
-                              cursor: isReadOnly ? 'default' : 'pointer',
-                              borderRadius: 6,
-                              border: isSelectedSlice ? '2px solid #0284c7' : '1px solid #cbd5e1',
-                              background: isSelectedSlice ? '#e0f2fe' : '#ffffff',
-                              padding: 3,
-                              textAlign: 'center',
-                              boxShadow: isSelectedSlice ? '0 0 0 2px rgba(2, 132, 199, 0.3)' : 'none'
-                            }}
-                            title={`Click to Attach Slice ${sliceNum}`}
-                          >
-                            <img
-                              src={inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id || inst.id}?studyUID=${encodeURIComponent(studyUID)}`}
-                              alt={`Slice ${sliceNum}`}
-                              style={{ width: '100%', height: 50, objectFit: 'cover', borderRadius: 4, background: '#000000', display: 'block' }}
-                              onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = `/api/pacs/instance-preview/${inst.instance_id || inst.id}`;
-                              }}
-                            />
-                            <div style={{ fontSize: 9.5, fontWeight: 700, color: isSelectedSlice ? '#0369a1' : '#475569', marginTop: 2 }}>
-                              Slice {sliceNum}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
           <div className="rs-section-header" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
               <Camera size={16} style={{ color: "#0284c7" }} /> Key Images Attached ({attachedSnapshots.length})
             </span>
             {!isReadOnly && (
-              <button
-                type="button"
-                onClick={() => handleAttachKeyImage(pickerSliceNum, selectedSeriesId)}
-                style={{
-                  background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 6,
-                  padding: "5px 12px",
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5
-                }}
-              >
-                <Camera size={14} /> Attach Active Slice
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSlicePickerModal(true)}
+                  style={{
+                    background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "5px 12px",
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5
+                  }}
+                  title="Browse & Select Specific Study Slices"
+                >
+                  <ImageIcon size={14} /> + Select Key Images
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleAttachKeyImage(pickerSliceNum, selectedSeriesId)}
+                  style={{
+                    background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "5px 12px",
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5
+                  }}
+                  title="Capture Active Workstation Viewport Image"
+                >
+                  <Camera size={14} /> Capture Active Slice
+                </button>
+              </div>
             )}
           </div>
 
@@ -2318,151 +2197,21 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
       )}
 
-      {/* VISUAL DICOM SLICE BROWSER MODAL */}
-      {showSlicePickerModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ background: '#ffffff', borderRadius: 12, maxWidth: 720, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', border: '1px solid #cbd5e1', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>🖼️ Visual DICOM Slice Browser</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Select any series and slice number to instantly attach high-resolution preview to report</p>
-              </div>
-              <button type="button" onClick={() => setShowSlicePickerModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '50%', width: 28, height: 28, fontWeight: 800, cursor: 'pointer' }}>✕</button>
-            </div>
-
-            {/* Series Selection Tabs */}
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-              {studySeriesList.map(s => {
-                const isSel = String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId);
-                return (
-                  <button
-                    key={s.series_id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSeriesId(s.series_id);
-                      setPickerSliceNum(1);
-                      setTargetSliceNumber("1");
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      borderRadius: 8,
-                      border: isSel ? '2px solid #0284c7' : '1px solid #cbd5e1',
-                      background: isSel ? '#0284c7' : '#f8fafc',
-                      color: isSel ? '#ffffff' : '#334155',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {s.series_description || `Series ${s.series_number}`} ({s.total_slices} Slices)
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Active Series & Slider Control */}
-            {(() => {
-              const sObj = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) || studySeriesList[0];
-              const maxS = sObj?.total_slices || 1;
-              const curSlice = Math.min(Math.max(1, pickerSliceNum), maxS);
-              const curInst = sObj?.instances ? sObj.instances[curSlice - 1] : null;
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
-                  {/* Live Preview Container */}
-                  <div style={{ width: '100%', height: 320, background: '#000000', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', border: '2px solid #0284c7' }}>
-                    {curInst ? (
-                      <img
-                        src={`/api/pacs/instance-preview/${curInst.instance_id}`}
-                        alt={`Slice ${curSlice}`}
-                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-                      />
-                    ) : (
-                      <div style={{ color: '#94a3b8', fontSize: 13 }}>Preview Loading...</div>
-                    )}
-                    <div style={{ position: 'absolute', bottom: 10, right: 12, background: 'rgba(0,0,0,0.75)', color: '#00f2fe', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, border: '1px solid rgba(0,242,254,0.3)' }}>
-                      Slice {curSlice} / {maxS}
-                    </div>
-                  </div>
-
-                  {/* Slider Stepper */}
-                  <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() => setPickerSliceNum(prev => Math.max(1, prev - 1))}
-                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                    >
-                      -
-                    </button>
-                    <input
-                      type="range"
-                      min="1"
-                      max={maxS}
-                      value={curSlice}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 1;
-                        setPickerSliceNum(val);
-                        setTargetSliceNumber(String(val));
-                      }}
-                      style={{ flex: 1, accentColor: '#0284c7', height: 8, cursor: 'pointer' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPickerSliceNum(prev => Math.min(maxS, prev + 1))}
-                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                    >
-                      +
-                    </button>
-                    <input
-                      type="number"
-                      min="1"
-                      max={maxS}
-                      value={curSlice}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 1;
-                        setPickerSliceNum(val);
-                        setTargetSliceNumber(String(val));
-                      }}
-                      style={{ width: 65, padding: '4px 6px', fontSize: 13, fontWeight: 800, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }}
-                    />
-                  </div>
-
-                  {/* Direct Action Attach Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleAttachKeyImage(curSlice, sObj?.series_id);
-                      setTargetSliceNumber(String(curSlice));
-                      setShowSlicePickerModal(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 8,
-                      padding: '10px 16px',
-                      fontSize: 13,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(2, 132, 199, 0.35)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8
-                    }}
-                  >
-                    <Camera size={16} /> 📸 Attach Slice #{curSlice} of {sObj?.series_description || 'Series'} to Report
-                  </button>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
+      {/* VISUAL DICOM KEY IMAGE PICKER MODAL */}
+      <DicomKeyImagePickerModal
+        isOpen={showSlicePickerModal}
+        onClose={() => setShowSlicePickerModal(false)}
+        studyUID={studyUID}
+        attachedSnapshots={attachedSnapshots}
+        onSelectImage={(snapObj) => {
+          setAttachedSnapshots(prev => {
+            if (prev.some(s => s.preview_url === snapObj.preview_url || String(s.instance_id) === String(snapObj.instance_id))) {
+              return prev;
+            }
+            return [...prev, snapObj];
+          });
+        }}
+      />
     </div>
   );
 }

@@ -76,23 +76,34 @@ router.get("/retrieve/:studyUID", async (req, res) => {
     }
 });
 
+const cacheService = require("../services/cacheService");
+
 // Extract measurements and metadata for a given study
 router.get("/measurements/:studyUID", async (req, res) => {
     try {
         const { studyUID } = req.params;
+        const requestedModality = String(req.query.modality || req.query.mod || "").toUpperCase();
+        const cacheKey = `dicom_measurements:${studyUID}:${requestedModality}`;
+
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+            return res.json(cached);
+        }
         
         // 1. Find the study in Orthanc
         const findRes = await axios.post(`${ORTHANC_URL}tools/find`, {
             Level: "Study",
             Query: { StudyInstanceUID: studyUID }
-        }, orthancAuth()).catch(() => ({ data: [] }));
+        }, { ...orthancAuth(), timeout: 1500 }).catch(() => ({ data: [] }));
 
         if (!findRes || !findRes.data || !findRes.data.length) {
-            return res.json({ success: true, data: [], measurements: {}, metadata: {} });
+            const emptyRes = { success: true, data: [], measurements: {}, metadata: {} };
+            await cacheService.set(cacheKey, emptyRes, 60);
+            return res.json(emptyRes);
         }
 
         const studyId = findRes.data[0];
-        const instancesRes = await axios.get(`${ORTHANC_URL}studies/${studyId}/instances`, orthancAuth()).catch(() => ({ data: [] }));
+        const instancesRes = await axios.get(`${ORTHANC_URL}studies/${studyId}/instances`, { ...orthancAuth(), timeout: 1500 }).catch(() => ({ data: [] }));
         const instances = instancesRes.data || [];
 
         let measurements = {};
@@ -233,13 +244,16 @@ router.get("/measurements/:studyUID", async (req, res) => {
             };
         });
 
-        res.json({
+        const finalRes = {
             success: true,
             data: dataArray,
             measurements,
             metadata,
             extracted_at: new Date().toISOString()
-        });
+        };
+
+        await cacheService.set(cacheKey, finalRes, 120).catch(() => {});
+        res.json(finalRes);
 
     } catch (err) {
         console.error("DicomData Error:", err);

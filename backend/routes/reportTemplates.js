@@ -95,11 +95,17 @@ router.post("/report-templates", async (req, res) => {
   }
 });
 
+const cacheService = require("../services/cacheService");
+
 // Get all templates
 router.get("/report-templates", async (req, res) => {
   try {
+    const cached = await cacheService.get("templates:all");
+    if (cached) return res.json(cached);
+
     const result = await pool.query("SELECT * FROM report_templates ORDER BY updated_at DESC");
     const templates = result.rows.map(r => ({ ...r, content: r.content }));
+    await cacheService.set("templates:all", templates, 300).catch(() => {});
     res.json(templates);
   } catch (err) {
     console.error("Fetch templates error:", err.message);

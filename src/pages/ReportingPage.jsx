@@ -645,32 +645,31 @@ export default function ReportingPage() {
                               <button
                                 onClick={() => setActiveWorkstationItem({ studyUID: item.study_uid, modality: item.modality })}
                                 className="rp-btn-action workstation"
-                                title="Launch Workstation"
+                                title="Workstation: Diagnostic Workstation & Key Image Studio"
                               >
                                 <Zap size={13} /> Workstation
                               </button>
 
                               <button
                                 onClick={() => openStudyViewer(item.study_uid)}
-                                className="rp-btn-action ghost"
-                                title="Open Full OHIF DICOM Viewer"
+                                className="rp-btn-action viewer"
+                                title="Viewer: PACS Full DICOM Viewer"
                               >
                                 <Eye size={13} /> Viewer
                               </button>
 
                               <button
                                 onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(item.study_uid)}`)}
-                                className="rp-btn-action ghost"
-                                style={{ color: "#38bdf8", borderColor: "#0284c7" }}
-                                title="Open Mobile DICOM Viewer"
+                                className="rp-btn-action mobile"
+                                title="Mobile: Mobile Lite MPR Viewer"
                               >
                                 <Smartphone size={13} /> Mobile
                               </button>
 
                               <button
                                 onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(item.study_uid)}`)}
-                                className="rp-btn-action primary"
-                                title="Open Report Editor"
+                                className="rp-btn-action report"
+                                title="Report: Radiology Report Studio & Findings"
                               >
                                 <FileText size={13} /> Report
                               </button>
