@@ -851,14 +851,10 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
   return null;
 }
 
-/* ======================================================
-   ENTERPRISE KEY IMAGE CAPTURE MICROSERVICE API
-   Saves exact open viewport image / PACS rendered slice to physical disk & DB
-====================================================== */
-router.post("/capture-key-image", asyncHandler(async (req, res) => {
-  const { studyUID, seriesUID, sliceNumber, totalSlices, seriesDescription, instanceId, dataUrl, caption } = req.body;
+async function processKeyImageSave(payload, reqUser = {}) {
+  const { studyUID, seriesUID, sopInstanceUid, sliceNumber, totalSlices, seriesDescription, instanceId, dataUrl, caption } = payload;
   if (!studyUID) {
-    return res.status(400).json({ success: false, message: "studyUID is required" });
+    throw new Error("studyUID is required");
   }
 
   const reportImagesDir = path.join(__dirname, "../uploads/report_images");
@@ -871,8 +867,40 @@ router.post("/capture-key-image", asyncHandler(async (req, res) => {
   const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_s${targetSlice}_${Date.now()}.jpg`;
   const filePath = path.join(reportImagesDir, filename);
 
-  // 1. Save Base64 canvas viewport dataUrl to physical disk if provided
-  if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
+  const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+
+  // Priority 1: High-resolution PACS rendered DICOM slice (guarantees crystal-clear medical image & avoids pitch-black WebGL canvas)
+  if (targetInstId) {
+    try {
+      const orthancUrl = await getOrthancUrl();
+      let renderedBuffer = null;
+      try {
+        const rRes = await axios.get(`${orthancUrl}instances/${targetInstId}/rendered`, {
+          responseType: "arraybuffer",
+          ...orthancAuthConfig(),
+          timeout: 4000
+        });
+        if (rRes && rRes.data && rRes.data.byteLength > 1000) renderedBuffer = rRes.data;
+      } catch (rErr) {
+        const pRes = await axios.get(`${orthancUrl}instances/${targetInstId}/preview`, {
+          responseType: "arraybuffer",
+          ...orthancAuthConfig(),
+          timeout: 4000
+        }).catch(() => null);
+        if (pRes && pRes.data && pRes.data.byteLength > 1000) renderedBuffer = pRes.data;
+      }
+
+      if (renderedBuffer) {
+        fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
+        finalUrl = `/uploads/report_images/${filename}`;
+      }
+    } catch (err) {
+      console.warn("[PACS] Failed rendering PACS DICOM slice for key image:", err.message);
+    }
+  }
+
+  // Priority 2: Base64 canvas viewport dataUrl if PACS render unavailable
+  if (!finalUrl && dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
     try {
       const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
       if (matches && matches.length === 3) {
@@ -881,57 +909,64 @@ router.post("/capture-key-image", asyncHandler(async (req, res) => {
         finalUrl = `/uploads/report_images/${filename}`;
       }
     } catch (e) {
-      console.warn("Failed writing key image base64 data to disk:", e.message);
+      console.warn("[PACS] Failed writing key image base64 data to disk:", e.message);
     }
   }
 
-  // 2. Fallback: Fetch rendered image directly from Orthanc/PACS for exact target slice
+  // Priority 3: Fallback preview URL
   if (!finalUrl) {
-    try {
-      const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
-      if (targetInstId) {
-        const orthancUrl = await getOrthancUrl();
-        let renderedBuffer = null;
-        try {
-          const rRes = await axios.get(`${orthancUrl}instances/${targetInstId}/rendered`, {
-            responseType: "arraybuffer",
-            ...orthancAuthConfig(),
-            timeout: 4000
-          });
-          if (rRes && rRes.data) renderedBuffer = rRes.data;
-        } catch (rErr) {
-          const pRes = await axios.get(`${orthancUrl}instances/${targetInstId}/preview`, {
-            responseType: "arraybuffer",
-            ...orthancAuthConfig(),
-            timeout: 4000
-          }).catch(() => null);
-          if (pRes && pRes.data) renderedBuffer = pRes.data;
-        }
-
-        if (renderedBuffer) {
-          fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
-          finalUrl = `/uploads/report_images/${filename}`;
-        }
-      }
-    } catch (err) {
-      console.warn("Failed rendering key image instance from PACS:", err.message);
-    }
-  }
-
-  // 3. Last fallback
-  if (!finalUrl) {
-    const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
     finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}` : `/api/pacs/snapshots/${studyUID}`;
   }
 
   const sDesc = seriesDescription || "Diagnostic Series";
   const totSlices = totalSlices || 1;
   const finalCaption = caption || (totSlices > 1 ? `${sDesc} | Slice ${targetSlice}/${totSlices}` : `${sDesc} | Slice ${targetSlice}`);
+  const clinicId = reqUser?.clinic_id || 1;
 
-  const snapshotObj = {
-    id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    instance_id: instanceId || `inst_${Date.now()}`,
+  // DB Persistence to study_key_images table
+  let dbRow = null;
+  try {
+    const studyMatch = await pool.query(
+      "SELECT id FROM studies WHERE study_uid = $1 OR accession_number = $1 OR id::text = $1 LIMIT 1",
+      [studyUID]
+    ).catch(() => ({ rows: [] }));
+    const studyDbId = studyMatch.rows[0]?.id || null;
+
+    const insertRes = await pool.query(
+      `INSERT INTO public.study_key_images 
+       (study_id, study_uid, series_uid, sop_instance_uid, instance_id, clinic_id, slice_number, total_slices, series_description, caption, image_path, preview_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING *`,
+      [
+        studyDbId,
+        studyUID,
+        seriesUID || null,
+        sopInstanceUid || null,
+        targetInstId || null,
+        clinicId,
+        targetSlice,
+        totSlices,
+        sDesc,
+        finalCaption,
+        filePath,
+        finalUrl
+      ]
+    ).catch(e => {
+      console.warn("study_key_images DB insert notice:", e.message);
+      return { rows: [] };
+    });
+
+    dbRow = insertRes.rows[0];
+  } catch (dbErr) {
+    console.warn("Failed persisting key image to database:", dbErr.message);
+  }
+
+  return {
+    id: dbRow?.id ? `key_db_${dbRow.id}` : `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    db_id: dbRow?.id || null,
+    instance_id: targetInstId || instanceId || `inst_${Date.now()}`,
     preview_url: finalUrl,
+    previewUrl: finalUrl,
     url: finalUrl,
     caption: finalCaption,
     sliceNumber: targetSlice,
@@ -939,11 +974,60 @@ router.post("/capture-key-image", asyncHandler(async (req, res) => {
     seriesDesc: sDesc,
     studyUID
   };
+}
 
-  res.json({
-    success: true,
-    data: snapshotObj
-  });
+/* ======================================================
+   ENTERPRISE KEY IMAGE CAPTURE MICROSERVICE API
+   Saves exact open viewport image / PACS rendered slice to physical disk & DB
+====================================================== */
+router.post("/capture-key-image", asyncHandler(async (req, res) => {
+  const result = await processKeyImageSave(req.body, req.user);
+  res.json({ success: true, data: result });
+}));
+
+router.post("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
+  const { studyId } = req.params;
+  const payload = { ...req.body, studyUID: req.body.studyUID || studyId };
+  const result = await processKeyImageSave(payload, req.user);
+  res.json({ success: true, data: result });
+}));
+
+router.get("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
+  const { studyId } = req.params;
+  const clinicId = req.user?.clinic_id || 1;
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM public.study_key_images 
+       WHERE (study_uid = $1 OR id::text = $1) AND (clinic_id = $2 OR $2 IS NULL)
+       ORDER BY id ASC`,
+      [studyId, clinicId]
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.json({ success: true, data: [] });
+  }
+}));
+
+router.delete("/v1/studies/:studyId/key-images/:imageId", asyncHandler(async (req, res) => {
+  const { studyId, imageId } = req.params;
+  const clinicId = req.user?.clinic_id || 1;
+  try {
+    const cleanId = String(imageId).replace(/^key_db_/, '');
+    const { rows } = await pool.query(
+      "SELECT * FROM public.study_key_images WHERE (id::text = $1 OR preview_url = $2) AND (clinic_id = $3 OR $3 IS NULL)",
+      [cleanId, imageId, clinicId]
+    );
+    if (rows.length > 0) {
+      const imgRow = rows[0];
+      if (imgRow.image_path && fs.existsSync(imgRow.image_path)) {
+        try { fs.unlinkSync(imgRow.image_path); } catch (e) {}
+      }
+      await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
+    }
+    res.json({ success: true, message: "Key image removed" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 }));
 
 function getMeasurementsForModality(tags = {}, requestedModality = "", extraContext = {}) {

@@ -7,6 +7,7 @@ import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import VoiceDictationManager from "../dictation/VoiceDictationManager";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
 import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
+import KeyImageGallery from "./KeyImageGallery";
 import {
   Sparkles,
   Zap,
@@ -218,6 +219,18 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         .catch((err) => console.warn("Fetch priors notice:", err));
     }
   }, [study.PatientID, studyUID]);
+
+  useEffect(() => {
+    if (studyUID) {
+      api.get(`/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images`)
+        .then((res) => {
+          if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+            setAttachedSnapshots(res.data.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [studyUID]);
 
   const viewerUrl = getViewerUrl(studyUID);
 
@@ -1624,160 +1637,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           ></div>
         </div>
         {/* ATTACHED KEY DIAGNOSTIC IMAGES CARD */}
-        <div className="rs-section-card" style={{ padding: 16 }}>
-          <div className="rs-section-header" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span className="rs-section-title" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
-              <Camera size={16} style={{ color: "#0284c7" }} /> Key Images Attached ({attachedSnapshots.length})
-            </span>
-            {!isReadOnly && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowSlicePickerModal(true)}
-                  style={{
-                    background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: 6,
-                    padding: "5px 12px",
-                    fontSize: 11.5,
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5
-                  }}
-                  title="Browse & Select Specific Study Slices"
-                >
-                  <ImageIcon size={14} /> + Select Key Images
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleAttachKeyImage(null, null)}
-                  style={{
-                    background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: 6,
-                    padding: "5px 12px",
-                    fontSize: 11.5,
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 5
-                  }}
-                  title="Capture Active Workstation Viewport Image"
-                >
-                  <Camera size={14} /> Capture Active Slice
-                </button>
-              </div>
-            )}
-          </div>
-
-          {attachedSnapshots.length === 0 ? (
-            <div style={{ padding: "14px 12px", textAlign: "center", color: "#64748b", fontSize: 11.5, border: "1.5px dashed #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
-              No key images attached yet. Open any slice in DICOM Viewer and click <b>"📸 Key Image / Snapshot"</b> to add it to your report.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 10 }}>
-              {attachedSnapshots.map((snap, idx) => (
-                <div key={snap.id || idx} style={{ position: "relative", borderRadius: 8, border: "1px solid #cbd5e1", overflow: "hidden", background: "#ffffff", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
-                  <img
-                    src={snap.preview_url || snap.url || snap.image_path || snap.dataUrl || snap.previewUrl || snap.fallback_preview_url}
-                    alt={snap.caption || `Key Image #${idx + 1}`}
-                    style={{ width: "100%", height: 80, objectFit: "cover", display: "block", background: "#000000" }}
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      if (snap.fallback_preview_url) {
-                        e.target.src = snap.fallback_preview_url;
-                      }
-                    }}
-                  />
-                  {!isReadOnly && (
-                    <button
-                      type="button"
-                      onClick={() => setAttachedSnapshots(prev => prev.filter((_, i) => i !== idx))}
-                      style={{
-                        position: "absolute",
-                        top: 4,
-                        right: 4,
-                        background: "rgba(239, 68, 68, 0.9)",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "50%",
-                        width: 18,
-                        height: 18,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: "pointer",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
-                      }}
-                      title="Remove Image"
-                    >
-                      <X size={11} />
-                    </button>
-                  )}
-                  <div style={{ padding: '4px 6px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
-                    <input
-                      type="text"
-                      value={snap.caption || ''}
-                      readOnly={isReadOnly}
-                      onChange={(e) => {
-                        const newCap = e.target.value;
-                        setAttachedSnapshots(prev => prev.map((item, i) => i === idx ? { ...item, caption: newCap } : item));
-                      }}
-                      placeholder={`Key Image #${idx + 1}`}
-                      style={{
-                        width: '100%',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        padding: '2px 4px',
-                        color: '#1e293b',
-                        fontWeight: '600'
-                      }}
-                    />
-                    {!isReadOnly && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 5px; font-weight: 700; font-size: 10px;" contenteditable="false">📸 [Key Image #${idx + 1}: ${snap.caption || 'Diagnostic Slice'}]</span> `;
-                          if (findingsRef.current) {
-                            findingsRef.current.focus();
-                            document.execCommand('insertHTML', false, chipHtml);
-                            setFindingsHtml(findingsRef.current.innerHTML);
-                          }
-                        }}
-                        style={{
-                          width: '100%',
-                          marginTop: 3,
-                          background: '#f0f9ff',
-                          color: '#0369a1',
-                          border: '1px solid #bae6fd',
-                          borderRadius: 3,
-                          padding: '2px 4px',
-                          fontSize: 9.5,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 3
-                        }}
-                        title="Insert in-text citation tag into report findings"
-                      >
-                        🔗 Cite in Report
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <KeyImageGallery
+          studyUID={studyUID}
+          attachedSnapshots={attachedSnapshots}
+          setAttachedSnapshots={setAttachedSnapshots}
+          onOpenPicker={() => setShowSlicePickerModal(true)}
+          onAttachActiveSlice={() => handleAttachKeyImage(null, null)}
+          onInsertToEditor={(snap) => {
+            const pUrl = snap.preview_url || snap.previewUrl || snap.url;
+            const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 5px; font-weight: 700; font-size: 10px;" contenteditable="false">📸 [${snap.caption || 'Key Image'}]</span> `;
+            if (findingsRef.current) {
+              findingsRef.current.focus();
+              document.execCommand('insertHTML', false, chipHtml);
+              setFindingsHtml(findingsRef.current.innerHTML);
+            }
+          }}
+        />
       </div>
     </div>
   );

@@ -220,22 +220,40 @@ module.exports = async function generateFinalReportPDF(
       });
 
       /* -----------------------------
-         KEY DIAGNOSTIC IMAGES & SNAPSHOTS (SUPPORT BASE64 DATA URLS)
+         KEY DIAGNOSTIC IMAGES & SNAPSHOTS (SUPPORT BASE64 DATA URLS & DB PERSISTED IMAGES)
       ----------------------------- */
-      const keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
+      let keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
         ? report.report_content.snapshots
-        : (Array.isArray(images) ? images : []);
+        : (Array.isArray(images) && images.length > 0 ? images : []);
+
+      if (keyImages.length === 0 && report.study_uid) {
+        try {
+          const dbKeyImgs = await pool.query(
+            "SELECT * FROM public.study_key_images WHERE study_uid = $1 ORDER BY id ASC",
+            [report.study_uid]
+          );
+          if (dbKeyImgs.rows.length > 0) {
+            keyImages = dbKeyImgs.rows;
+          }
+        } catch (e) {}
+      }
 
       if (keyImages.length > 0) {
-        if (currentY > pageHeight - 160) {
+        if (currentY > pageHeight - 180) {
           addNewPage();
         }
         doc.font("Helvetica-Bold").fontSize(10).text("Key Diagnostic Images:", marginSize, currentY);
-        currentY += 14;
+        currentY += 16;
 
-        let xPos = marginSize;
-        keyImages.forEach((img, i) => {
-          let rawPath = typeof img === "string" ? img : (img.preview_url || img.image_path || img.url || "");
+        const imgWidth = 230;
+        const imgHeight = 165;
+        const gap = 20;
+
+        let colIdx = 0;
+
+        for (let i = 0; i < keyImages.length; i++) {
+          const img = keyImages[i];
+          let rawPath = typeof img === "string" ? img : (img.image_path || img.preview_url || img.previewUrl || img.url || "");
           let captionText = typeof img === "object" ? (img.caption || `Key Image ${i + 1}`) : `Key Image ${i + 1}`;
           
           let imgSource = null;
@@ -252,26 +270,36 @@ module.exports = async function generateFinalReportPDF(
           }
 
           if (imgSource) {
-            if (xPos + 110 > pageWidth - marginSize) {
-              xPos = marginSize;
-              currentY += 115;
-            }
-            if (currentY > pageHeight - 160) {
+            const xPos = marginSize + colIdx * (imgWidth + gap);
+
+            if (currentY + imgHeight + 35 > pageHeight - marginSize) {
               addNewPage();
-              xPos = marginSize;
+              doc.font("Helvetica-Bold").fontSize(10).text("Key Diagnostic Images (Cont.):", marginSize, currentY);
+              currentY += 16;
+              colIdx = 0;
             }
 
             try {
-              doc.image(imgSource, xPos, currentY, { width: 100, height: 85 });
-              doc.font("Helvetica").fontSize(8).text(captionText, xPos, currentY + 88, { width: 100, align: "center" });
+              doc.rect(xPos - 2, currentY - 2, imgWidth + 4, imgHeight + 4).lineWidth(0.5).strokeColor("#cbd5e1").stroke();
+              doc.image(imgSource, xPos, currentY, { width: imgWidth, height: imgHeight, fit: [imgWidth, imgHeight], align: 'center', valign: 'center' });
+              doc.font("Helvetica").fontSize(8).fillColor("#334155").text(captionText, xPos, currentY + imgHeight + 4, { width: imgWidth, align: "center" });
             } catch (e) {
               console.warn("PDF Image draw notice:", e.message);
             }
 
-            xPos += 115;
+            colIdx++;
+            if (colIdx >= 2) {
+              colIdx = 0;
+              currentY += imgHeight + 30;
+            }
           }
-        });
-        currentY += 105;
+        }
+
+        if (colIdx > 0) {
+          currentY += imgHeight + 30;
+        }
+        currentY += 10;
+        doc.fillColor("#000000"); // Reset fill color
       }
 
       /* -----------------------------
