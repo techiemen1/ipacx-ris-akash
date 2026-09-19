@@ -69,7 +69,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       if (instId) {
         setAddedIds(prev => new Set(prev).add(String(instId)));
       }
-      setToastMsg("⭐ Captured Active Viewport Image!");
+      const capText = snapObj?.caption || capturedPayload?.caption || capturedPayload?.seriesDescription || "Key Image";
+      setToastMsg(`⭐ Captured: ${capText}!`);
       setTimeout(() => setToastMsg(""), 3000);
     } catch (err) {
       console.error("Failed capturing active viewport key image:", err);

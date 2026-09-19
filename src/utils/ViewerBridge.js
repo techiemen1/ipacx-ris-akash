@@ -146,11 +146,12 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     // Comprehensive sidebar / thumbnail / browser container detector
     const isSidebarElement = (el) => {
       if (!el) return false;
+      if (el.closest('[class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="viewport-overlay"], [class*="viewport-container"]')) {
+        return false;
+      }
       return !!el.closest(
-        '[class*="sidebar"], [class*="Sidebar"], [class*="sidepanel-left"], [class*="SidePanel-left"], ' +
+        '[class*="sidepanel-left"], [class*="SidePanel-left"], [class*="side-panel-left"], ' +
         '[class*="thumbnail"], [class*="Thumbnail"], [data-cy*="browser"], [data-cy*="thumbnail"], ' +
-        '[class*="StudyBrowser"], [class*="studyBrowser"], [class*="LeftHandPanel"], [class*="leftHandPanel"], ' +
-        '[class*="left-panel"], [class*="LeftPanel"], [class*="study-browser"], [class*="series-quick-select"], ' +
         '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
         '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"]'
       );
@@ -711,10 +712,14 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
 
       const isSidebarElement = (el) => {
         if (!el) return false;
+        if (el.closest('[class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="viewport-overlay"], [class*="viewport-container"]')) {
+          return false;
+        }
         return !!el.closest(
-          '[class*="sidebar"], [class*="Sidebar"], [class*="sidepanel"], [class*="SidePanel"], ' +
+          '[class*="sidepanel-left"], [class*="SidePanel-left"], [class*="side-panel-left"], ' +
           '[class*="thumbnail"], [class*="Thumbnail"], [data-cy*="browser"], [data-cy*="thumbnail"], ' +
-          '[class*="StudyBrowser"], [class*="studyBrowser"], [class*="LeftHandPanel"], [class*="leftHandPanel"]'
+          '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
+          '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"]'
         );
       };
 

@@ -436,12 +436,6 @@ class SRAutoSyncService {
       }
     }
 
-      html += `
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
 
     html += `</div>`;
     return html;
