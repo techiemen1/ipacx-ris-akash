@@ -632,21 +632,32 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
         let orderedInstances = [];
 
         try {
-          const { data: oSlicesData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...config, timeout: 6000 });
-          if (oSlicesData && Array.isArray(oSlicesData.Slices) && oSlicesData.Slices.length > 0) {
-            const tot = oSlicesData.Slices.length;
-            orderedInstances = oSlicesData.Slices.map((item, iIdx) => {
-              const rawPath = Array.isArray(item) ? item[0] : (typeof item === 'string' ? item : (item?.Path || ''));
-              const instId = extractCleanInstanceId(rawPath);
+          const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
+          if (Array.isArray(expInstances) && expInstances.length > 0) {
+            expInstances.sort((a, b) => {
+              const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+              const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+              if (numA !== numB) return numA - numB;
+              const posA = a.MainDicomTags?.ImagePositionPatient ? parseFloat(a.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
+              const posB = b.MainDicomTags?.ImagePositionPatient ? parseFloat(b.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
+              return posA - posB;
+            });
+            const tot = expInstances.length;
+            orderedInstances = expInstances.map((inst, iIdx) => {
+              const instId = extractCleanInstanceId(inst.ID || inst);
+              const instNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+              const sopUid = inst.MainDicomTags?.SOPInstanceUID || instId;
               return {
                 id: instId,
                 instance_id: instId,
-                slice_number: iIdx + 1,
-                instanceNumber: iIdx + 1,
+                sop_instance_uid: sopUid,
+                slice_number: instNum,
+                instanceNumber: instNum,
+                instance_number: instNum,
                 slice_index: iIdx + 1,
                 previewUrl: `/api/pacs/instance-preview/${instId}`,
                 preview_url: `/api/pacs/instance-preview/${instId}`,
-                caption: `${sDesc} | Slice ${iIdx + 1}/${tot}`
+                caption: `${sDesc} | Slice ${instNum}/${tot}`
               };
             });
           }
@@ -654,28 +665,22 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
 
         if (orderedInstances.length === 0) {
           try {
-            const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
-            if (Array.isArray(expInstances) && expInstances.length > 0) {
-              expInstances.sort((a, b) => {
-                const posA = a.MainDicomTags?.ImagePositionPatient ? parseFloat(a.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
-                const posB = b.MainDicomTags?.ImagePositionPatient ? parseFloat(b.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
-                if (posA !== posB) return posA - posB;
-                const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
-                const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
-                return numA - numB;
-              });
-              orderedInstances = expInstances.map((inst, iIdx) => {
-                const instId = extractCleanInstanceId(inst.ID || inst);
-                const sliceNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+            const { data: oSlicesData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...config, timeout: 6000 });
+            if (oSlicesData && Array.isArray(oSlicesData.Slices) && oSlicesData.Slices.length > 0) {
+              const tot = oSlicesData.Slices.length;
+              orderedInstances = oSlicesData.Slices.map((item, iIdx) => {
+                const rawPath = Array.isArray(item) ? item[0] : (typeof item === 'string' ? item : (item?.Path || ''));
+                const instId = extractCleanInstanceId(rawPath);
                 return {
                   id: instId,
                   instance_id: instId,
-                  slice_number: sliceNum,
-                  instanceNumber: sliceNum,
+                  slice_number: iIdx + 1,
+                  instanceNumber: iIdx + 1,
+                  instance_number: iIdx + 1,
                   slice_index: iIdx + 1,
                   previewUrl: `/api/pacs/instance-preview/${instId}`,
                   preview_url: `/api/pacs/instance-preview/${instId}`,
-                  caption: `${sDesc} | Slice ${iIdx + 1}/${expInstances.length}`
+                  caption: `${sDesc} | Slice ${iIdx + 1}/${tot}`
                 };
               });
             }
@@ -814,7 +819,8 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
       seriesObj = seriesList.find(s => 
         String(s.series_id) === String(seriesUID) || 
         String(s.series_instance_uid) === String(seriesUID) ||
-        String(s.orthanc_series_id) === String(seriesUID)
+        String(s.orthanc_series_id) === String(seriesUID) ||
+        (s.series_description && String(s.series_description).toLowerCase().trim() === String(seriesUID).toLowerCase().trim())
       );
     }
     if (!seriesObj) {
@@ -826,10 +832,10 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
       const sNum = parseInt(sliceNumber, 10);
       if (!isNaN(sNum) && sNum > 0) {
         const matched = seriesObj.instances.find(inst => 
-          parseInt(inst.slice_index, 10) === sNum ||
-          parseInt(inst.slice_number, 10) === sNum ||
           parseInt(inst.instanceNumber, 10) === sNum ||
-          parseInt(inst.instance_number, 10) === sNum
+          parseInt(inst.instance_number, 10) === sNum ||
+          parseInt(inst.slice_number, 10) === sNum ||
+          parseInt(inst.slice_index, 10) === sNum
         );
         if (matched) return matched.id || matched.instance_id;
 
