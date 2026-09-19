@@ -216,16 +216,17 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       const text = (overlayEl.innerText || overlayEl.textContent || '').trim();
       if (!text || text.length > 250) continue;
 
-      // Match "43 (43/313)" or "22 (22/204)" or "I: 43 (43/313)" or "(43/313)"
-      const parenMatch = text.match(/(?:i|im|image|slice|frame|instance|f)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
-      if (parenMatch) {
-        const instNum = parenMatch[1] ? parseInt(parenMatch[1], 10) : null;
-        const sNum = parseInt(parenMatch[2], 10);
-        const tNum = parseInt(parenMatch[3], 10);
+      // Match parenthesized slice ratio anywhere in string: ": 58 (58/313)", ": 65 (65/313)", "I: 25 (25/352)", "(58/313)"
+      const parenRatioMatch = text.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+      if (parenRatioMatch) {
+        const sNum = parseInt(parenRatioMatch[1], 10);
+        const tNum = parseInt(parenRatioMatch[2], 10);
         if (sNum > 0 && tNum > 0 && sNum <= tNum) {
+          const instLeadMatch = text.match(/(?:i|im|image|slice|frame|instance|f)?\s*:?\s*(\d+)\s*\(/i);
+          const instNum = instLeadMatch ? parseInt(instLeadMatch[1], 10) : sNum;
           const matchedSeriesObj = resolveSeriesFromContainer(overlayEl.parentElement || overlayEl);
           return {
-            instanceNumber: instNum || sNum,
+            instanceNumber: instNum,
             sliceNumber: sNum,
             totalSlices: tNum,
             matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
