@@ -330,10 +330,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     let seriesObj = null;
     if (studySeriesList && studySeriesList.length > 0) {
       if (activeSeriesId) {
+        const cleanTarget = String(activeSeriesId).trim();
+        const numTarget = cleanTarget.replace(/^S:?/i, "");
         seriesObj = studySeriesList.find(s => 
-          String(s.series_id) === String(activeSeriesId) ||
-          String(s.series_instance_uid) === String(activeSeriesId) ||
-          String(s.orthanc_series_id) === String(activeSeriesId)
+          String(s.series_id) === cleanTarget ||
+          String(s.series_instance_uid) === cleanTarget ||
+          String(s.orthanc_series_id) === cleanTarget ||
+          String(s.series_number) === numTarget
         );
       }
       if (!seriesObj && (directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription)) {

@@ -32,48 +32,30 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
-  // Guard against invalid custom URLs that point to root dashboard "/" or same origin
-  if (
-    customOhifUrl === "/" ||
-    customOhifUrl === "#" ||
-    customOhifUrl === "http://localhost:3010" ||
-    customOhifUrl === "http://localhost:3010/" ||
-    customOhifUrl === "http://127.0.0.1:3010"
-  ) {
-    customOhifUrl = "";
-  }
-
-  // If custom URL points to same localhost / hostname, convert to relative path via setupProxy / backend proxy
+  // Convert absolute same-host URLs (e.g. http://localhost:8042 or http://127.0.0.1:8042) to same-origin relative proxy path
   if (customOhifUrl && typeof window !== "undefined") {
     try {
-      const originHost = window.location.hostname;
-      if (
-        customOhifUrl.includes("localhost:3000") ||
-        customOhifUrl.includes("127.0.0.1:3000") ||
-        customOhifUrl.includes(`${originHost}:3000`)
-      ) {
-        customOhifUrl = "/viewer";
-      } else if (
-        customOhifUrl.includes("localhost:8042") ||
-        customOhifUrl.includes("127.0.0.1:8042") ||
-        customOhifUrl.includes(`${originHost}:8042`)
-      ) {
-        customOhifUrl = "/ohif-viewer";
+      if (customOhifUrl.startsWith("http://") || customOhifUrl.startsWith("https://")) {
+        const u = new URL(customOhifUrl);
+        const hostName = window.location.hostname;
+        if (u.hostname === hostName || u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+          customOhifUrl = u.pathname + u.search;
+        }
       }
     } catch (e) {
       // Ignore URL parsing errors
     }
   }
 
-  if (customOhifUrl) {
-    if (customOhifUrl.includes("StudyInstanceUIDs=")) {
-      customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
-    }
-    const separator = customOhifUrl.includes("?") ? "&" : "?";
-    return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
+    customOhifUrl = "/ohif/viewer/index.html";
   }
 
-  return `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  if (customOhifUrl.includes("StudyInstanceUIDs=")) {
+    customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
+  }
+  const separator = customOhifUrl.includes("?") ? "&" : "?";
+  return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
 
 export const openStudyViewer = (study, mode = "auto") => {

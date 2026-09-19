@@ -817,11 +817,17 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
 
     let seriesObj = null;
     if (seriesUID) {
+      const cleanTarget = String(seriesUID).trim();
+      const numTarget = cleanTarget.replace(/^S:?/i, "");
       seriesObj = seriesList.find(s => 
-        String(s.series_id) === String(seriesUID) || 
-        String(s.series_instance_uid) === String(seriesUID) ||
-        String(s.orthanc_series_id) === String(seriesUID) ||
-        (s.series_description && String(s.series_description).toLowerCase().trim() === String(seriesUID).toLowerCase().trim())
+        String(s.series_id) === cleanTarget || 
+        String(s.series_instance_uid) === cleanTarget ||
+        String(s.orthanc_series_id) === cleanTarget ||
+        String(s.series_number) === numTarget ||
+        (s.series_description && (
+          String(s.series_description).toLowerCase().trim() === cleanTarget.toLowerCase() ||
+          cleanTarget.toLowerCase().includes(String(s.series_description).toLowerCase().trim())
+        ))
       );
     }
     if (!seriesObj) {
