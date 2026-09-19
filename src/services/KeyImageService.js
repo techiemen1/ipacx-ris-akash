@@ -22,7 +22,9 @@ class KeyImageService {
         try {
           iframeEl.contentWindow.postMessage({ type: "OHIF_CAPTURE_VIEWPORT", action: "CAPTURE" }, "*");
           iframeEl.contentWindow.postMessage({ type: "REQUEST_SNAPSHOT", action: "CAPTURE" }, "*");
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[KeyImageService] PostMessage trigger notice:", e.message);
+        }
 
         // 2. Direct DOM inspection if same-origin
         try {
@@ -30,9 +32,13 @@ class KeyImageService {
           if (iframeDoc) {
             domSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[KeyImageService] Direct DOM inspection notice:", e.message);
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn("[KeyImageService] Iframe query notice:", e.message);
+    }
 
     // 3. Fallback to ViewerBridge snapshot RPC
     snapshotResult = await requestViewerSnapshot(iframeSelector, studySeriesList);

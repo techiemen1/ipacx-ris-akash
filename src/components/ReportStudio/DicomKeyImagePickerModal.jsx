@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { X, Check, Image as ImageIcon, Layers, RefreshCw } from "lucide-react";
+import { X, Check, Image as ImageIcon, Layers, RefreshCw, Star } from "lucide-react";
 import api from "../../api/axios";
+import { keyImageService } from "../../services/KeyImageService";
 
 export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, onSelectImage, attachedSnapshots = [] }) {
   const [loading, setLoading] = useState(false);
@@ -16,7 +17,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
   }, [isOpen, studyUID]);
 
   useEffect(() => {
-    const ids = new Set((attachedSnapshots || []).map(s => String(s.instance_id)));
+    const ids = new Set((attachedSnapshots || []).map(s => String(s.instance_id || s.sopInstanceUid || s.id)));
     setAddedIds(ids);
   }, [attachedSnapshots]);
 
@@ -42,18 +43,69 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
   const currentSeries = seriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || seriesList[0];
 
+  const handleCaptureActiveViewport = async () => {
+    setLoading(true);
+    try {
+      const capturedPayload = await keyImageService.captureActiveViewport(
+        ".rs-viewer-iframe, .dws-iframe, iframe",
+        seriesList,
+        selectedSeriesId
+      );
+
+      let snapObj = null;
+      try {
+        const res = await api.post("/api/pacs/capture-key-image", capturedPayload);
+        if (res.data?.success && res.data?.data) {
+          snapObj = res.data.data;
+        }
+      } catch (e) {
+        console.warn("Backend key image save notice:", e);
+      }
+
+      if (!snapObj) snapObj = capturedPayload;
+
+      onSelectImage(snapObj);
+      const instId = snapObj.instanceId || snapObj.instance_id || snapObj.sopInstanceUid || snapObj.id;
+      if (instId) {
+        setAddedIds(prev => new Set(prev).add(String(instId)));
+      }
+      setToastMsg("⭐ Captured Active Viewport Image!");
+      setTimeout(() => setToastMsg(""), 3000);
+    } catch (err) {
+      console.error("Failed capturing active viewport key image:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePick = async (inst) => {
     let snapObj = null;
     const caption = inst.caption || `Series ${currentSeries?.series_number || 1}: ${currentSeries?.series_description || ''} (Slice ${inst.slice_number}/${currentSeries?.total_slices || 1})`;
     try {
       const capturePayload = {
         studyUID: studyUID,
+        studyInstanceUid: studyUID,
         seriesUID: selectedSeriesId,
-        sliceNumber: inst.slice_number,
-        totalSlices: currentSeries?.total_slices || 1,
-        seriesDescription: currentSeries?.series_description || '',
+        seriesInstanceUid: selectedSeriesId,
+        sopInstanceUid: inst.instance_id,
         instanceId: inst.instance_id,
-        caption: caption
+        sliceNumber: inst.slice_number,
+        frameNumber: inst.slice_number,
+        totalSlices: currentSeries?.total_slices || 1,
+        seriesNumber: currentSeries?.series_number || 1,
+        seriesDescription: currentSeries?.series_description || '',
+        modality: currentSeries?.modality || 'CT',
+        caption: caption,
+        windowCenter: inst.window_center || null,
+        windowWidth: inst.window_width || null,
+        zoom: 1.0,
+        panX: 0,
+        panY: 0,
+        rotation: 0,
+        flipHorizontal: false,
+        flipVertical: false,
+        measurementData: inst.measurement_data || {},
+        viewportState: { sliceNumber: inst.slice_number, seriesNumber: currentSeries?.series_number }
       };
       const res = await api.post("/api/pacs/capture-key-image", capturePayload);
       if (res.data?.success && res.data?.data) {
@@ -68,6 +120,10 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       snapObj = {
         id: `snap_picker_${Date.now()}_${inst.slice_number}`,
         instance_id: inst.instance_id,
+        sopInstanceUid: inst.instance_id,
+        studyUID: studyUID,
+        seriesUID: selectedSeriesId,
+        sliceNumber: inst.slice_number,
         preview_url: pUrl,
         previewUrl: pUrl,
         caption: caption
@@ -140,6 +196,28 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button
+              type="button"
+              onClick={handleCaptureActiveViewport}
+              style={{
+                background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                padding: "7px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.4)"
+              }}
+              title="Capture live viewer image with active annotations and DICOM identity"
+            >
+              <Star size={14} fill="#f59e0b" color="#f59e0b" /> ⭐ Capture Active Viewport
+            </button>
+
             {toastMsg && (
               <div style={{ background: "#10b981", color: "#ffffff", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, animation: "fadeIn 0.2s" }}>
                 ✓ {toastMsg}
