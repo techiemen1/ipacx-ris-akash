@@ -47,12 +47,21 @@ module.exports = async function generateFinalReportPDF(
 
   // Generate QR Code data URL buffer
   let qrImageBuffer = null;
-  try {
-    const domain = process.env.PUBLIC_DOMAIN || "http://localhost:3010";
-    const verificationUrl = `${domain}/verify-report?uid=${encodeURIComponent(report.study_uid || "")}`;
-    qrImageBuffer = await QRCode.toBuffer(verificationUrl, { margin: 1, width: 80 });
-  } catch (err) {
-    console.warn("QR code generation failed:", err.message);
+  // Query DB Key Images if not passed
+  let keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
+    ? report.report_content.snapshots
+    : (Array.isArray(images) && images.length > 0 ? images : []);
+
+  if (keyImages.length === 0 && report.study_uid) {
+    try {
+      const dbKeyImgs = await pool.query(
+        "SELECT * FROM public.study_key_images WHERE study_uid = $1 ORDER BY id ASC",
+        [report.study_uid]
+      );
+      if (dbKeyImgs && dbKeyImgs.rows.length > 0) {
+        keyImages = dbKeyImgs.rows;
+      }
+    } catch (e) {}
   }
 
   return new Promise((resolve, reject) => {
@@ -222,22 +231,6 @@ module.exports = async function generateFinalReportPDF(
       /* -----------------------------
          KEY DIAGNOSTIC IMAGES & SNAPSHOTS (SUPPORT BASE64 DATA URLS & DB PERSISTED IMAGES)
       ----------------------------- */
-      let keyImages = (Array.isArray(report.report_content?.snapshots) && report.report_content.snapshots.length > 0)
-        ? report.report_content.snapshots
-        : (Array.isArray(images) && images.length > 0 ? images : []);
-
-      if (keyImages.length === 0 && report.study_uid) {
-        try {
-          const dbKeyImgs = await pool.query(
-            "SELECT * FROM public.study_key_images WHERE study_uid = $1 ORDER BY id ASC",
-            [report.study_uid]
-          );
-          if (dbKeyImgs.rows.length > 0) {
-            keyImages = dbKeyImgs.rows;
-          }
-        } catch (e) {}
-      }
-
       if (keyImages.length > 0) {
         if (currentY > pageHeight - 180) {
           addNewPage();
