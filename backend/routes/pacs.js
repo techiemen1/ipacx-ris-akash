@@ -878,16 +878,28 @@ async function processKeyImageSave(payload, reqUser = {}) {
         const rRes = await axios.get(`${orthancUrl}instances/${targetInstId}/rendered`, {
           responseType: "arraybuffer",
           ...orthancAuthConfig(),
-          timeout: 4000
+          timeout: 3000
         });
         if (rRes && rRes.data && rRes.data.byteLength > 1000) renderedBuffer = rRes.data;
       } catch (rErr) {
         const pRes = await axios.get(`${orthancUrl}instances/${targetInstId}/preview`, {
           responseType: "arraybuffer",
           ...orthancAuthConfig(),
-          timeout: 4000
+          timeout: 3000
         }).catch(() => null);
         if (pRes && pRes.data && pRes.data.byteLength > 1000) renderedBuffer = pRes.data;
+      }
+
+      // Multi-PACS Fallback (DCM4CHEE, DICOMWeb, Generic PACS Nodes from Admin Settings)
+      if (!renderedBuffer) {
+        try {
+          const port = process.env.PORT || 5000;
+          const proxyUrl = `http://127.0.0.1:${port}/api/pacs/instance-preview/${encodeURIComponent(targetInstId)}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID || '')}`;
+          const proxyRes = await axios.get(proxyUrl, { responseType: "arraybuffer", timeout: 4000 }).catch(() => null);
+          if (proxyRes && proxyRes.data && proxyRes.data.byteLength > 1000) {
+            renderedBuffer = proxyRes.data;
+          }
+        } catch (e) {}
       }
 
       if (renderedBuffer) {
