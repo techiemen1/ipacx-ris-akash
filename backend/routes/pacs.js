@@ -5,6 +5,8 @@ const axios = require("axios");
 const net = require("net");
 const multer = require("multer");
 const AdmZip = require("adm-zip");
+const path = require("path");
+const fs = require("fs");
 const pool = require("../db");
 const { logAction } = require("../utils/auditLogger");
 const PacsService = require("../services/pacsService");
@@ -774,6 +776,143 @@ router.get("/snapshots/:studyUID", async (req, res) => {
     res.json({ success: true, data: [] });
   }
 });
+
+async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
+  if (!studyUID) return null;
+  try {
+    const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
+    if (!seriesList || seriesList.length === 0) return null;
+
+    let seriesObj = null;
+    if (seriesUID) {
+      seriesObj = seriesList.find(s => 
+        String(s.series_id) === String(seriesUID) || 
+        String(s.series_instance_uid) === String(seriesUID) ||
+        String(s.orthanc_series_id) === String(seriesUID)
+      );
+    }
+    if (!seriesObj) {
+      const nonScout = seriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ''));
+      seriesObj = nonScout.length > 0 ? nonScout[0] : seriesList[0];
+    }
+
+    if (seriesObj && Array.isArray(seriesObj.instances) && seriesObj.instances.length > 0) {
+      const sNum = parseInt(sliceNumber, 10);
+      if (!isNaN(sNum) && sNum > 0) {
+        const matched = seriesObj.instances.find(inst => 
+          parseInt(inst.slice_index, 10) === sNum ||
+          parseInt(inst.slice_number, 10) === sNum ||
+          parseInt(inst.instanceNumber, 10) === sNum ||
+          parseInt(inst.instance_number, 10) === sNum
+        );
+        if (matched) return matched.id || matched.instance_id;
+
+        const idx = Math.min(Math.max(0, sNum - 1), seriesObj.instances.length - 1);
+        const idxMatched = seriesObj.instances[idx];
+        if (idxMatched) return idxMatched.id || idxMatched.instance_id;
+      }
+      return seriesObj.instances[0].id || seriesObj.instances[0].instance_id;
+    }
+  } catch (e) {
+    console.warn("Error resolving instance ID for slice:", e.message);
+  }
+  return null;
+}
+
+/* ======================================================
+   ENTERPRISE KEY IMAGE CAPTURE MICROSERVICE API
+   Saves exact open viewport image / PACS rendered slice to physical disk & DB
+====================================================== */
+router.post("/capture-key-image", asyncHandler(async (req, res) => {
+  const { studyUID, seriesUID, sliceNumber, totalSlices, seriesDescription, instanceId, dataUrl, caption } = req.body;
+  if (!studyUID) {
+    return res.status(400).json({ success: false, message: "studyUID is required" });
+  }
+
+  const reportImagesDir = path.join(__dirname, "../uploads/report_images");
+  if (!fs.existsSync(reportImagesDir)) {
+    fs.mkdirSync(reportImagesDir, { recursive: true });
+  }
+
+  let finalUrl = null;
+  const targetSlice = sliceNumber ? parseInt(sliceNumber, 10) : 1;
+  const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_s${targetSlice}_${Date.now()}.jpg`;
+  const filePath = path.join(reportImagesDir, filename);
+
+  // 1. Save Base64 canvas viewport dataUrl to physical disk if provided
+  if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
+    try {
+      const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const base64Data = matches[2];
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        finalUrl = `/uploads/report_images/${filename}`;
+      }
+    } catch (e) {
+      console.warn("Failed writing key image base64 data to disk:", e.message);
+    }
+  }
+
+  // 2. Fallback: Fetch rendered image directly from Orthanc/PACS for exact target slice
+  if (!finalUrl) {
+    try {
+      const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+      if (targetInstId) {
+        const orthancUrl = await getOrthancUrl();
+        let renderedBuffer = null;
+        try {
+          const rRes = await axios.get(`${orthancUrl}instances/${targetInstId}/rendered`, {
+            responseType: "arraybuffer",
+            ...orthancAuthConfig(),
+            timeout: 4000
+          });
+          if (rRes && rRes.data) renderedBuffer = rRes.data;
+        } catch (rErr) {
+          const pRes = await axios.get(`${orthancUrl}instances/${targetInstId}/preview`, {
+            responseType: "arraybuffer",
+            ...orthancAuthConfig(),
+            timeout: 4000
+          }).catch(() => null);
+          if (pRes && pRes.data) renderedBuffer = pRes.data;
+        }
+
+        if (renderedBuffer) {
+          fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
+          finalUrl = `/uploads/report_images/${filename}`;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed rendering key image instance from PACS:", err.message);
+    }
+  }
+
+  // 3. Last fallback
+  if (!finalUrl) {
+    const targetInstId = instanceId || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+    finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}` : `/api/pacs/snapshots/${studyUID}`;
+  }
+
+  const sDesc = seriesDescription || "Diagnostic Series";
+  const totSlices = totalSlices || 1;
+  const finalCaption = caption || (totSlices > 1 ? `${sDesc} | Slice ${targetSlice}/${totSlices}` : `${sDesc} | Slice ${targetSlice}`);
+
+  const snapshotObj = {
+    id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    instance_id: instanceId || `inst_${Date.now()}`,
+    preview_url: finalUrl,
+    url: finalUrl,
+    caption: finalCaption,
+    sliceNumber: targetSlice,
+    totalSlices: totSlices,
+    seriesDesc: sDesc,
+    studyUID
+  };
+
+  res.json({
+    success: true,
+    data: snapshotObj
+  });
+}));
 
 function getMeasurementsForModality(tags = {}, requestedModality = "", extraContext = {}) {
   let mod = String(requestedModality || tags["Modality"] || tags["(0008,0060)"] || "").toUpperCase();

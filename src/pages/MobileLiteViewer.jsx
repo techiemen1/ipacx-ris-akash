@@ -367,27 +367,50 @@ const MobileLiteViewer = () => {
   const captureSnapshot = async () => {
     if (!imageUrl) return;
     const snapId = `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const snapshotObj = {
-      id: snapId,
-      instance_id: currentInstance?.id || snapId,
-      previewUrl: imageUrl,
-      preview_url: imageUrl,
-      url: imageUrl,
-      dataUrl: imageUrl,
-      sliceNumber: currentIndex + 1,
-      slice_number: currentIndex + 1,
-      seriesDesc: activeSeries?.seriesDescription || "Series",
-      series_desc: activeSeries?.seriesDescription || "Series",
-      caption: `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`,
-      studyUID: studyUID,
-      capturedAt: new Date().toISOString()
-    };
+    const fullCaption = `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`;
+    
+    let snapshotObj = null;
+    try {
+      const capturePayload = {
+        studyUID: studyUID,
+        seriesUID: activeSeries?.seriesId,
+        sliceNumber: currentIndex + 1,
+        totalSlices: currentInstances.length || 1,
+        seriesDescription: activeSeries?.seriesDescription || "Series",
+        instanceId: currentInstance?.id || currentInstance?.instance_id,
+        caption: fullCaption
+      };
+      const res = await api.post("/api/pacs/capture-key-image", capturePayload);
+      if (res.data?.success && res.data?.data) {
+        snapshotObj = res.data.data;
+      }
+    } catch (e) {
+      console.warn("capture-key-image microservice call failed:", e);
+    }
+
+    if (!snapshotObj) {
+      snapshotObj = {
+        id: snapId,
+        instance_id: currentInstance?.id || snapId,
+        previewUrl: imageUrl,
+        preview_url: imageUrl,
+        url: imageUrl,
+        dataUrl: imageUrl,
+        sliceNumber: currentIndex + 1,
+        slice_number: currentIndex + 1,
+        seriesDesc: activeSeries?.seriesDescription || "Series",
+        series_desc: activeSeries?.seriesDescription || "Series",
+        caption: fullCaption,
+        studyUID: studyUID,
+        capturedAt: new Date().toISOString()
+      };
+    }
 
     if (studyUID) {
       const savedStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
       let saved = [];
       try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
-      const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== imageUrl)];
+      const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== snapshotObj.preview_url)];
       localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
     }
 

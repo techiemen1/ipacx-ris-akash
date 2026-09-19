@@ -1013,25 +1013,47 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
     
-    const fallbackUrl = targetInst?.preview_url || targetInst?.previewUrl || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}?studyUID=${encodeURIComponent(studyUID || '')}&seriesUID=${encodeURIComponent(seriesObj?.series_id || '')}` : null);
-    const previewUrl = validDataUrl || fallbackUrl;
-
-    if (!previewUrl) {
-      console.warn("Could not resolve valid preview image URL for key image capture.");
-      return;
+    let snapObj = null;
+    try {
+      const capturePayload = {
+        studyUID: studyUID,
+        seriesUID: seriesObj?.series_id || activeSeriesId,
+        sliceNumber: displaySliceNum,
+        totalSlices: totalSlices,
+        seriesDescription: seriesDesc,
+        instanceId: targetInst?.instance_id,
+        dataUrl: validDataUrl,
+        caption: fullCaption
+      };
+      const res = await api.post('/api/pacs/capture-key-image', capturePayload);
+      if (res.data && res.data.success && res.data.data) {
+        snapObj = res.data.data;
+      }
+    } catch (err) {
+      console.warn("capture-key-image microservice call failed:", err.message);
     }
 
-    const snapObj = {
-      id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
-      dataUrl: validDataUrl,
-      preview_url: previewUrl,
-      fallback_preview_url: fallbackUrl,
-      caption: fullCaption,
-      sliceNumber: displaySliceNum,
-      seriesDesc: seriesDesc,
-      studyUID: studyUID
-    };
+    if (!snapObj) {
+      const fallbackUrl = targetInst?.preview_url || targetInst?.previewUrl || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}?studyUID=${encodeURIComponent(studyUID || '')}&seriesUID=${encodeURIComponent(seriesObj?.series_id || '')}` : null);
+      const previewUrl = validDataUrl || fallbackUrl;
+
+      if (!previewUrl) {
+        console.warn("Could not resolve valid preview image URL for key image capture.");
+        return;
+      }
+
+      snapObj = {
+        id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
+        dataUrl: validDataUrl,
+        preview_url: previewUrl,
+        fallback_preview_url: fallbackUrl,
+        caption: fullCaption,
+        sliceNumber: displaySliceNum,
+        seriesDesc: seriesDesc,
+        studyUID: studyUID
+      };
+    }
 
     if (studyUID) {
       try {

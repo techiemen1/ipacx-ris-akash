@@ -461,16 +461,46 @@ export default function NativeDicomViewer() {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
-      
-      const snapshotObj = {
-        id: currentInstance?.id || Date.now(),
-        dataUrl,
-        sliceNumber: currentIndex + 1,
-        seriesDesc: activeSeries.seriesDescription || "Series",
-        capturedAt: new Date().toISOString()
-      };
-      const saved = JSON.parse(localStorage.getItem("key_images") || "[]");
-      localStorage.setItem("key_images", JSON.stringify([snapshotObj, ...saved]));
+      const fullCaption = `${activeSeries.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`;
+
+      let snapshotObj = null;
+      try {
+        const capturePayload = {
+          studyUID: studyUID,
+          seriesUID: activeSeries?.seriesId,
+          sliceNumber: currentIndex + 1,
+          totalSlices: currentInstances.length || 1,
+          seriesDescription: activeSeries.seriesDescription || "Series",
+          instanceId: currentInstance?.id || currentInstance?.instance_id,
+          dataUrl: dataUrl,
+          caption: fullCaption
+        };
+        const res = await api.post("/api/pacs/capture-key-image", capturePayload);
+        if (res.data?.success && res.data?.data) {
+          snapshotObj = res.data.data;
+        }
+      } catch (err) {
+        console.warn("capture-key-image failed:", err);
+      }
+
+      if (!snapshotObj) {
+        snapshotObj = {
+          id: currentInstance?.id || Date.now(),
+          dataUrl,
+          preview_url: dataUrl,
+          sliceNumber: currentIndex + 1,
+          seriesDesc: activeSeries.seriesDescription || "Series",
+          capturedAt: new Date().toISOString()
+        };
+      }
+
+      if (studyUID) {
+        const savedStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images") || "[]";
+        let saved = [];
+        try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
+        const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== snapshotObj.preview_url)];
+        localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
+      }
 
       alert(`📸 Key Image Captured (Slice ${currentIndex + 1})! Attached to Report Studio.`);
     } catch (e) {
