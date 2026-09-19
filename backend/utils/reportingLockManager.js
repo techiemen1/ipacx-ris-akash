@@ -13,7 +13,8 @@ function cleanupExpiredLocks() {
 }
 
 // Periodic cleanup task
-setInterval(cleanupExpiredLocks, 10000);
+const lockCleanupInterval = setInterval(cleanupExpiredLocks, 10000);
+if (lockCleanupInterval.unref) lockCleanupInterval.unref();
 
 module.exports = {
   acquireLock: (studyUID, user) => {

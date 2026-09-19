@@ -21,6 +21,10 @@ const pool = new Pool({
   user: String(dbUser).trim(),
   password: String(dbPassword),
   database: process.env.POSTGRES_DB || process.env.DB_NAME || "RIS",
+  max: parseInt(process.env.DB_POOL_MAX || "50", 10),
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+  allowExitOnIdle: false
 });
 
 module.exports = pool;

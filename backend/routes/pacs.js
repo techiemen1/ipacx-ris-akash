@@ -1067,7 +1067,19 @@ router.get("/measurements/:studyUID", async (req, res) => {
   }
 });
 
+const MAX_SERIES_CACHE = 1000;
 const studySeriesCache = new Map();
+
+// Periodic background cleanup sweep for studySeriesCache
+const seriesCacheCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of studySeriesCache.entries()) {
+    if (val.expiresAt && val.expiresAt < now) {
+      studySeriesCache.delete(key);
+    }
+  }
+}, 60000);
+if (seriesCacheCleanup.unref) seriesCacheCleanup.unref();
 
 router.get("/study-series-instances/:studyUID", async (req, res) => {
   try {
@@ -1084,6 +1096,10 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
 
     const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
     if (Array.isArray(seriesList) && seriesList.length > 0) {
+      if (studySeriesCache.size >= MAX_SERIES_CACHE && !studySeriesCache.has(String(studyUID))) {
+        const oldestKey = studySeriesCache.keys().next().value;
+        if (oldestKey) studySeriesCache.delete(oldestKey);
+      }
       studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 60000 });
     }
 

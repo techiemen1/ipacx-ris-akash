@@ -10,6 +10,22 @@ const { getOrthancUrl, orthancAuthConfig } = require("../utils/orthancHelper");
 class PacsGateway {
   constructor() {
     this.tagsCache = new Map();
+    this.MAX_TAGS_CACHE = 1000;
+
+    // Periodic cleanup sweep to evict expired DICOM tags
+    const interval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, val] of this.tagsCache.entries()) {
+        if (val.expiresAt && val.expiresAt < now) {
+          this.tagsCache.delete(key);
+        }
+      }
+    }, 60000);
+    if (interval.unref) interval.unref();
+  }
+
+  clearCache() {
+    this.tagsCache.clear();
   }
 
   /**
@@ -224,6 +240,10 @@ class PacsGateway {
     };
 
     if (tagsDictionary && (tagsDictionary.patient?.PatientName || tagsDictionary.study?.AccessionNumber)) {
+      if (this.tagsCache.size >= this.MAX_TAGS_CACHE && !this.tagsCache.has(String(studyUID))) {
+        const oldestKey = this.tagsCache.keys().next().value;
+        if (oldestKey) this.tagsCache.delete(oldestKey);
+      }
       this.tagsCache.set(String(studyUID), { data: tagsDictionary, expiresAt: Date.now() + 120000 });
     }
 

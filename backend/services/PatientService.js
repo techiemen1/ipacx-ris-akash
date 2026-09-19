@@ -57,6 +57,18 @@ function normalizeIdValue(value) {
 class PatientService {
   constructor() {
     this.lookupCache = new Map();
+    this.MAX_LOOKUP_CACHE = 1000;
+
+    // Periodic cleanup sweep for PatientService lookupCache
+    const interval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, val] of this.lookupCache.entries()) {
+        if (val.expiresAt && val.expiresAt < now) {
+          this.lookupCache.delete(key);
+        }
+      }
+    }, 60000);
+    if (interval.unref) interval.unref();
   }
 
   async generateCustomMRN(clinicId = null) {
@@ -414,6 +426,10 @@ class PatientService {
       uhid: normalizeIdValue(row.uhid),
     }));
 
+    if (this.lookupCache.size >= this.MAX_LOOKUP_CACHE && !this.lookupCache.has(cacheKey)) {
+      const oldestKey = this.lookupCache.keys().next().value;
+      if (oldestKey) this.lookupCache.delete(oldestKey);
+    }
     this.lookupCache.set(cacheKey, { data: mapped, expiresAt: Date.now() + 30000 });
     return mapped;
   }

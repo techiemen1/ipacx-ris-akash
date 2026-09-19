@@ -35,4 +35,4 @@ EXPOSE 5000
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["node", "--max-old-space-size=4096", "server.js"]

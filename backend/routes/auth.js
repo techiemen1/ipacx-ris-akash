@@ -15,6 +15,17 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LOGIN_ATTEMPTS = 5;
 const loginAttempts = new Map();
 
+// Periodic cleanup task for stale rate-limit IP records
+const loginAttemptsCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of loginAttempts.entries()) {
+    if (now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+      loginAttempts.delete(ip);
+    }
+  }
+}, 10 * 60 * 1000);
+if (loginAttemptsCleanup.unref) loginAttemptsCleanup.unref();
+
 function isRateLimited(ip) {
   const entry = loginAttempts.get(ip);
   if (!entry) return false;
