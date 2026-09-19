@@ -96,8 +96,8 @@ class KeyImageService {
 
     const seriesDesc = seriesObj?.series_description || snapshotResult?.seriesDescription || domSliceInfo?.seriesDescription || "Diagnostic Series";
     const fullCaption = totalSlices > 1 
-      ? `${seriesDesc} | Slice ${clampedSlice}/${totalSlices}` 
-      : `${seriesDesc} | Slice ${clampedSlice}`;
+      ? `${seriesDesc} | ${clampedSlice}/${totalSlices}` 
+      : `${seriesDesc} | ${clampedSlice}`;
 
     const dataUrl = snapshotResult?.dataUrl || null;
 

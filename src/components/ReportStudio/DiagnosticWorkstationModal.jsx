@@ -407,9 +407,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
 
     const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
-    const fullCaption = isDefaultedSlice
-      ? `${seriesDesc} | Active Viewport Image`
-      : (totalSlices > 1 ? `${seriesDesc} | Slice ${displaySliceNum}/${totalSlices}` : `${seriesDesc} | Slice ${displaySliceNum}`);
+    const fullCaption = totalSlices > 1 
+      ? `${seriesDesc} | ${displaySliceNum}/${totalSlices}` 
+      : `${seriesDesc} | ${displaySliceNum}`;
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {

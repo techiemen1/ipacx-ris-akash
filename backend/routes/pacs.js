@@ -840,8 +840,14 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
         );
         if (matched) return matched.id || matched.instance_id;
 
-        const idx = Math.min(Math.max(0, sNum - 1), seriesObj.instances.length - 1);
-        const idxMatched = seriesObj.instances[idx];
+        const sortedInstances = [...seriesObj.instances].sort((a, b) => {
+          const numA = parseInt(a.instance_number || a.instanceNumber || a.slice_number || a.slice_index || 0, 10);
+          const numB = parseInt(b.instance_number || b.instanceNumber || b.slice_number || b.slice_index || 0, 10);
+          return numA - numB;
+        });
+
+        const idx = Math.min(Math.max(0, sNum - 1), sortedInstances.length - 1);
+        const idxMatched = sortedInstances[idx];
         if (idxMatched) return idxMatched.id || idxMatched.instance_id;
       }
       return seriesObj.instances[0].id || seriesObj.instances[0].instance_id;
@@ -900,8 +906,22 @@ async function processKeyImageSave(payload, reqUser = {}) {
 
   const targetInstId = instanceId || sopInstanceUid || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
 
-  // Priority 1: High-resolution PACS rendered DICOM slice (guarantees crystal-clear medical image & avoids pitch-black WebGL canvas)
-  if (targetInstId) {
+  // Priority 1: Base64 canvas viewport dataUrl captured live from viewer (preserves active slice & presentation state)
+  if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
+    try {
+      const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const base64Data = matches[2];
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        finalUrl = `/uploads/report_images/${filename}`;
+      }
+    } catch (e) {
+      console.warn("[PACS] Failed writing key image base64 data to disk:", e.message);
+    }
+  }
+
+  // Priority 2: High-resolution PACS rendered DICOM slice if no live canvas dataUrl provided
+  if (!finalUrl && targetInstId) {
     try {
       const orthancUrl = await getOrthancUrl();
       let renderedBuffer = null;
@@ -942,20 +962,6 @@ async function processKeyImageSave(payload, reqUser = {}) {
     }
   }
 
-  // Priority 2: Base64 canvas viewport dataUrl if PACS render unavailable
-  if (!finalUrl && dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
-    try {
-      const matches = dataUrl.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const base64Data = matches[2];
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-        finalUrl = `/uploads/report_images/${filename}`;
-      }
-    } catch (e) {
-      console.warn("[PACS] Failed writing key image base64 data to disk:", e.message);
-    }
-  }
-
   // Priority 3: Fallback preview URL
   if (!finalUrl) {
     finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}` : `/api/pacs/snapshots/${studyUID}`;
@@ -963,7 +969,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
 
   const sDesc = seriesDescription || "Diagnostic Series";
   const totSlices = totalSlices || 1;
-  const finalCaption = caption || (totSlices > 1 ? `${sDesc} | Slice ${targetSlice}/${totSlices}` : `${sDesc} | Slice ${targetSlice}`);
+  const finalCaption = caption || (totSlices > 1 ? `${sDesc} | ${targetSlice}/${totSlices}` : `${sDesc} | ${targetSlice}`);
   const clinicId = reqUser?.clinic_id || 1;
   const createdBy = reqUser?.id || null;
 

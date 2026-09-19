@@ -80,7 +80,9 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
   const handlePick = async (inst) => {
     let snapObj = null;
-    const caption = inst.caption || `Series ${currentSeries?.series_number || 1}: ${currentSeries?.series_description || ''} (Slice ${inst.slice_number}/${currentSeries?.total_slices || 1})`;
+    const sDesc = currentSeries?.series_description || `Series ${currentSeries?.series_number || 1}`;
+    const totSlices = currentSeries?.total_slices || 1;
+    const caption = inst.caption || (totSlices > 1 ? `${sDesc} | ${inst.slice_number}/${totSlices}` : `${sDesc} | ${inst.slice_number}`);
     try {
       const capturePayload = {
         studyUID: studyUID,
