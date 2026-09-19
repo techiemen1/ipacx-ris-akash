@@ -1616,7 +1616,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
                 <button
                   type="button"
-                  onClick={() => handleAttachKeyImage(pickerSliceNum, selectedSeriesId)}
+                  onClick={() => handleAttachKeyImage(null, null)}
                   style={{
                     background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                     color: "#ffffff",
@@ -1855,7 +1855,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </button>
 
           {!isReadOnly && (
-            <button onClick={() => handleAttachKeyImage(pickerSliceNum, selectedSeriesId)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
+            <button onClick={() => handleAttachKeyImage(null, null)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
               <Camera size={16} /> 📸 Key Image / Snapshot
             </button>
           )}

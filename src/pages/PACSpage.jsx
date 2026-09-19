@@ -926,32 +926,36 @@ export default function PACSpage() {
                                   onClick={() => setActiveWorkstationItem({ studyUID: uid, modality: mod })}
                                   className="pacs-btn-action workstation"
                                   title="Workstation: Diagnostic Workstation & Key Image Studio"
+                                  aria-label="Workstation: Diagnostic Workstation & Key Image Studio"
                                 >
-                                  <Zap size={13} /> Workstation
+                                  <Zap size={15} />
                                 </button>
 
                                 <button
                                   onClick={() => openStudyViewer(uid)}
                                   className="pacs-btn-action viewer"
                                   title="Viewer: PACS Full DICOM Viewer"
+                                  aria-label="Viewer: PACS Full DICOM Viewer"
                                 >
-                                  <Eye size={13} /> Viewer
+                                  <Eye size={15} />
                                 </button>
 
                                 <button
                                   onClick={() => navigate(`/mobile-viewer?study=${encodeURIComponent(uid)}`)}
                                   className="pacs-btn-action mobile"
                                   title="Mobile: Mobile Lite MPR Viewer"
+                                  aria-label="Mobile: Mobile Lite MPR Viewer"
                                 >
-                                  <Smartphone size={13} /> Mobile
+                                  <Smartphone size={15} />
                                 </button>
 
                                 <button
                                   onClick={() => navigate(`/report-editor?study_uid=${encodeURIComponent(uid)}`)}
                                   className="pacs-btn-action report"
                                   title="Report: Radiology Report Studio & Findings"
+                                  aria-label="Report: Radiology Report Studio & Findings"
                                 >
-                                  <FileText size={13} /> Report
+                                  <FileText size={15} />
                                 </button>
 
                                 {/* EXPORT DROPDOWN */}

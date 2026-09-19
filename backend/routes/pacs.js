@@ -946,6 +946,12 @@ router.get("/measurements/:studyUID", async (req, res) => {
       patientAge: req.query.patientAge || req.query.patient_age || ""
     };
 
+    const cacheKey = `pacs_measurements_fast:${studyUID}:${requestedModality}`;
+    const cachedData = await cacheService.get(cacheKey);
+    if (cachedData) {
+      return res.json(cachedData);
+    }
+
     const orthancUrl = await getOrthancUrl();
     const orthancId = await findOrthancStudy(studyUID);
 
@@ -954,21 +960,37 @@ router.get("/measurements/:studyUID", async (req, res) => {
     let tags = {};
 
     if (orthancId) {
-      const instancesRes = await axios.get(`${orthancUrl}studies/${orthancId}/instances`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+      const instancesRes = await axios.get(`${orthancUrl}studies/${orthancId}/instances`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
       const instances = instancesRes.data || [];
 
-      for (const inst of instances) {
-        const instId = typeof inst === "string" ? inst : inst.ID;
-        const tagsRes = await axios.get(`${orthancUrl}instances/${instId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: {} }));
-        const curTags = tagsRes.data || {};
-        Object.assign(tags, curTags);
+      if (instances.length > 0) {
+        // Pick target instances: any Structured Report (SR) instance + first image instance
+        const srInst = instances.find(inst => {
+          const sopClass = inst?.MainDicomTags?.SOPClassUID;
+          const mod = inst?.MainDicomTags?.Modality;
+          return mod === "SR" || String(sopClass).includes("88.");
+        });
+        const firstInst = instances[0];
 
-        if (curTags["Modality"] === "SR" || String(curTags["SOPClassUID"]).includes("88.")) {
-          try {
-            const srRes = await axios.get(`${orthancUrl}instances/${instId}/content`, { ...orthancAuthConfig(), timeout: 4000 });
-            if (srRes.data && typeof srRes.data === "object") Object.assign(tags, srRes.data);
-          } catch (e) {}
-        }
+        const targetInsts = [srInst, firstInst].filter(Boolean);
+        const uniqueInsts = [...new Set(targetInsts)];
+
+        await Promise.all(
+          uniqueInsts.map(async (inst) => {
+            const instId = typeof inst === "string" ? inst : (inst.ID || inst.id);
+            if (!instId) return;
+            const tagsRes = await axios.get(`${orthancUrl}instances/${instId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: {} }));
+            const curTags = tagsRes.data || {};
+            Object.assign(tags, curTags);
+
+            if (curTags["Modality"] === "SR" || String(curTags["SOPClassUID"]).includes("88.")) {
+              try {
+                const srRes = await axios.get(`${orthancUrl}instances/${instId}/content`, { ...orthancAuthConfig(), timeout: 1500 });
+                if (srRes.data && typeof srRes.data === "object") Object.assign(tags, srRes.data);
+              } catch (e) {}
+            }
+          })
+        );
       }
     }
 
@@ -1034,7 +1056,7 @@ router.get("/measurements/:studyUID", async (req, res) => {
     const { SRAutoSyncService } = require("../services/dicomSrMiddleware");
     const middlewareResult = SRAutoSyncService.processDicomStudy(metadata, dataArray);
 
-    res.json({
+    const responsePayload = {
       success: true,
       data: dataArray,
       measurements,
@@ -1042,7 +1064,10 @@ router.get("/measurements/:studyUID", async (req, res) => {
       middleware_sr: middlewareResult,
       table_html: middlewareResult.table_html,
       extracted_at: new Date().toISOString()
-    });
+    };
+
+    await cacheService.set(cacheKey, responsePayload, 300);
+    res.json(responsePayload);
   } catch (err) {
     console.error("PACS measurements fetch failed:", err.message);
     const requestedModality = String(req.query.modality || req.query.mod || "US").toUpperCase();
