@@ -1458,6 +1458,36 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             <Camera size={16} style={{ color: "#0284c7" }} /> Key Images Attached ({attachedSnapshots.length})
           </span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {Array.isArray(studySeriesList) && studySeriesList.length > 1 && (
+              <select
+                value={selectedSeriesId}
+                onChange={(e) => setSelectedSeriesId(e.target.value)}
+                style={{
+                  background: "#0f172a",
+                  color: "#38bdf8",
+                  border: "1px solid #0284c7",
+                  borderRadius: 6,
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  outline: "none"
+                }}
+                title="Select Active Diagnostic Series"
+              >
+                {studySeriesList
+                  .filter(s => {
+                    const d = String(s.series_description || "").toLowerCase();
+                    return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+                  })
+                  .map(s => (
+                    <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
+                      S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
+                    </option>
+                  ))}
+              </select>
+            )}
+
             <button
               type="button"
               onClick={() => setShowSlicePickerModal(true)}

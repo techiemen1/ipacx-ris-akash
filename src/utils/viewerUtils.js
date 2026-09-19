@@ -43,6 +43,28 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl = "";
   }
 
+  // If custom URL points to same localhost / hostname, convert to relative path via setupProxy / backend proxy
+  if (customOhifUrl && typeof window !== "undefined") {
+    try {
+      const originHost = window.location.hostname;
+      if (
+        customOhifUrl.includes("localhost:3000") ||
+        customOhifUrl.includes("127.0.0.1:3000") ||
+        customOhifUrl.includes(`${originHost}:3000`)
+      ) {
+        customOhifUrl = "/viewer";
+      } else if (
+        customOhifUrl.includes("localhost:8042") ||
+        customOhifUrl.includes("127.0.0.1:8042") ||
+        customOhifUrl.includes(`${originHost}:8042`)
+      ) {
+        customOhifUrl = "/ohif-viewer";
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+  }
+
   if (customOhifUrl) {
     if (customOhifUrl.includes("StudyInstanceUIDs=")) {
       customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");

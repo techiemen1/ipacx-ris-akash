@@ -8,7 +8,10 @@ export default function KeyImageGallery({
   setAttachedSnapshots,
   onOpenPicker,
   onAttachActiveSlice,
-  onInsertToEditor
+  onInsertToEditor,
+  studySeriesList = [],
+  selectedSeriesId = "",
+  onSelectSeries
 }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [editingId, setEditingId] = useState(null);
@@ -24,11 +27,13 @@ export default function KeyImageGallery({
       }
     }
 
-    const updated = attachedSnapshots.filter(s => (s.id !== snap.id && s.db_id !== snap.db_id && s.preview_url !== snap.preview_url));
-    setAttachedSnapshots(updated);
+    if (setAttachedSnapshots) {
+      setAttachedSnapshots(prev => prev.filter(s => (s.id || s.db_id) !== targetId));
+    }
 
     if (studyUID) {
       try {
+        const updated = attachedSnapshots.filter(s => (s.id !== snap.id && s.db_id !== snap.db_id && s.preview_url !== snap.preview_url));
         localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
       } catch (e) {
         // ignore localStorage errors
@@ -41,17 +46,27 @@ export default function KeyImageGallery({
     setEditCaptionText(snap.caption || "");
   };
 
-  const saveCaption = (snap) => {
-    const updated = attachedSnapshots.map(s => {
-      if ((s.id && s.id === snap.id) || (s.db_id && s.db_id === snap.db_id)) {
-        return { ...s, caption: editCaptionText };
-      }
-      return s;
-    });
-    setAttachedSnapshots(updated);
+  const handleSaveCaption = async (snap) => {
+    const targetId = snap.db_id || snap.id;
+    if (!targetId) return;
+
+    if (setAttachedSnapshots) {
+      setAttachedSnapshots(prev => prev.map(s => {
+        if ((s.id || s.db_id) === targetId) {
+          return { ...s, caption: editCaptionText };
+        }
+        return s;
+      }));
+    }
     setEditingId(null);
     if (studyUID) {
       try {
+        const updated = attachedSnapshots.map(s => {
+          if ((s.id && s.id === snap.id) || (s.db_id && s.db_id === snap.db_id)) {
+            return { ...s, caption: editCaptionText };
+          }
+          return s;
+        });
         localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
       } catch (e) {
         // ignore localStorage errors
@@ -60,26 +75,45 @@ export default function KeyImageGallery({
   };
 
   return (
-    <div style={{ background: "#ffffff", borderRadius: 12, border: "1px solid #cbd5e1", overflow: "hidden", marginTop: 16 }}>
-      {/* Header Bar */}
-      <div
-        style={{
-          padding: "12px 16px",
-          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-          color: "#ffffff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between"
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ImageIcon size={18} color="#38bdf8" />
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.01em" }}>
-            KEY DIAGNOSTIC IMAGES ATTACHED ({attachedSnapshots.length})
-          </span>
+    <div style={{ background: "#ffffff", borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 16 }}>
+      {/* Gallery Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "#1e293b" }}>
+          <ImageIcon size={16} style={{ color: "#0284c7" }} />
+          KEY IMAGES ATTACHED ({attachedSnapshots.length})
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {Array.isArray(studySeriesList) && studySeriesList.length > 1 && onSelectSeries && (
+            <select
+              value={selectedSeriesId}
+              onChange={(e) => onSelectSeries(e.target.value)}
+              style={{
+                background: "#0f172a",
+                color: "#38bdf8",
+                border: "1px solid #0284c7",
+                borderRadius: 6,
+                padding: "4px 8px",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+                outline: "none"
+              }}
+              title="Select Active Diagnostic Series"
+            >
+              {studySeriesList
+                .filter(s => {
+                  const d = String(s.series_description || "").toLowerCase();
+                  return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+                })
+                .map(s => (
+                  <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
+                    S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
+                  </option>
+                ))}
+            </select>
+          )}
+
           {onOpenPicker && (
             <button
               type="button"
@@ -224,7 +258,7 @@ export default function KeyImageGallery({
                         />
                         <button
                           type="button"
-                          onClick={() => saveCaption(snap)}
+                          onClick={() => handleSaveCaption(snap)}
                           style={{ background: "#10b981", color: "#ffffff", border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer", display: "flex" }}
                         >
                           <Check size={12} />

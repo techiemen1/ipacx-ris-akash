@@ -1658,6 +1658,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           setAttachedSnapshots={setAttachedSnapshots}
           onOpenPicker={() => setShowSlicePickerModal(true)}
           onAttachActiveSlice={() => handleAttachKeyImage(null, null)}
+          studySeriesList={studySeriesList}
+          selectedSeriesId={selectedSeriesId}
+          onSelectSeries={(sId) => setSelectedSeriesId(sId)}
           onInsertToEditor={(snap) => {
             const pUrl = snap.preview_url || snap.previewUrl || snap.url;
             const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 5px; font-weight: 700; font-size: 10px;" contenteditable="false">📸 [${snap.caption || 'Key Image'}]</span> `;
