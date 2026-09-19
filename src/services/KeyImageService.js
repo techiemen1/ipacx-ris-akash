@@ -43,10 +43,10 @@ class KeyImageService {
     // 3. Fallback to ViewerBridge snapshot RPC
     snapshotResult = await requestViewerSnapshot(iframeSelector, studySeriesList);
 
-    // Resolve Target Series
-    const targetSeriesId = activeSeriesId || 
-      domSliceInfo?.matchedSeriesId || 
+    // Resolve Target Series (Live viewport DOM detection takes precedence)
+    const targetSeriesId = domSliceInfo?.matchedSeriesId || 
       snapshotResult?.matchedSeriesId || 
+      activeSeriesId || 
       null;
 
     let seriesObj = null;

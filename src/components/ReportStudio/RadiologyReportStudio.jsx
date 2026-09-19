@@ -928,10 +928,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const snapResult = await requestViewerSnapshot(".rs-viewer-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const activeSeriesId = overrideSeriesId || 
-      directDomSliceInfo?.matchedSeriesId ||
+    const activeSeriesId = directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
       activeViewportInfo?.seriesInstanceUid || 
+      overrideSeriesId || 
       selectedSeriesId;
 
     let seriesObj = null;
@@ -977,6 +977,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
         });
         seriesObj = nonScoutSeries.length > 0 ? nonScoutSeries[0] : studySeriesList[0];
+      }
+      if (seriesObj && seriesObj.series_id) {
+        setSelectedSeriesId(String(seriesObj.series_id));
       }
     }
 
@@ -1786,7 +1789,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </button>
 
           {!isReadOnly && (
-            <button onClick={() => handleAttachKeyImage(null, selectedSeriesId || null)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
+            <button onClick={() => handleAttachKeyImage(null, null)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
               <Camera size={16} /> 📸 Key Image / Snapshot
             </button>
           )}

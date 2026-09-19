@@ -288,11 +288,70 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const resolveSeriesForOverlay = (tNum, overlayEl) => {
       if (tNum && !isNaN(tNum) && parseInt(tNum, 10) > 0 && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
         const totalNum = parseInt(tNum, 10);
-        const matchByTotal = studySeriesList.find(s => 
+        const matchingCandidates = studySeriesList.filter(s => 
           parseInt(s.total_slices, 10) === totalNum ||
           (Array.isArray(s.instances) && s.instances.length === totalNum)
         );
-        if (matchByTotal) return matchByTotal;
+
+        if (matchingCandidates.length === 1) {
+          return matchingCandidates[0];
+        }
+
+        if (matchingCandidates.length > 1) {
+          // Disambiguate among candidates with the same slice count (e.g. 451 slices)
+          // Walk all non-sidebar text nodes in iframeDoc.body to find active series description/number text
+          const textNodes = [];
+          const walk = iframeDoc.createTreeWalker(iframeDoc.body || bodyEl, NodeFilter.SHOW_TEXT, null, false);
+          let n;
+          while ((n = walk.nextNode())) {
+            const v = n.nodeValue?.trim();
+            if (v && v.length <= 150) {
+              const pEl = n.parentElement;
+              if (pEl && isSidebarElement(pEl)) continue;
+              textNodes.push(v);
+            }
+          }
+          const fullViewportText = textNodes.join(' ').toLowerCase();
+
+          // 1. Check unique token occurrences in non-sidebar viewport text (e.g. "b60s" vs "b20s")
+          for (const cand of matchingCandidates) {
+            const dClean = String(cand.series_description || '').toLowerCase().trim();
+            if (dClean.length >= 3) {
+              const tokens = dClean.split(/[\s_-]+/).filter(t => t.length >= 3);
+              for (const token of tokens) {
+                if (fullViewportText.includes(token)) {
+                  const isExclusive = !matchingCandidates.some(other => 
+                    other !== cand && String(other.series_description || '').toLowerCase().includes(token)
+                  );
+                  if (isExclusive) {
+                    return cand;
+                  }
+                }
+              }
+            }
+          }
+
+          // 2. Check series number in non-sidebar viewport text (e.g. "S: 5", "Series 5", "S5")
+          for (const cand of matchingCandidates) {
+            const sNum = parseInt(cand.series_number, 10);
+            if (!isNaN(sNum) && sNum > 0) {
+              const serRegex = new RegExp(`(?:series|ser|s)\\s*:?\\s*${sNum}\\b`, 'i');
+              if (serRegex.test(fullViewportText)) {
+                return cand;
+              }
+            }
+          }
+
+          // 3. Fallback to candidate whose full clean description is present in fullViewportText
+          for (const cand of matchingCandidates) {
+            const dClean = String(cand.series_description || '').toLowerCase().trim();
+            if (dClean.length >= 3 && fullViewportText.includes(dClean)) {
+              return cand;
+            }
+          }
+
+          return matchingCandidates[0];
+        }
       }
       return resolveSeriesFromElementAncestors(overlayEl);
     };

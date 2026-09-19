@@ -321,10 +321,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const snapResult = await requestViewerSnapshot(".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const activeSeriesId = overrideSeriesId || 
-      directDomSliceInfo?.matchedSeriesId ||
+    const activeSeriesId = directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
       activeViewportInfo?.seriesInstanceUid || 
+      overrideSeriesId || 
       selectedSeriesId;
 
     let seriesObj = null;
@@ -370,6 +370,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
         });
         seriesObj = nonScoutSeries.length > 0 ? nonScoutSeries[0] : studySeriesList[0];
+      }
+      if (seriesObj && seriesObj.series_id) {
+        setSelectedSeriesId(String(seriesObj.series_id));
       }
     }
 
@@ -1511,7 +1514,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
             <button
               type="button"
-              onClick={() => handleAttachTargetSlice(null, selectedSeriesId || null)}
+              onClick={() => handleAttachTargetSlice(null, null)}
               style={{
                 background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                 color: "#ffffff",
@@ -1767,7 +1770,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={() => handleAttachTargetSlice(null, selectedSeriesId || null)}
+            onClick={() => handleAttachTargetSlice(null, null)}
             style={{
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
