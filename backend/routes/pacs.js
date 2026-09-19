@@ -896,6 +896,19 @@ async function processKeyImageSave(payload, reqUser = {}) {
     measurementData
   } = payload;
 
+  console.log("[KEY_IMAGE_CAPTURE_PAYLOAD]:", {
+    studyUID,
+    seriesUID,
+    sopInstanceUid,
+    instanceId,
+    sliceNumber,
+    frameNumber,
+    totalSlices,
+    seriesDescription,
+    caption,
+    hasDataUrl: !!(dataUrl && dataUrl.length > 500)
+  });
+
   if (!studyUID) {
     throw new Error("studyUID is required");
   }

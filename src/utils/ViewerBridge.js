@@ -375,7 +375,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     let candidateContainers = [];
 
     sortedCanvases.forEach(c => {
-      let vp = c.parentElement;
+      let vp = c.parentElement ? (c.parentElement.parentElement || c.parentElement) : c;
       while (vp && vp !== bodyEl) {
         if (isSidebarElement(vp)) break;
         if (!candidateContainers.includes(vp)) {
