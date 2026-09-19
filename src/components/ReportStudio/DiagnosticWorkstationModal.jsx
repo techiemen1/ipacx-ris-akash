@@ -26,7 +26,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
 
@@ -232,9 +232,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           const diagSeries = res.data.series.filter(s => !isScout(s));
           const mainSeries = (diagSeries.length > 0 ? (diagSeries.find(s => s.total_slices > 1) || diagSeries[0]) : res.data.series[0]);
           setSelectedSeriesId(mainSeries.series_id);
-          const initialSlice = mainSeries.total_slices > 2 ? Math.round(mainSeries.total_slices / 2) : 1;
-          setPickerSliceNum(initialSlice);
-          setTargetSliceNumber(String(initialSlice));
+          setPickerSliceNum(1);
+          setTargetSliceNumber("1");
         }
       })
       .catch((err) => console.error("Failed to load study series:", err));
@@ -296,6 +295,19 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
+    let directDomSliceInfo = null;
+    try {
+      const iframeEl = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
+      if (iframeEl && iframeEl.contentWindow) {
+        const iframeDoc = iframeEl.contentDocument || iframeEl.contentWindow.document;
+        if (iframeDoc) {
+          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
+        }
+      }
+    } catch (e) {
+      // Cross-origin iframe DOM handled via postMessage RPC
+    }
+
     try {
       const iframeEl = document.querySelector(".dws-iframe, iframe");
       if (iframeEl && iframeEl.contentWindow) {
@@ -303,19 +315,14 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         iframeEl.contentWindow.postMessage({ type: 'REQUEST_SNAPSHOT', action: 'CAPTURE' }, '*');
       }
     } catch (e) {
-      // Ignore postMessage error if cross-origin iframe does not accept message
+      // Ignore postMessage error
     }
 
     const snapResult = await requestViewerSnapshot(".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    // Resolve active series with strict priority:
-    // 1. Explicit parameter override (e.g. from user picking series)
-    // 2. Verified series match from live iframe DOM/postMessage snapshot (snapResult?.matchedSeriesId)
-    // 3. Active viewport info series from live postMessage listener (activeViewportInfo?.seriesInstanceUid)
-    // 4. Current selectedSeriesId state
-    // 5. Default non-scout series
     const activeSeriesId = overrideSeriesId || 
+      directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
       activeViewportInfo?.seriesInstanceUid || 
       selectedSeriesId;
@@ -329,9 +336,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           String(s.orthanc_series_id) === String(activeSeriesId)
         );
       }
-      if (!seriesObj && snapResult?.seriesDescription) {
+      if (!seriesObj && (directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription)) {
+        const targetDesc = directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription;
         seriesObj = studySeriesList.find(s => 
-          s.series_description && String(s.series_description).toLowerCase().trim() === String(snapResult.seriesDescription).toLowerCase().trim()
+          s.series_description && String(s.series_description).toLowerCase().trim() === String(targetDesc).toLowerCase().trim()
         );
       }
       if (!seriesObj && selectedSeriesId) {
@@ -352,21 +360,23 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     // Resolve detected slice candidate with strict priority:
     // 1. Explicit parameter override (e.g. from picker modal)
-    // 2. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
-    // 3. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
-    // 4. Active targetSliceNumber state
-    // 5. ONLY IF ALL THE ABOVE ARE ABSENT: null (will fall back to active viewport image caption)
+    // 2. Direct DOM slice inspection (directDomSliceInfo?.sliceNumber)
+    // 3. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
+    // 4. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
+    // 5. Direct DOM instance number / snapResult instance number
     const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
+          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
           (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
           (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
           (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
-          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
+          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
+          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
           null
         );
 
-    const totalSlices = snapResult?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
+    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 
     let displaySliceNum = detectedSlice;
     let isDefaultedSlice = false;
