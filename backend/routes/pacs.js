@@ -632,29 +632,55 @@ async function fetchStudySeriesAndInstances(orthancUrl, studyData) {
         let orderedInstances = [];
 
         try {
-          const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
-          if (Array.isArray(expInstances) && expInstances.length > 0) {
-            expInstances.sort((a, b) => {
-              const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
-              const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
-              return numA - numB;
-            });
-            orderedInstances = expInstances.map((inst, iIdx) => {
-              const instId = extractCleanInstanceId(inst.ID || inst);
-              const sliceNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+          const { data: oSlicesData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...config, timeout: 6000 });
+          if (oSlicesData && Array.isArray(oSlicesData.Slices) && oSlicesData.Slices.length > 0) {
+            const tot = oSlicesData.Slices.length;
+            orderedInstances = oSlicesData.Slices.map((item, iIdx) => {
+              const rawPath = Array.isArray(item) ? item[0] : (typeof item === 'string' ? item : (item?.Path || ''));
+              const instId = extractCleanInstanceId(rawPath);
               return {
                 id: instId,
                 instance_id: instId,
-                slice_number: sliceNum,
-                instanceNumber: sliceNum,
+                slice_number: iIdx + 1,
+                instanceNumber: iIdx + 1,
                 slice_index: iIdx + 1,
                 previewUrl: `/api/pacs/instance-preview/${instId}`,
                 preview_url: `/api/pacs/instance-preview/${instId}`,
-                caption: `${sDesc} | Slice ${iIdx + 1}/${expInstances.length}`
+                caption: `${sDesc} | Slice ${iIdx + 1}/${tot}`
               };
             });
           }
         } catch (e) {}
+
+        if (orderedInstances.length === 0) {
+          try {
+            const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 6000 });
+            if (Array.isArray(expInstances) && expInstances.length > 0) {
+              expInstances.sort((a, b) => {
+                const posA = a.MainDicomTags?.ImagePositionPatient ? parseFloat(a.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
+                const posB = b.MainDicomTags?.ImagePositionPatient ? parseFloat(b.MainDicomTags.ImagePositionPatient.split('\\')[2] || 0) : 0;
+                if (posA !== posB) return posA - posB;
+                const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+                const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+                return numA - numB;
+              });
+              orderedInstances = expInstances.map((inst, iIdx) => {
+                const instId = extractCleanInstanceId(inst.ID || inst);
+                const sliceNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+                return {
+                  id: instId,
+                  instance_id: instId,
+                  slice_number: sliceNum,
+                  instanceNumber: sliceNum,
+                  slice_index: iIdx + 1,
+                  previewUrl: `/api/pacs/instance-preview/${instId}`,
+                  preview_url: `/api/pacs/instance-preview/${instId}`,
+                  caption: `${sDesc} | Slice ${iIdx + 1}/${expInstances.length}`
+                };
+              });
+            }
+          } catch (e) {}
+        }
 
         if (orderedInstances.length === 0 && Array.isArray(sData.Instances) && sData.Instances.length > 0) {
           orderedInstances = sData.Instances.map((instItem, iIdx) => {

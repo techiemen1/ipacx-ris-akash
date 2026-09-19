@@ -147,14 +147,12 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const isSidebarElement = (el) => {
       if (!el) return false;
       return !!el.closest(
-        '[class*="sidebar"], [class*="Sidebar"], [class*="sidepanel"], [class*="SidePanel"], ' +
+        '[class*="sidebar"], [class*="Sidebar"], [class*="sidepanel-left"], [class*="SidePanel-left"], ' +
         '[class*="thumbnail"], [class*="Thumbnail"], [data-cy*="browser"], [data-cy*="thumbnail"], ' +
         '[class*="StudyBrowser"], [class*="studyBrowser"], [class*="LeftHandPanel"], [class*="leftHandPanel"], ' +
         '[class*="left-panel"], [class*="LeftPanel"], [class*="study-browser"], [class*="series-quick-select"], ' +
         '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
-        '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"], ' +
-        '[class*="Drawer"], [class*="drawer"], [class*="PanelContent"], [class*="panelContent"], ' +
-        '[class*="SeriesWrapper"], [class*="seriesWrapper"]'
+        '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"]'
       );
     };
 
