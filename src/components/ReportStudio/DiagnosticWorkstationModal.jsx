@@ -1511,7 +1511,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
             <button
               type="button"
-              onClick={() => handleAttachTargetSlice(null, null)}
+              onClick={() => handleAttachTargetSlice(null, selectedSeriesId || null)}
               style={{
                 background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                 color: "#ffffff",
@@ -1767,7 +1767,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={() => handleAttachTargetSlice(null, null)}
+            onClick={() => handleAttachTargetSlice(null, selectedSeriesId || null)}
             style={{
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',

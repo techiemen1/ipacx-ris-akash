@@ -1786,7 +1786,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           </button>
 
           {!isReadOnly && (
-            <button onClick={() => handleAttachKeyImage(null, null)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
+            <button onClick={() => handleAttachKeyImage(null, selectedSeriesId || null)} className="rs-btn rs-btn-dark" title="Capture & attach current DICOM viewer image to report">
               <Camera size={16} /> 📸 Key Image / Snapshot
             </button>
           )}

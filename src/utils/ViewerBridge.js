@@ -176,7 +176,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       return el ? (el.parentElement || el) : null;
     };
 
-    // Helper to resolve matching series from text within a specific container element
+    // Helper to resolve matching series from text within a specific container element using strict scoring
     const resolveSeriesFromContainer = (containerEl) => {
       if (!containerEl || !Array.isArray(studySeriesList) || studySeriesList.length === 0) return null;
 
@@ -196,7 +196,56 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
       const lowerText = containerText.toLowerCase().replace(/\s+/g, ' ');
 
-      // 1. Exact full series description match
+      // Score each series in studySeriesList based on uniqueness and specificity
+      let bestSeries = null;
+      let highestScore = -1;
+
+      for (const s of studySeriesList) {
+        if (!s.series_description && !s.series_number) continue;
+        let score = 0;
+        const dClean = String(s.series_description || '').toLowerCase().trim();
+        const sNum = parseInt(s.series_number, 10);
+
+        // 1. Check unique token occurrences (e.g. "b60s" vs "b20s", "t2of")
+        if (dClean.length >= 3) {
+          const tokens = dClean.split(/[\s_-]+/).filter(t => t.length >= 3);
+          for (const token of tokens) {
+            if (lowerText.includes(token)) {
+              // Is this token unique to series s among all series in studySeriesList?
+              const isUniqueToken = !studySeriesList.some(other => 
+                other !== s && String(other.series_description || '').toLowerCase().includes(token)
+              );
+              if (isUniqueToken) {
+                score += 100; // Major boost for exclusive token match like B60s!
+              } else {
+                score += 5;
+              }
+            }
+          }
+
+          // Full clean description match
+          if (lowerText.includes(dClean)) {
+            score += 50;
+          }
+        }
+
+        // 2. Check series number match (e.g. "S: 5", "Series 5", "S5")
+        if (!isNaN(sNum) && sNum > 0) {
+          const serRegex = new RegExp(`(?:series|ser|s)\\s*:?\\s*${sNum}\\b`, 'i');
+          if (serRegex.test(containerText)) {
+            score += 150; // Major boost for explicit Series Number match!
+          }
+        }
+
+        if (score > highestScore && score > 0) {
+          highestScore = score;
+          bestSeries = s;
+        }
+      }
+
+      if (bestSeries) return bestSeries;
+
+      // Fallback: 1. Exact full series description match
       const exactMatch = studySeriesList.find(s => {
         if (!s.series_description) return false;
         const dClean = String(s.series_description).toLowerCase().replace(/\s+/g, ' ').trim();
@@ -204,43 +253,21 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       });
       if (exactMatch) return exactMatch;
 
-      // 2. Substring matches sorted by longest description length
-      const matches = [];
-      studySeriesList.forEach(s => {
-        if (!s.series_description) return;
-        const descLower = String(s.series_description).toLowerCase().trim();
-        if (descLower.length >= 3 && lowerText.includes(descLower)) {
-          matches.push({ series: s, len: descLower.length });
-        }
-      });
-      if (matches.length > 0) {
-        matches.sort((a, b) => b.len - a.len);
-        return matches[0].series;
-      }
-
-      // 3. Match by series number (e.g. "Series 5", "Ser 5", "S:5", "S: 5", "S5")
-      const serNumMatch = containerText.match(/(?:series|ser|s)\s*:?\s*(\d+)/i);
-      if (serNumMatch) {
-        const sNum = parseInt(serNumMatch[1], 10);
-        const matchByNum = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum);
-        if (matchByNum) return matchByNum;
-      }
-
-      // 4. Token match for distinctive series labels (e.g. "B60s" vs "B20s")
-      for (const s of studySeriesList) {
-        if (!s.series_description) continue;
-        const tokens = String(s.series_description).toLowerCase().split(/[\s_-]+/).filter(t => t.length >= 3);
-        const matchCount = tokens.filter(t => lowerText.includes(t)).length;
-        if (tokens.length > 0 && matchCount === tokens.length) {
-          return s;
-        }
-      }
-
       return null;
     };
 
-    // Ancestor series resolver: tries viewport container -> parent chain -> active canvas container -> document body
+    // Ancestor series resolver: tries active canvas viewport box -> viewport container -> parent chain -> document body
     const resolveSeriesFromElementAncestors = (el) => {
+      // 1. Try active viewport canvas overlay text first
+      const canvases = Array.from(iframeDoc.querySelectorAll('canvas')).filter(c => !isSidebarElement(c));
+      const activeCanvas = canvases.find(c => c.closest('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]')) || canvases[0];
+
+      if (activeCanvas) {
+        const cBox = activeCanvas.parentElement || activeCanvas;
+        const activeMatched = resolveSeriesFromContainer(cBox);
+        if (activeMatched) return activeMatched;
+      }
+
       if (!el) return resolveSeriesFromContainer(bodyEl);
       const vpContainer = getViewportContainer(el);
       let matched = resolveSeriesFromContainer(vpContainer);
@@ -252,13 +279,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         matched = resolveSeriesFromContainer(curr);
         if (matched) return matched;
         curr = curr.parentElement;
-      }
-
-      // Try active viewport canvas container
-      const activeVp = iframeDoc.querySelector('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]');
-      if (activeVp) {
-        matched = resolveSeriesFromContainer(activeVp);
-        if (matched) return matched;
       }
 
       return resolveSeriesFromContainer(bodyEl);
