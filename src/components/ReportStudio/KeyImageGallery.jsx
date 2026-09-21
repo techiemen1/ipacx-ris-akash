@@ -74,6 +74,16 @@ export default function KeyImageGallery({
     }
   };
 
+  const [sliceInput, setSliceInput] = useState(1);
+
+  const currentSeries = (studySeriesList || []).find(s => 
+    String(s.series_id) === String(selectedSeriesId) || 
+    String(s.series_instance_uid) === String(selectedSeriesId) || 
+    String(s.orthanc_series_id) === String(selectedSeriesId)
+  ) || (studySeriesList || [])[0];
+
+  const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 999;
+
   return (
     <div style={{ background: "#ffffff", borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 16 }}>
       {/* Gallery Header */}
@@ -84,34 +94,66 @@ export default function KeyImageGallery({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {Array.isArray(studySeriesList) && studySeriesList.length > 1 && onSelectSeries && (
-            <select
-              value={selectedSeriesId}
-              onChange={(e) => onSelectSeries(e.target.value)}
-              style={{
-                background: "#0f172a",
-                color: "#38bdf8",
-                border: "1px solid #0284c7",
-                borderRadius: 6,
-                padding: "4px 8px",
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: "pointer",
-                outline: "none"
-              }}
-              title="Select Active Diagnostic Series"
-            >
-              {studySeriesList
-                .filter(s => {
-                  const d = String(s.series_description || "").toLowerCase();
-                  return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
-                })
-                .map(s => (
-                  <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
-                    S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
-                  </option>
-                ))}
-            </select>
+          {Array.isArray(studySeriesList) && studySeriesList.length > 0 && (
+            <>
+              {onSelectSeries && (
+                <select
+                  value={selectedSeriesId}
+                  onChange={(e) => {
+                    onSelectSeries(e.target.value);
+                    setSliceInput(1);
+                  }}
+                  style={{
+                    background: "#0f172a",
+                    color: "#38bdf8",
+                    border: "1px solid #0284c7",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    outline: "none"
+                  }}
+                  title="Select Active Diagnostic Series"
+                >
+                  {studySeriesList
+                    .filter(s => {
+                      const d = String(s.series_description || "").toLowerCase();
+                      return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+                    })
+                    .map(s => (
+                      <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
+                        S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
+                      </option>
+                    ))}
+                </select>
+              )}
+
+              {/* Direct Slice Selector Input */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4, background: "#ffffff", padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#475569" }}>Slice #:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={maxSlices}
+                  value={sliceInput}
+                  onChange={(e) => setSliceInput(Math.max(1, Math.min(maxSlices, parseInt(e.target.value, 10) || 1)))}
+                  style={{
+                    width: 44,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textAlign: "center",
+                    border: "1px solid #0284c7",
+                    borderRadius: 4,
+                    padding: "1px 2px",
+                    outline: "none",
+                    background: "#f0f9ff",
+                    color: "#0369a1"
+                  }}
+                  title={`Enter slice number (1 to ${maxSlices})`}
+                />
+              </div>
+            </>
           )}
 
           {onOpenPicker && (
@@ -139,7 +181,7 @@ export default function KeyImageGallery({
           {onAttachActiveSlice && (
             <button
               type="button"
-              onClick={onAttachActiveSlice}
+              onClick={() => onAttachActiveSlice(sliceInput, selectedSeriesId)}
               style={{
                 background: "#059669",
                 color: "#ffffff",
@@ -153,8 +195,9 @@ export default function KeyImageGallery({
                 alignItems: "center",
                 gap: 4
               }}
+              title={`Attach Slice #${sliceInput} of series to report`}
             >
-              <Plus size={13} /> Attach Active Slice
+              <Plus size={13} /> Attach Slice #{sliceInput}
             </button>
           )}
         </div>
