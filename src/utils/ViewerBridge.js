@@ -353,53 +353,47 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     console.log('[ViewerBridge] All texts from single-VP:', allTexts.map(t => t.val).filter(v => /\d/.test(v)).slice(0, 30).join(' | '));
 
-    // Parse for slice info
+    // Parse for slice info - Prioritize multi-slice series (totalSlices > 1) over 1/1 scout/localizer overlays
     const parseSlice = (texts) => {
-      // P1: "(73/313)" or "I: 73 (73/313)" or "Im: 73/313"
+      const candidates = [];
+
+      // P1: "(73/313)" or "I: 73 (73/313)" or "Im: 73/313" or "Slice 73 of 313"
       for (const { val } of texts) {
-        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) || val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*\/\s*(\d+)/i);
+        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) || 
+                  val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) ||
+                  val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
         if (m) {
           const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
           if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            console.log('[ViewerBridge] P1 "(sn/tn)" match:', val);
-            return { sliceNumber: sn, totalSlices: tn2 };
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val });
           }
         }
       }
-      // P2: "Slice 73/313" or "Image 73 of 313"
-      for (const { val } of texts) {
-        const m = val.match(/(?:slice|image|im|frame)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
-        if (m) {
-          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            console.log('[ViewerBridge] P2 "slice N/M" match:', val);
-            return { sliceNumber: sn, totalSlices: tn2 };
+
+      // P2: "I: 73" or "Sl: 73"
+      if (candidates.length === 0) {
+        for (const { val } of texts) {
+          const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image)\s*:?\s*(\d+)(?:\s|$)/i);
+          if (m) {
+            const sn = parseInt(m[1], 10);
+            if (sn > 0) {
+              candidates.push({ sliceNumber: sn, totalSlices: null, text: val });
+            }
           }
         }
       }
-      // P3: Bare "73/313" or "73 / 313"
-      for (const { val } of texts) {
-        const m = val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
-        if (m) {
-          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2 && tn2 > 1) {
-            console.log('[ViewerBridge] P3 bare "N/M" match:', val);
-            return { sliceNumber: sn, totalSlices: tn2 };
-          }
-        }
+
+      if (candidates.length === 0) return null;
+
+      // Prefer candidate where totalSlices > 1 (main diagnostic stack) over 1/1 scout
+      const multiSliceCandidate = candidates.find(c => c.totalSlices && c.totalSlices > 1);
+      if (multiSliceCandidate) {
+        console.log('[ViewerBridge] Multi-slice match:', multiSliceCandidate.text, '->', multiSliceCandidate.sliceNumber, '/', multiSliceCandidate.totalSlices);
+        return multiSliceCandidate;
       }
-      // P4: "I: 73" or "Sl: 73"
-      for (const { val } of texts) {
-        const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image)\s*:?\s*(\d+)(?:\s|$)/i);
-        if (m) {
-          const sn = parseInt(m[1], 10);
-          if (sn > 0) {
-            console.log('[ViewerBridge] P4 "label: N" match:', val);
-            return { sliceNumber: sn, totalSlices: null };
-          }
-        }
-      }
-      return null;
+
+      console.log('[ViewerBridge] Best-effort match:', candidates[0].text, '->', candidates[0].sliceNumber, '/', candidates[0].totalSlices);
+      return candidates[0];
     };
 
     const sliceResult = parseSlice(allTexts);

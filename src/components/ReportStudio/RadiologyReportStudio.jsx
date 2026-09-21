@@ -1744,7 +1744,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           attachedSnapshots={attachedSnapshots}
           setAttachedSnapshots={setAttachedSnapshots}
           onOpenPicker={() => setShowSlicePickerModal(true)}
-          onAttachActiveSlice={() => handleAttachKeyImage(null, null)}
+          onAttachActiveSlice={(sliceNum, seriesId) => handleAttachKeyImage(sliceNum, seriesId)}
           studySeriesList={studySeriesList}
           selectedSeriesId={selectedSeriesId}
           onSelectSeries={(sId) => setSelectedSeriesId(sId)}
