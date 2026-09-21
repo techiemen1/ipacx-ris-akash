@@ -315,35 +315,49 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     console.log('[ViewerBridge] Single-viewport container:', mainVpEl.tagName,
       (mainVpEl.className || '').toString().substring(0, 80));
 
-    // Collect all text from that single-viewport container
+    // Collect all text from single-viewport container AND iframe body
     const allTexts = [];
 
-    // Text nodes (raw text)
+    // 1. Text nodes (raw text)
     const tw = iframeDoc.createTreeWalker(mainVpEl, NodeFilter.SHOW_TEXT, null, false);
     let tn;
     while ((tn = tw.nextNode())) {
       const v = tn.nodeValue && tn.nodeValue.trim();
-      if (v && v.length > 0 && v.length <= 120) {
+      if (v && v.length > 0 && v.length <= 150) {
         allTexts.push({ val: v });
       }
     }
 
-    // Also include textContent of leaf/near-leaf elements (for split-span overlays like <span>73</span><span>/</span><span>313</span>)
-    const leafEls = Array.from(mainVpEl.querySelectorAll('*')).filter(el => (el.children ? el.children.length : 0) <= 3);
-    for (const el of leafEls) {
-      const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-      if (txt && txt.length > 0 && txt.length <= 80 && !allTexts.some(t => t.val === txt)) {
+    // 2. Element innerText & textContent across all child nodes in mainVpEl
+    const allDescendants = Array.from(mainVpEl.querySelectorAll('*'));
+    for (const el of allDescendants) {
+      const txt = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+      if (txt && txt.length > 0 && txt.length <= 150 && !allTexts.some(t => t.val === txt)) {
         allTexts.push({ val: txt });
       }
     }
 
-    console.log('[ViewerBridge] All texts from single-VP:', allTexts.map(t => t.val).filter(v => /\d/.test(v)).join(' | '));
+    // 3. Main container innerText
+    const mainVpText = (mainVpEl.innerText || mainVpEl.textContent || '').replace(/\s+/g, ' ').trim();
+    if (mainVpText && !allTexts.some(t => t.val === mainVpText)) {
+      allTexts.push({ val: mainVpText });
+    }
+
+    // 4. Iframe body innerText fallback
+    if (iframeDoc.body) {
+      const bodyText = (iframeDoc.body.innerText || iframeDoc.body.textContent || '').replace(/\s+/g, ' ').trim();
+      if (bodyText && !allTexts.some(t => t.val === bodyText)) {
+        allTexts.push({ val: bodyText });
+      }
+    }
+
+    console.log('[ViewerBridge] All texts from single-VP:', allTexts.map(t => t.val).filter(v => /\d/.test(v)).slice(0, 30).join(' | '));
 
     // Parse for slice info
     const parseSlice = (texts) => {
-      // P1: "(73/313)" or "I: 73 (73/313)"
+      // P1: "(73/313)" or "I: 73 (73/313)" or "Im: 73/313"
       for (const { val } of texts) {
-        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) || val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*\/\s*(\d+)/i);
         if (m) {
           const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
           if (sn > 0 && tn2 > 0 && sn <= tn2) {
@@ -363,12 +377,12 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
           }
         }
       }
-      // P3: Bare "73/313"
+      // P3: Bare "73/313" or "73 / 313"
       for (const { val } of texts) {
         const m = val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
         if (m) {
           const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+          if (sn > 0 && tn2 > 0 && sn <= tn2 && tn2 > 1) {
             console.log('[ViewerBridge] P3 bare "N/M" match:', val);
             return { sliceNumber: sn, totalSlices: tn2 };
           }
@@ -376,7 +390,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       }
       // P4: "I: 73" or "Sl: 73"
       for (const { val } of texts) {
-        const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image|s)\s*:?\s*(\d+)(?:\s|$)/i);
+        const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image)\s*:?\s*(\d+)(?:\s|$)/i);
         if (m) {
           const sn = parseInt(m[1], 10);
           if (sn > 0) {

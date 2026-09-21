@@ -411,6 +411,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           null
         );
 
+    // If live iframe auto-detection is unverified, open visual slice picker pre-selected on active series
+    if (overrideSliceNum === null && !detectedSlice) {
+      console.log("[DWS] Live viewer slice auto-detection unverified. Opening Key Image Picker Modal...");
+      setShowSlicePickerModal(true);
+      return;
+    }
+
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 
     let displaySliceNum = detectedSlice;
