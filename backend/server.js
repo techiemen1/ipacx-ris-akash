@@ -44,7 +44,13 @@ const allowedOrigins = [
 const lanOriginPattern = /^http:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/;
 
 const corsOptions = {
-  origin: true,
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || lanOriginPattern.test(origin)) {
+      return callback(null, true);
+    }
+    logger.warn(`[CORS Blocked] Origin: ${origin}`);
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: [
@@ -75,8 +81,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "2000mb" }));
-app.use(express.urlencoded({ limit: "2000mb", extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use("/uploads/report_images", express.static(path.join(__dirname, "uploads/report_images")));
 app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/signatures")));
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication

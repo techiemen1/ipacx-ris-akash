@@ -15,24 +15,22 @@ export const MESSAGE_TYPES = {
 
 /**
  * Validates postMessage event origin for security.
- * Accepts same-origin, window location origin, or configured allowed origins array.
  */
 export function validateOrigin(event, allowedOrigins = []) {
   if (!event) return false;
   const currentOrigin = window.location.origin;
   if (event.origin === currentOrigin) return true;
-  if (event.origin === 'null' || event.origin === 'file://') return true; // Local dev support
+  if (event.origin === 'null' || event.origin === 'file://') return true;
   if (Array.isArray(allowedOrigins) && allowedOrigins.includes(event.origin)) return true;
-  return true; // Soft fallback for embedded subdomains in enterprise RIS deployments
+  return false;
 }
 
 /**
  * Transmits a key image payload from inside the DICOM viewer iframe to the parent RIS window.
- * Can be called from OHIF / Stone viewer custom toolbar tools or keyboard shortcuts.
  */
 export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetOrigin = '*') {
   const { dataUrl, sopInstanceUid, seriesInstanceUid, studyInstanceUid, frameNumber, windowWidth, windowCenter, seriesDescription, caption } = payload || {};
-  
+
   if (!dataUrl) {
     console.warn('[ViewerBridge] Cannot send key image: dataUrl is empty.');
     return false;
@@ -52,10 +50,7 @@ export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetO
   };
 
   try {
-    targetWindow.postMessage({
-      type: MESSAGE_TYPES.ADD_KEY_IMAGE,
-      payload: normalizedPayload
-    }, targetOrigin);
+    targetWindow.postMessage({ type: MESSAGE_TYPES.ADD_KEY_IMAGE, payload: normalizedPayload }, targetOrigin);
     return true;
   } catch (err) {
     console.error('[ViewerBridge] Failed to postMessage key image:', err);
@@ -70,12 +65,11 @@ export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetO
 export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateChanged, allowedOrigins = []) {
   const handleMessage = (event) => {
     if (!validateOrigin(event, allowedOrigins)) return;
-    
+
     let data = event.data;
     if (typeof data === 'string') {
       try { data = JSON.parse(data); } catch (e) { return; }
     }
-
     if (!data || typeof data !== 'object') return;
 
     // 1. ADD_KEY_IMAGE / OHIF_SNAPSHOT
@@ -134,408 +128,303 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
 }
 
 /**
- * Detects active slice number, total slices, and series description from iframe DOM text overlays.
- * Filters out thumbnail panel / study browser sidebar elements and prioritizes active canvas viewports.
+ * Detects active slice number, total slices, and series description.
+ * 
+ * Strategy A: Cornerstone3D JavaScript API (most reliable, same-origin)
+ * Strategy B: Legacy cornerstoneTools stack state
+ * Strategy C: DOM text parsing from LARGEST canvas overlay ONLY
  */
 export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) {
   if (!iframeDoc) return null;
 
   try {
     const bodyEl = iframeDoc.body || iframeDoc;
+    const iframeWin = iframeDoc.defaultView || iframeDoc.parentWindow;
 
-    // Comprehensive sidebar / thumbnail / browser container detector
-    const isSidebarElement = (el) => {
-      if (!el) return false;
-      if (el.closest('[class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="viewport-overlay"], [class*="viewport-container"]')) {
-        return false;
-      }
-      return !!el.closest(
-        '[class*="sidepanel-left"], [class*="SidePanel-left"], [class*="side-panel-left"], ' +
-        '[class*="thumbnail"], [class*="Thumbnail"], [data-cy*="browser"], [data-cy*="thumbnail"], ' +
-        '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
-        '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"]'
+    const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
+
+    const matchSeriesByCount = (totalImages) => {
+      if (!totalImages || !Array.isArray(studySeriesList)) return null;
+      const candidates = studySeriesList.filter(s =>
+        parseInt(s.total_slices, 10) === totalImages ||
+        (Array.isArray(s.instances) && s.instances.length === totalImages)
       );
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length > 1) return candidates[0]; // Best effort
+      return null;
     };
 
-    // Helper to find enclosing viewport container box for an overlay or canvas element
-    const getViewportContainer = (el) => {
-      let curr = el;
-      while (curr && curr !== bodyEl) {
-        if (isSidebarElement(curr)) return null;
-        const cls = (curr.className || '').toString().toLowerCase();
-        const cy = (curr.getAttribute?.('data-cy') || '').toLowerCase();
-        const id = (curr.id || '').toLowerCase();
-        if (
-          cls.includes('viewport') || cls.includes('cornerstone') || cls.includes('pane') ||
-          cy.includes('viewport') || cy.includes('cornerstone') || id.includes('viewport') ||
-          cls.includes('active') || cls.includes('selected')
-        ) {
-          return curr;
+    // =====================================================================
+    // STRATEGY A: Cornerstone3D getRenderingEngines API (OHIF v3)
+    // =====================================================================
+    try {
+      const cs = iframeWin && iframeWin.cornerstone;
+      if (cs && typeof cs.getRenderingEngines === 'function') {
+        const engines = cs.getRenderingEngines();
+        let bestVp = null;
+        let bestArea = 0;
+
+        for (const engine of engines) {
+          const viewports = engine.getViewports ? engine.getViewports() : [];
+          for (const vp of viewports) {
+            try {
+              const el = vp.element;
+              if (!el) continue;
+              const area = (el.clientWidth || 0) * (el.clientHeight || 0);
+              if (area < 40000) continue; // Skip tiny thumbnails
+              if (area > bestArea) { bestArea = area; bestVp = vp; }
+            } catch (e) { /* skip */ }
+          }
         }
-        curr = curr.parentElement;
+
+        if (bestVp) {
+          let idx = null;
+          let total = null;
+          if (typeof bestVp.getCurrentImageIdIndex === 'function') idx = bestVp.getCurrentImageIdIndex();
+          if (typeof bestVp.getImageIds === 'function') {
+            const ids = bestVp.getImageIds();
+            total = ids ? ids.length : null;
+          }
+          if (idx !== null && total !== null) {
+            const sliceNumber = idx + 1;
+            console.log('[ViewerBridge] CS3D API → slice', sliceNumber, '/', total);
+            const matched = matchSeriesByCount(total);
+            return {
+              instanceNumber: null,
+              sliceNumber,
+              totalSlices: total,
+              matchedSeriesId: matched ? (matched.series_id || matched.orthanc_series_id || matched.series_instance_uid) : null,
+              seriesDescription: matched ? matched.series_description : null
+            };
+          }
+        }
       }
-      return el ? (el.parentElement || el) : null;
+    } catch (e) {
+      console.log('[ViewerBridge] CS3D not available:', e.message);
+    }
+
+    // =====================================================================
+    // STRATEGY B: Legacy cornerstoneTools (OHIF v2)
+    // =====================================================================
+    try {
+      const ct = iframeWin && iframeWin.cornerstoneTools;
+      if (ct && ct.state && ct.state.enabledElements) {
+        let bestArea = 0;
+        let bestResult = null;
+        for (const elData of ct.state.enabledElements) {
+          const stackState = ct.getToolState && ct.getToolState(elData.element, 'stack');
+          if (stackState && stackState.data && stackState.data[0]) {
+            const sd = stackState.data[0];
+            const el = elData.element;
+            const area = el ? (el.clientWidth || 0) * (el.clientHeight || 0) : 0;
+            if (area < 40000) continue;
+            if (area > bestArea) {
+              bestArea = area;
+              const total = sd.imageIds ? sd.imageIds.length : null;
+              const idx = sd.currentImageIdIndex;
+              if (idx !== null && total) {
+                bestResult = { sliceNumber: idx + 1, total };
+              }
+            }
+          }
+        }
+        if (bestResult) {
+          console.log('[ViewerBridge] cornerstoneTools → slice', bestResult.sliceNumber, '/', bestResult.total);
+          const matched = matchSeriesByCount(bestResult.total);
+          return {
+            instanceNumber: null,
+            sliceNumber: bestResult.sliceNumber,
+            totalSlices: bestResult.total,
+            matchedSeriesId: matched ? (matched.series_id || matched.orthanc_series_id) : null,
+            seriesDescription: matched ? matched.series_description : null
+          };
+        }
+      }
+    } catch (e) {
+      // cornerstoneTools not available
+    }
+
+    // =====================================================================
+    // STRATEGY C: DOM text overlay from LARGEST canvas only
+    // =====================================================================
+
+    // Attach click tracker (only once) to track which canvas user last interacted with
+    try {
+      if (iframeDoc && !iframeDoc._activeViewportTrackerAttached) {
+        iframeDoc._activeViewportTrackerAttached = true;
+        const trackActive = (e) => {
+          try {
+            const target = e.target;
+            if (!target) return;
+            const c = target.tagName === 'CANVAS' ? target : target.closest('canvas');
+            if (c) {
+              const area = (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
+              if (area > 10000) iframeDoc._lastActiveCanvas = c;
+            }
+          } catch (err) { /* ignore */ }
+        };
+        iframeDoc.addEventListener('pointerdown', trackActive, true);
+        iframeDoc.addEventListener('click', trackActive, true);
+      }
+    } catch (e) { /* ignore */ }
+
+    // Find all visible canvases, sorted largest first
+    const allCanvases = Array.from(iframeDoc.querySelectorAll('canvas'))
+      .map(c => ({ c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0) }))
+      .filter(({ area }) => area > 5000)
+      .sort((a, b) => b.area - a.area)
+      .map(({ c }) => c);
+
+    if (allCanvases.length === 0) {
+      console.log('[ViewerBridge] No visible canvases in iframe');
+      return null;
+    }
+
+    const largestArea = (() => {
+      const c = allCanvases[0];
+      return (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
+    })();
+
+    // Thumbnail threshold: anything < 20% of largest canvas is a thumbnail
+    const thumbThreshold = largestArea * 0.20;
+
+    // Prefer the user's last-clicked canvas if it's large enough
+    const lastActive = iframeDoc._lastActiveCanvas;
+    const lastActiveArea = lastActive ? ((lastActive.clientWidth || lastActive.width || 0) * (lastActive.clientHeight || lastActive.height || 0)) : 0;
+    const mainCanvas = (lastActive && lastActiveArea >= thumbThreshold) ? lastActive : allCanvases[0];
+
+    const mainArea = (mainCanvas.clientWidth || mainCanvas.width || 0) * (mainCanvas.clientHeight || mainCanvas.height || 0);
+    console.log('[ViewerBridge] Strategy C: largestArea=', largestArea, 'mainArea=', mainArea, 'thumbThreshold=', thumbThreshold);
+
+    // Walk UP from mainCanvas, stopping when we encounter a parent that contains
+    // another large canvas (= a grid container). Everything below that level
+    // belongs to the single active viewport.
+    let mainVpEl = mainCanvas;
+    let par = mainCanvas.parentElement;
+    while (par && par !== bodyEl) {
+      const otherBigCanvases = Array.from(par.querySelectorAll('canvas')).filter(c => {
+        if (c === mainCanvas) return false;
+        const a = (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
+        return a >= thumbThreshold;
+      });
+      if (otherBigCanvases.length > 0) break;
+      mainVpEl = par;
+      par = par.parentElement;
+    }
+
+    console.log('[ViewerBridge] Single-viewport container:', mainVpEl.tagName,
+      (mainVpEl.className || '').toString().substring(0, 80));
+
+    // Collect all text from that single-viewport container
+    const allTexts = [];
+
+    // Text nodes (raw text)
+    const tw = iframeDoc.createTreeWalker(mainVpEl, NodeFilter.SHOW_TEXT, null, false);
+    let tn;
+    while ((tn = tw.nextNode())) {
+      const v = tn.nodeValue && tn.nodeValue.trim();
+      if (v && v.length > 0 && v.length <= 120) {
+        allTexts.push({ val: v });
+      }
+    }
+
+    // Also include textContent of leaf/near-leaf elements (for split-span overlays like <span>73</span><span>/</span><span>313</span>)
+    const leafEls = Array.from(mainVpEl.querySelectorAll('*')).filter(el => (el.children ? el.children.length : 0) <= 3);
+    for (const el of leafEls) {
+      const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (txt && txt.length > 0 && txt.length <= 80 && !allTexts.some(t => t.val === txt)) {
+        allTexts.push({ val: txt });
+      }
+    }
+
+    console.log('[ViewerBridge] All texts from single-VP:', allTexts.map(t => t.val).filter(v => /\d/.test(v)).join(' | '));
+
+    // Parse for slice info
+    const parseSlice = (texts) => {
+      // P1: "(73/313)" or "I: 73 (73/313)"
+      for (const { val } of texts) {
+        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+        if (m) {
+          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            console.log('[ViewerBridge] P1 "(sn/tn)" match:', val);
+            return { sliceNumber: sn, totalSlices: tn2 };
+          }
+        }
+      }
+      // P2: "Slice 73/313" or "Image 73 of 313"
+      for (const { val } of texts) {
+        const m = val.match(/(?:slice|image|im|frame)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
+        if (m) {
+          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            console.log('[ViewerBridge] P2 "slice N/M" match:', val);
+            return { sliceNumber: sn, totalSlices: tn2 };
+          }
+        }
+      }
+      // P3: Bare "73/313"
+      for (const { val } of texts) {
+        const m = val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+        if (m) {
+          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            console.log('[ViewerBridge] P3 bare "N/M" match:', val);
+            return { sliceNumber: sn, totalSlices: tn2 };
+          }
+        }
+      }
+      // P4: "I: 73" or "Sl: 73"
+      for (const { val } of texts) {
+        const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image|s)\s*:?\s*(\d+)(?:\s|$)/i);
+        if (m) {
+          const sn = parseInt(m[1], 10);
+          if (sn > 0) {
+            console.log('[ViewerBridge] P4 "label: N" match:', val);
+            return { sliceNumber: sn, totalSlices: null };
+          }
+        }
+      }
+      return null;
     };
 
-    // Helper to resolve matching series from text within a specific container element using strict scoring
-    const resolveSeriesFromContainer = (containerEl) => {
-      if (!containerEl || !Array.isArray(studySeriesList) || studySeriesList.length === 0) return null;
+    const sliceResult = parseSlice(allTexts);
+    if (!sliceResult) {
+      console.log('[ViewerBridge] No slice text found in single-viewport container');
+      return null;
+    }
 
-      const textNodes = [];
-      const walk = iframeDoc.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT, null, false);
-      let n;
-      while ((n = walk.nextNode())) {
-        const v = n.nodeValue?.trim();
-        if (v && v.length <= 150) {
-          const pEl = n.parentElement;
-          if (pEl && isSidebarElement(pEl)) continue;
-          textNodes.push(v);
-        }
-      }
-      const containerText = textNodes.join(' ');
-      if (!containerText) return null;
+    const { sliceNumber, totalSlices } = sliceResult;
 
-      const lowerText = containerText.toLowerCase().replace(/\s+/g, ' ');
+    // Resolve series
+    let matchedSeriesObj = matchSeriesByCount(totalSlices);
 
-      // Score each series in studySeriesList based on uniqueness and specificity
-      let bestSeries = null;
-      let highestScore = -1;
-
+    if (!matchedSeriesObj && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
+      const vpText = allTexts.map(t => t.val).join(' ').toLowerCase();
+      let bestScore = -1;
       for (const s of studySeriesList) {
-        if (!s.series_description && !s.series_number) continue;
+        const tokens = normalize(s.series_description).split(' ').filter(t => t.length >= 3);
         let score = 0;
-        const dClean = String(s.series_description || '').toLowerCase().trim();
-        const sNum = parseInt(s.series_number, 10);
-
-        // 1. Check unique token occurrences (e.g. "b60s" vs "b20s", "t2of")
-        if (dClean.length >= 3) {
-          const tokens = dClean.split(/[\s_-]+/).filter(t => t.length >= 3);
-          for (const token of tokens) {
-            if (lowerText.includes(token)) {
-              // Is this token unique to series s among all series in studySeriesList?
-              const isUniqueToken = !studySeriesList.some(other => 
-                other !== s && String(other.series_description || '').toLowerCase().includes(token)
-              );
-              if (isUniqueToken) {
-                score += 100; // Major boost for exclusive token match like B60s!
-              } else {
-                score += 5;
-              }
-            }
-          }
-
-          // Full clean description match
-          if (lowerText.includes(dClean)) {
-            score += 50;
-          }
+        for (const tok of tokens) {
+          if (vpText.includes(tok)) score += tok.length >= 5 ? 100 : 10;
         }
-
-        // 2. Check series number match (e.g. "S: 5", "Series 5", "S5")
-        if (!isNaN(sNum) && sNum > 0) {
-          const serRegex = new RegExp(`(?:series|ser|s)\\s*:?\\s*${sNum}\\b`, 'i');
-          if (serRegex.test(containerText)) {
-            score += 150; // Major boost for explicit Series Number match!
-          }
-        }
-
-        if (score > highestScore && score > 0) {
-          highestScore = score;
-          bestSeries = s;
-        }
+        if (score > bestScore) { bestScore = score; matchedSeriesObj = s; }
       }
-
-      if (bestSeries) return bestSeries;
-
-      // Fallback: 1. Exact full series description match
-      const exactMatch = studySeriesList.find(s => {
-        if (!s.series_description) return false;
-        const dClean = String(s.series_description).toLowerCase().replace(/\s+/g, ' ').trim();
-        return dClean.length >= 2 && lowerText.includes(dClean);
-      });
-      if (exactMatch) return exactMatch;
-
-      return null;
-    };
-
-    // Ancestor series resolver: tries active canvas viewport box -> viewport container -> parent chain -> document body
-    const resolveSeriesFromElementAncestors = (el) => {
-      // 1. Try active viewport canvas overlay text first
-      const canvases = Array.from(iframeDoc.querySelectorAll('canvas')).filter(c => !isSidebarElement(c));
-      const activeCanvas = canvases.find(c => c.closest('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]')) || canvases[0];
-
-      if (activeCanvas) {
-        const cBox = activeCanvas.parentElement || activeCanvas;
-        const activeMatched = resolveSeriesFromContainer(cBox);
-        if (activeMatched) return activeMatched;
-      }
-
-      if (!el) return resolveSeriesFromContainer(bodyEl);
-      const vpContainer = getViewportContainer(el);
-      let matched = resolveSeriesFromContainer(vpContainer);
-      if (matched) return matched;
-
-      let curr = el;
-      while (curr && curr !== bodyEl) {
-        if (isSidebarElement(curr)) break;
-        matched = resolveSeriesFromContainer(curr);
-        if (matched) return matched;
-        curr = curr.parentElement;
-      }
-
-      return resolveSeriesFromContainer(bodyEl);
-    };
-
-    // Helper to resolve series by total slices count or text element ancestor scoring
-    const resolveSeriesForOverlay = (tNum, overlayEl) => {
-      if (tNum && !isNaN(tNum) && parseInt(tNum, 10) > 0 && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
-        const totalNum = parseInt(tNum, 10);
-        const matchingCandidates = studySeriesList.filter(s => 
-          parseInt(s.total_slices, 10) === totalNum ||
-          (Array.isArray(s.instances) && s.instances.length === totalNum)
-        );
-
-        if (matchingCandidates.length === 1) {
-          return matchingCandidates[0];
-        }
-
-        if (matchingCandidates.length > 1) {
-          // Disambiguate among candidates with the same slice count (e.g. 451 slices)
-          // Walk all non-sidebar text nodes in iframeDoc.body to find active series description/number text
-          const textNodes = [];
-          const walk = iframeDoc.createTreeWalker(iframeDoc.body || bodyEl, NodeFilter.SHOW_TEXT, null, false);
-          let n;
-          while ((n = walk.nextNode())) {
-            const v = n.nodeValue?.trim();
-            if (v && v.length <= 150) {
-              const pEl = n.parentElement;
-              if (pEl && isSidebarElement(pEl)) continue;
-              textNodes.push(v);
-            }
-          }
-          const fullViewportText = textNodes.join(' ').toLowerCase();
-
-          // 1. Check unique token occurrences in non-sidebar viewport text (e.g. "b60s" vs "b20s")
-          for (const cand of matchingCandidates) {
-            const dClean = String(cand.series_description || '').toLowerCase().trim();
-            if (dClean.length >= 3) {
-              const tokens = dClean.split(/[\s_-]+/).filter(t => t.length >= 3);
-              for (const token of tokens) {
-                if (fullViewportText.includes(token)) {
-                  const isExclusive = !matchingCandidates.some(other => 
-                    other !== cand && String(other.series_description || '').toLowerCase().includes(token)
-                  );
-                  if (isExclusive) {
-                    return cand;
-                  }
-                }
-              }
-            }
-          }
-
-          // 2. Check series number in non-sidebar viewport text (e.g. "S: 5", "Series 5", "S5")
-          for (const cand of matchingCandidates) {
-            const sNum = parseInt(cand.series_number, 10);
-            if (!isNaN(sNum) && sNum > 0) {
-              const serRegex = new RegExp(`(?:series|ser|s)\\s*:?\\s*${sNum}\\b`, 'i');
-              if (serRegex.test(fullViewportText)) {
-                return cand;
-              }
-            }
-          }
-
-          // 3. Fallback to candidate whose full clean description is present in fullViewportText
-          for (const cand of matchingCandidates) {
-            const dClean = String(cand.series_description || '').toLowerCase().trim();
-            if (dClean.length >= 3 && fullViewportText.includes(dClean)) {
-              return cand;
-            }
-          }
-
-          return matchingCandidates[0];
-        }
-      }
-      return resolveSeriesFromElementAncestors(overlayEl);
-    };
-
-    // 1. Gather viewports / canvas containers outside sidebars, prioritizing active/selected canvas
-    const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
-      .filter(c => !isSidebarElement(c))
-      .sort((a, b) => {
-        const areaA = (a.clientWidth || a.width || 0) * (a.clientHeight || a.height || 0);
-        const areaB = (b.clientWidth || b.width || 0) * (b.clientHeight || b.height || 0);
-        return areaB - areaA;
-      });
-
-    const activeCanvas = canvases.find(c => c.closest('.active, [class*="active"], [class*="Active"], [class*="selected"], [class*="Selected"]')) || canvases[0];
-
-    const sortedCanvases = activeCanvas
-      ? [activeCanvas, ...canvases.filter(c => c !== activeCanvas)]
-      : canvases;
-
-    let candidateContainers = [];
-
-    sortedCanvases.forEach(c => {
-      let vp = c.parentElement ? (c.parentElement.parentElement || c.parentElement) : c;
-      while (vp && vp !== bodyEl) {
-        if (isSidebarElement(vp)) break;
-        if (!candidateContainers.includes(vp)) {
-          candidateContainers.push(vp);
-        }
-        vp = vp.parentElement;
-      }
-    });
-
-    if (candidateContainers.length === 0) {
-      candidateContainers = [bodyEl];
+      if (bestScore <= 0) matchedSeriesObj = null;
     }
 
-    const parseTextNodesForSlice = (textNodes, isBodyFallback = false) => {
-      // Priority 1: Parenthesized pattern like "(16/258)" or "I: 243 (16/258)" - unique to viewport overlays
-      for (const item of textNodes) {
-        const fullParenMatch = item.val.match(/(?:i|im|image|slice|frame|s)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
-        if (fullParenMatch) {
-          const instNum = fullParenMatch[1] ? parseInt(fullParenMatch[1], 10) : null;
-          const sNum = parseInt(fullParenMatch[2], 10);
-          const tNum = parseInt(fullParenMatch[3], 10);
-          if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            return { instanceNumber: instNum, sliceNumber: sNum, totalSlices: tNum, item };
-          }
-        }
-      }
+    console.log('[ViewerBridge] Result → slice:', sliceNumber, '/', totalSlices, '| series:', matchedSeriesObj?.series_description);
 
-      // Priority 2: Simple parenthesized fraction "(16/258)"
-      for (const item of textNodes) {
-        const parenMatch = item.val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
-        if (parenMatch) {
-          const sNum = parseInt(parenMatch[1], 10);
-          const tNum = parseInt(parenMatch[2], 10);
-          if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
-          }
-        }
-      }
-
-      // Priority 3: Explicit "Slice 16 of 258" or "Image 16/258"
-      for (const item of textNodes) {
-        const simpleMatch = item.val.match(/(?:slice|im|image|frame)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
-        if (simpleMatch) {
-          const sNum = parseInt(simpleMatch[1], 10);
-          const tNum = parseInt(simpleMatch[2], 10);
-          if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
-          }
-        }
-      }
-
-      // Priority 4: Fallback unparenthesized fraction "16/258"
-      for (const item of textNodes) {
-        const unparenMatch = item.val.match(/(?:^|\s)(\d+)\s*\/\s*(\d+)(?:\s|$)/);
-        if (unparenMatch) {
-          const sNum = parseInt(unparenMatch[1], 10);
-          const tNum = parseInt(unparenMatch[2], 10);
-          if (sNum > 0 && tNum > 0 && sNum <= tNum) {
-            if (isBodyFallback && sNum === 1 && tNum === 1) continue;
-            return { instanceNumber: null, sliceNumber: sNum, totalSlices: tNum, item };
-          }
-        }
-      }
-
-      // Priority 5: Instance number fallback "I: 243"
-      for (const item of textNodes) {
-        const instMatch = item.val.match(/(?:^|\s)(?:i|im|image|instance)\s*:?\s*(\d+)(?:\s|$)/i);
-        if (instMatch) {
-          const instNum = parseInt(instMatch[1], 10);
-          if (instNum > 0) {
-            return { instanceNumber: instNum, sliceNumber: instNum, totalSlices: null, item };
-          }
-        }
-      }
-
-      return null;
+    return {
+      instanceNumber: null,
+      sliceNumber,
+      totalSlices: totalSlices || null,
+      matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+      seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
     };
 
-    // 2. Iterate candidate containers in priority order
-    for (const container of candidateContainers) {
-      const containerTextNodes = [];
-      const containerWalk = iframeDoc.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
-      let node;
-      while ((node = containerWalk.nextNode())) {
-        const val = node.nodeValue?.trim();
-        if (!val || val.length > 150) continue;
-        const pEl = node.parentElement;
-        if (pEl && isSidebarElement(pEl)) continue;
-        containerTextNodes.push({ node, val, parentEl: pEl });
-      }
-
-      if (containerTextNodes.length === 0) continue;
-
-      const targetSliceNodeInfo = parseTextNodesForSlice(containerTextNodes);
-      if (!targetSliceNodeInfo) continue;
-
-      const { instanceNumber, sliceNumber, totalSlices } = targetSliceNodeInfo;
-
-      let targetVp = targetSliceNodeInfo.item.parentEl;
-      while (targetVp && targetVp !== bodyEl) {
-        const cls = (targetVp.className || '').toString().toLowerCase();
-        const cy = (targetVp.getAttribute?.('data-cy') || '').toLowerCase();
-        if (cls.includes('viewport') || cls.includes('pane') || cy.includes('viewport') || cls.includes('grid') || cls.includes('cornerstone')) {
-          break;
-        }
-        targetVp = targetVp.parentElement;
-      }
-
-      const matchedSeriesObj = resolveSeriesFromElementAncestors(targetVp) || resolveSeriesFromElementAncestors(container);
-      const matchedSeriesId = matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null;
-      const seriesDescription = matchedSeriesObj ? matchedSeriesObj.series_description : null;
-
-      return {
-        instanceNumber: instanceNumber || null,
-        sliceNumber,
-        totalSlices: totalSlices || null,
-        matchedSeriesId,
-        seriesDescription
-      };
-    }
-
-    // 3. Fallback: Search all non-sidebar text nodes in iframeDoc.body
-    const allDocTextNodes = [];
-    const docWalk = iframeDoc.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, null, false);
-    let dNode;
-    while ((dNode = docWalk.nextNode())) {
-      const dVal = dNode.nodeValue?.trim();
-      if (!dVal || dVal.length > 150) continue;
-      const pEl = dNode.parentElement;
-      if (pEl && isSidebarElement(pEl)) continue;
-      allDocTextNodes.push({ node: dNode, val: dVal, parentEl: pEl });
-    }
-
-    const fallbackSliceInfo = parseTextNodesForSlice(allDocTextNodes, true);
-    if (fallbackSliceInfo) {
-      const { instanceNumber, sliceNumber, totalSlices } = fallbackSliceInfo;
-      let targetVp = fallbackSliceInfo.item.parentEl;
-      while (targetVp && targetVp !== bodyEl) {
-        const cls = (targetVp.className || '').toString().toLowerCase();
-        const cy = (targetVp.getAttribute?.('data-cy') || '').toLowerCase();
-        if (cls.includes('viewport') || cls.includes('pane') || cy.includes('viewport') || cls.includes('grid') || cls.includes('cornerstone')) {
-          break;
-        }
-        targetVp = targetVp.parentElement;
-      }
-
-      const matchedSeriesObj = resolveSeriesFromElementAncestors(targetVp) || resolveSeriesFromElementAncestors(bodyEl);
-      const matchedSeriesId = matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null;
-      const seriesDescription = matchedSeriesObj ? matchedSeriesObj.series_description : null;
-
-      return {
-        instanceNumber: instanceNumber || null,
-        sliceNumber,
-        totalSlices: totalSlices || null,
-        matchedSeriesId,
-        seriesDescription
-      };
-    }
   } catch (e) {
-    console.warn('[ViewerBridge] DOM slice detection exception:', e);
+    console.warn('[ViewerBridge] detectViewportSliceInfoFromDOM exception:', e);
   }
   return null;
 }
@@ -627,38 +516,29 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         seriesDescription = sliceInfo.seriesDescription;
       }
 
-      const isSidebarElement = (el) => {
-        if (!el) return false;
-        if (el.closest('[class*="viewport"], [class*="Viewport"], [class*="cornerstone"], [class*="Cornerstone"], [class*="viewport-overlay"], [class*="viewport-container"]')) {
-          return false;
-        }
-        return !!el.closest(
-          '[class*="sidepanel-left"], [class*="SidePanel-left"], [class*="side-panel-left"], ' +
-          '[class*="thumbnail"], [class*="Thumbnail"], [data-cy*="browser"], [data-cy*="thumbnail"], ' +
-          '[class*="SeriesItem"], [class*="seriesItem"], [class*="ThumbnailList"], [class*="thumbnailList"], ' +
-          '[data-cy*="study-list"], [class*="study-list"], [class*="StudyList"], [class*="QuickSelect"]'
-        );
-      };
-
+      // Try to capture canvas image
       const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
-        .filter(c => !isSidebarElement(c))
-        .sort((a, b) => {
-          const areaA = (a.clientWidth || a.width || 0) * (a.clientHeight || a.height || 0);
-          const areaB = (b.clientWidth || b.width || 0) * (b.clientHeight || b.height || 0);
-          return areaB - areaA;
-        });
+        .map(c => ({ c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0) }))
+        .filter(({ area }) => area > 5000)
+        .sort((a, b) => b.area - a.area)
+        .map(({ c }) => c);
 
-      if (canvases.length > 0) {
-        const activeCanvas = canvases.find(c => c.closest('.active, [class*="active"], [class*="Active"], [class*="selected"]')) || canvases[0];
-        if (activeCanvas && (activeCanvas.width > 0 || activeCanvas.clientWidth > 0)) {
+      const lastActive = iframeDoc._lastActiveCanvas;
+      const lastActiveArea = lastActive ? ((lastActive.clientWidth || lastActive.width || 0) * (lastActive.clientHeight || lastActive.height || 0)) : 0;
+      const bigThreshold = canvases.length > 0 ? ((canvases[0].clientWidth || canvases[0].width || 0) * (canvases[0].clientHeight || canvases[0].height || 0)) * 0.20 : 0;
+      const activeCanvas = (lastActive && lastActiveArea >= bigThreshold) ? lastActive : (canvases[0] || null);
+
+      if (activeCanvas && (activeCanvas.width > 0 || activeCanvas.clientWidth > 0)) {
+        try {
           dataUrl = activeCanvas.toDataURL('image/jpeg', 0.95);
+        } catch (e) {
+          // CORS taint - canvas from cross-origin content
         }
       }
     }
   } catch (e) {
-    // Canvas security exception
+    // Cross-origin error
   }
 
   return { dataUrl, instanceNumber, sliceNumber, totalSlices, matchedSeriesId, seriesDescription };
 }
-

@@ -31,7 +31,10 @@ yarn-debug.log*
 /coverage
 /build
 /dist
-.DS_Store
 .vscode/
 .idea/
 
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo

@@ -911,11 +911,9 @@ export default function CreateReport() {
   }, [study.ApprovedBy]);
 
   useEffect(() => {
-    const syncPreviewHtml = () => {
+    const timer = setTimeout(() => {
       setPreviewHtml(reportSheetRef.current?.innerHTML || "");
-    };
-    syncPreviewHtml();
-    const timer = setTimeout(syncPreviewHtml, 0);
+    }, 200);
     return () => clearTimeout(timer);
   }, [
     study,

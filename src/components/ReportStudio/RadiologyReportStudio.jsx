@@ -900,23 +900,94 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
   const autoFillDicomSR = handleSyncDicomSr;
   
+  const findDicomViewerIframe = () => {
+    // First: find any iframe with an accessible canvas (same-origin)
+    const iframes = Array.from(document.querySelectorAll("iframe"));
+    for (const iframe of iframes) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc && doc.querySelector("canvas")) {
+          return iframe;
+        }
+      } catch (e) {
+        // Cross-origin - skip
+      }
+    }
+    // Second: return any iframe (even cross-origin, for postMessage)
+    return document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
+  };
+
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
     let directDomSliceInfo = null;
+    const iframeEl = findDicomViewerIframe();
+
+    // === DOM/JS DIAGNOSTIC + DETECTION - Always runs ===
+    const diagData = {
+      iframeFound: !!iframeEl,
+      iframeUrl: iframeEl ? (iframeEl.src || iframeEl.getAttribute('src') || 'no-src') : null,
+      hasDoc: false, hasCanvas: false, canvases: [], textSample: [], hasCS3D: false, hasCT: false, cs3dViewports: [], domError: null
+    };
     try {
-      const iframeEl = document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
       if (iframeEl && iframeEl.contentWindow) {
         const iframeDoc = iframeEl.contentDocument || iframeEl.contentWindow.document;
+        diagData.hasDoc = !!iframeDoc;
         if (iframeDoc) {
-          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
+          const allCanvases = Array.from(iframeDoc.querySelectorAll('canvas'));
+          diagData.hasCanvas = allCanvases.length > 0;
+          diagData.canvases = allCanvases.map(c => ({ w: c.clientWidth || c.width || 0, h: c.clientHeight || c.height || 0 }));
+
+          const iframeWin = iframeDoc.defaultView || iframeDoc.parentWindow;
+          diagData.hasCS3D = !!(iframeWin && iframeWin.cornerstone && typeof iframeWin.cornerstone.getRenderingEngines === 'function');
+          diagData.hasCT = !!(iframeWin && iframeWin.cornerstoneTools);
+
+          // Collect all text nodes from iframe body
+          if (iframeDoc.body) {
+            const tw = iframeDoc.createTreeWalker(iframeDoc.body, NodeFilter.SHOW_TEXT, null, false);
+            let tn;
+            while ((tn = tw.nextNode()) && diagData.textSample.length < 80) {
+              const v = tn.nodeValue && tn.nodeValue.trim();
+              if (v && v.length > 0 && v.length <= 100) diagData.textSample.push(v);
+            }
+          }
+
+          // Try CS3D API
+          if (diagData.hasCS3D) {
+            try {
+              const engines = iframeWin.cornerstone.getRenderingEngines();
+              for (const eng of engines) {
+                const vps = eng.getViewports ? eng.getViewports() : [];
+                for (const vp of vps) {
+                  const el = vp.element;
+                  const area = el ? (el.clientWidth || 0) * (el.clientHeight || 0) : 0;
+                  let idx = null, total = null;
+                  if (typeof vp.getCurrentImageIdIndex === 'function') idx = vp.getCurrentImageIdIndex();
+                  if (typeof vp.getImageIds === 'function') { const ids = vp.getImageIds(); total = ids ? ids.length : null; }
+                  diagData.cs3dViewports.push({ area, idx, total });
+                  if (idx !== null && total && area > 40000 && !directDomSliceInfo) {
+                    directDomSliceInfo = { sliceNumber: idx + 1, totalSlices: total, matchedSeriesId: null, seriesDescription: null, instanceNumber: null };
+                  }
+                }
+              }
+            } catch (e2) { diagData.cs3dError = e2.message; }
+          }
+
+          // Fall back to DOM text parsing
+          if (!directDomSliceInfo) {
+            directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
+          }
         }
       }
     } catch (e) {
-      // Cross-origin iframe DOM handled via postMessage RPC
+      diagData.domError = e.message;
     }
 
+    // ALWAYS send diagnostic to backend (fire and forget)
+    api.post('/api/pacs/debug-dom-dump', diagData).catch(() => {});
+    console.log('[RRS] DOM diagnostic:', JSON.stringify(diagData).substring(0, 500));
+    console.log('[RRS] directDomSliceInfo:', directDomSliceInfo);
+
     try {
-      const iframeEl = document.querySelector(".rs-viewer-iframe, iframe");
       if (iframeEl && iframeEl.contentWindow) {
         iframeEl.contentWindow.postMessage({ type: 'OHIF_CAPTURE_VIEWPORT', action: 'CAPTURE' }, '*');
         iframeEl.contentWindow.postMessage({ type: 'REQUEST_SNAPSHOT', action: 'CAPTURE' }, '*');
@@ -925,7 +996,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       // Ignore postMessage error
     }
 
-    const snapResult = await requestViewerSnapshot(".rs-viewer-iframe, iframe", studySeriesList);
+    const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
     const activeSeriesId = directDomSliceInfo?.matchedSeriesId ||
@@ -985,6 +1056,12 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         setSelectedSeriesId(String(seriesObj.series_id));
       }
     }
+    console.log('[RRS] activeSeriesId:', activeSeriesId, 'seriesObj:', seriesObj?.series_description);
+    console.log('[RRS] detectedSlice will be from:', {
+      dom: directDomSliceInfo?.sliceNumber,
+      snap: snapResult?.sliceNumber,
+      activeVp: activeViewportInfo?.frameNumber
+    });
 
     // Resolve detected slice candidate with strict priority:
     // 1. Explicit parameter override (e.g. from picker modal)
@@ -1007,11 +1084,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 
     let displaySliceNum = detectedSlice;
-    let isDefaultedSlice = false;
 
     if (!displaySliceNum || isNaN(displaySliceNum) || displaySliceNum < 1) {
-      isDefaultedSlice = true;
-      // Default to slice 1 / active viewport, NEVER fabricate fake mid-series slice numbers (157, 102, etc.)
       displaySliceNum = 1;
     }
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
@@ -1040,7 +1114,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       }
 
       if (!targetInst) {
-        const boundedIndex = isDefaultedSlice ? 0 : Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
+        const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
         targetInst = seriesObj.instances[boundedIndex];
       }
     }

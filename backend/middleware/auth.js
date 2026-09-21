@@ -20,13 +20,6 @@ const PUBLIC_PREFIX_PATTERNS = [
   /^\/api\/v1\/public\//,
   /^\/api\/public\//,
   /^\/public\//,
-  /^\/api\/pacs\/instance-preview\//,
-  /^\/api\/pacs\/instance-tags\//,
-  /^\/api\/pacs\/dicom-tags\//,
-  /^\/api\/pacs\/mobile-study\//,
-  /^\/api\/pacs\/study-series-instances\//,
-  /^\/api\/pacs\/export\//,
-  /^\/api\/reports\/.*\/pdf/,
 ];
 
 function isPublicPath(pathname = "", originalUrl = "") {

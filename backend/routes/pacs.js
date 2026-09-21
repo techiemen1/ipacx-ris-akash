@@ -1080,7 +1080,23 @@ async function processKeyImageSave(payload, reqUser = {}) {
    ENTERPRISE KEY IMAGE CAPTURE MICROSERVICE API
    Saves exact open viewport image / PACS rendered slice to physical disk & DB
 ====================================================== */
+// DEBUG ENDPOINT: Receives iframe DOM dump from frontend for analysis
+router.post("/debug-dom-dump", asyncHandler(async (req, res) => {
+  const { canvases, textSample, hasCS3D, hasCT, cs3dViewports, iframeUrl, iframeFound, hasDoc, hasCanvas, domError, cs3dError } = req.body || {};
+  console.log('\n[DEBUG_DOM_DUMP] ===== IFRAME DOM ANALYSIS =====');
+  console.log('[DEBUG_DOM_DUMP] iframeFound:', iframeFound, '| iframeUrl:', iframeUrl);
+  console.log('[DEBUG_DOM_DUMP] hasDoc:', hasDoc, '| hasCanvas:', hasCanvas);
+  console.log('[DEBUG_DOM_DUMP] domError:', domError || 'none');
+  console.log('[DEBUG_DOM_DUMP] hasCornerstone3D:', hasCS3D, '| cs3dError:', cs3dError || 'none');
+  console.log('[DEBUG_DOM_DUMP] CS3D viewports:', JSON.stringify(cs3dViewports));
+  console.log('[DEBUG_DOM_DUMP] Canvases (w x h):', (canvases || []).map(c => `${c.w}x${c.h}`).join(', '));
+  console.log('[DEBUG_DOM_DUMP] Text nodes from iframe body:', JSON.stringify(textSample));
+  console.log('[DEBUG_DOM_DUMP] ======================================\n');
+  res.json({ success: true });
+}));
+
 router.post("/capture-key-image", asyncHandler(async (req, res) => {
+
   const result = await processKeyImageSave(req.body, req.user);
   res.json({ success: true, data: result });
 }));

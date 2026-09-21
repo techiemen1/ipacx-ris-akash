@@ -293,11 +293,26 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     return () => unsubscribe();
   }, [study, studySeriesList]);
 
+  const findDicomViewerIframe = () => {
+    const iframes = Array.from(document.querySelectorAll("iframe"));
+    for (const iframe of iframes) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc && doc.querySelector("canvas")) {
+          return iframe;
+        }
+      } catch (e) {
+        // Cross-origin iframe security notice
+      }
+    }
+    return document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
+  };
+
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
     let directDomSliceInfo = null;
+    const iframeEl = findDicomViewerIframe();
     try {
-      const iframeEl = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
       if (iframeEl && iframeEl.contentWindow) {
         const iframeDoc = iframeEl.contentDocument || iframeEl.contentWindow.document;
         if (iframeDoc) {
@@ -309,7 +324,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     }
 
     try {
-      const iframeEl = document.querySelector(".dws-iframe, iframe");
       if (iframeEl && iframeEl.contentWindow) {
         iframeEl.contentWindow.postMessage({ type: 'OHIF_CAPTURE_VIEWPORT', action: 'CAPTURE' }, '*');
         iframeEl.contentWindow.postMessage({ type: 'REQUEST_SNAPSHOT', action: 'CAPTURE' }, '*');
@@ -318,7 +332,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       // Ignore postMessage error
     }
 
-    const snapResult = await requestViewerSnapshot(".dws-iframe, iframe", studySeriesList);
+    const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
     const activeSeriesId = directDomSliceInfo?.matchedSeriesId ||
@@ -400,11 +414,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 
     let displaySliceNum = detectedSlice;
-    let isDefaultedSlice = false;
 
     if (!displaySliceNum || isNaN(displaySliceNum) || displaySliceNum < 1) {
-      isDefaultedSlice = true;
-      // Default to slice 1 / active viewport, NEVER fabricate fake mid-series slice numbers (157, 102, etc.)
       displaySliceNum = 1;
     }
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
@@ -433,7 +444,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       }
 
       if (!targetInst) {
-        const boundedIndex = isDefaultedSlice ? 0 : Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
+        const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
         targetInst = seriesObj.instances[boundedIndex];
       }
     }
