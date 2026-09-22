@@ -770,9 +770,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
-          // Merge key images captured from mobile or desktop DICOM viewer
+          // Merge key images captured for this specific study
           try {
-            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            localStorage.removeItem("key_images"); // Purge old un-scoped legacy key_images
+            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
             if (localStr) {
               const parsed = JSON.parse(localStr);
               if (Array.isArray(parsed)) {
@@ -825,7 +826,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           // Still try to restore local key images if report fetch fails
           let fallbackSnaps = [];
           try {
-            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
             if (localStr) {
               const parsed = JSON.parse(localStr);
               if (Array.isArray(parsed)) {

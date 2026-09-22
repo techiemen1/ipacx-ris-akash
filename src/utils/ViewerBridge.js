@@ -399,7 +399,16 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
   const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
   if (!iframeEl) return { dataUrl: null, instanceNumber: null, sliceNumber: null, totalSlices: null, matchedSeriesId: null, seriesDescription: null };
 
-  // Listen for iframe postMessage response with a 200ms timeout
+  try {
+    if (iframeEl && iframeEl.contentWindow) {
+      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.REQUEST_SNAPSHOT, action: 'CAPTURE' }, '*');
+      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT, action: 'CAPTURE' }, '*');
+    }
+  } catch (e) {
+    // Ignore postMessage error
+  }
+
+  // Listen for iframe postMessage response with a 1200ms timeout
   const waitPostMessage = new Promise((resolve) => {
     const handler = (event) => {
       let data = event.data;
@@ -413,11 +422,12 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         data.type === MESSAGE_TYPES.OHIF_SNAPSHOT ||
         data.type === MESSAGE_TYPES.ADD_KEY_IMAGE ||
         data.eventName === 'SNAPSHOT_CAPTURED' ||
-        data.type === MESSAGE_TYPES.VIEWPORT_CHANGE
+        data.type === MESSAGE_TYPES.VIEWPORT_CHANGE ||
+        data.type === 'OHIF_VIEWPORT_CHANGE'
       ) {
         const payload = data.payload || data;
         const dUrl = payload.dataUrl || payload.imageUrl || payload.url;
-        const fNum = payload.frameNumber || payload.sliceNumber || payload.sliceIndex || payload.instanceNumber;
+        const fNum = payload.frameNumber || payload.sliceNumber || (payload.sliceIndex !== undefined ? payload.sliceIndex + 1 : null) || payload.instanceNumber;
         const tSlices = payload.totalSlices || payload.total_slices;
         const sDesc = payload.seriesDescription || payload.seriesDesc;
         const sUid = payload.seriesInstanceUid || payload.seriesInstanceUID;
@@ -441,17 +451,8 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
     setTimeout(() => {
       window.removeEventListener('message', handler);
       resolve(null);
-    }, 200);
+    }, 1200);
   });
-
-  try {
-    if (iframeEl.contentWindow) {
-      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.REQUEST_SNAPSHOT, action: 'CAPTURE' }, '*');
-      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT, action: 'CAPTURE' }, '*');
-    }
-  } catch (e) {
-    // Ignore postMessage error
-  }
 
   const postMsgRes = await waitPostMessage;
   if (postMsgRes && (postMsgRes.sliceNumber || postMsgRes.dataUrl)) {

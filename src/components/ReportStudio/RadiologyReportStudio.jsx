@@ -459,9 +459,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
-          // Merge key images from local storage captured from mobile/desktop DICOM viewer
+          // Merge key images from local storage captured for this specific study
           try {
-            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            localStorage.removeItem("key_images"); // Purge old un-scoped legacy key_images
+            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
             if (localStr) {
               const parsed = JSON.parse(localStr);
               if (Array.isArray(parsed)) {

@@ -36,9 +36,9 @@ export default function KeyImageGallery({
 
     const filterOutSnap = (s) => {
       const sId = s.db_id || s.id || s.instance_id || s.sopInstanceUid;
-      const sUrl = s.preview_url || s.previewUrl || s.url;
+      const sUrl = s.preview_url || s.previewUrl || s.url || s.dataUrl;
       if (targetId && (sId === targetId || String(sId) === String(targetId))) return false;
-      if (previewUrl && sUrl === previewUrl) return false;
+      if (previewUrl && sUrl && (sUrl === previewUrl || sUrl.includes(previewUrl) || previewUrl.includes(sUrl))) return false;
       return true;
     };
 
@@ -46,14 +46,15 @@ export default function KeyImageGallery({
       setAttachedSnapshots(prev => prev.filter(filterOutSnap));
     }
 
-    if (studyUID) {
-      try {
+    try {
+      localStorage.removeItem("key_images"); // Purge un-scoped global legacy storage
+      if (studyUID) {
         const updated = (attachedSnapshots || []).filter(filterOutSnap);
         localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
         sessionStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
-      } catch (e) {
-        // ignore storage errors
       }
+    } catch (e) {
+      // ignore storage errors
     }
   };
 

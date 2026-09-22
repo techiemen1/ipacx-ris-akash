@@ -103,95 +103,136 @@ try {
   const ohifBridgeScript = `
 <script id="ohif-ris-bridge-script">
 (function() {
-  function sendViewportState() {
-    try {
-      var cs = window.cornerstone;
-      if (cs && typeof cs.getRenderingEngines === 'function') {
-        var engines = cs.getRenderingEngines();
-        for (var i = 0; i < engines.length; i++) {
-          var vps = engines[i].getViewports ? engines[i].getViewports() : [];
-          for (var j = 0; j < vps.length; j++) {
-            var vp = vps[j];
-            var el = vp.element;
-            if (!el) continue;
-            var isActive = el.classList.contains('active') || el.closest('.active') || el.classList.contains('selected') || vps.length === 1;
-            if (isActive) {
-              var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
-              var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
-              if (idx !== null && idx >= 0) {
-                var sliceNum = idx + 1;
-                var total = ids ? ids.length : null;
-                var imgId = ids[idx] || '';
-                var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                window.parent.postMessage({
-                  type: 'OHIF_VIEWPORT_CHANGE',
-                  payload: {
-                    frameNumber: sliceNum,
-                    sliceNumber: sliceNum,
-                    sliceIndex: idx,
-                    totalSlices: total,
-                    seriesInstanceUid: seriesUid,
-                    sopInstanceUid: sopUid
-                  }
-                }, '*');
-              }
-            }
-          }
-        }
-      }
-    } catch(e) {}
+  var lastActiveViewportEl = null;
+
+  function trackActiveViewport(e) {
+    var target = e.target;
+    if (!target) return;
+    var vp = target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item');
+    if (vp) {
+      lastActiveViewportEl = vp;
+    }
   }
 
-  window.addEventListener('message', function(ev) {
-    var d = ev.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) {} }
-    if (d && (d.type === 'REQUEST_SNAPSHOT' || d.type === 'OHIF_CAPTURE_VIEWPORT')) {
-      sendViewportState();
-      try {
-        var cs = window.cornerstone;
-        if (cs && typeof cs.getRenderingEngines === 'function') {
+  document.addEventListener('mousedown', trackActiveViewport, true);
+  document.addEventListener('pointerdown', trackActiveViewport, true);
+  document.addEventListener('click', trackActiveViewport, true);
+
+  function getActiveViewportContainer() {
+    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl)) {
+      return lastActiveViewportEl;
+    }
+    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, .border-primary');
+    if (activeEl) return activeEl;
+
+    var canvases = Array.from(document.querySelectorAll('canvas')).map(function(c) {
+      return { c: c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0), parent: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || c.parentElement };
+    }).filter(function(item) { return item.area > 5000; }).sort(function(a, b) { return b.area - a.area; });
+
+    if (canvases.length > 0) return canvases[0].parent || canvases[0].c;
+    return document.body;
+  }
+
+  function parseViewportDOMOverlay(container) {
+    var texts = [];
+    if (!container) container = document.body;
+    var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    var tn;
+    while ((tn = tw.nextNode())) {
+      var val = tn.nodeValue ? tn.nodeValue.trim() : '';
+      if (val && val.length > 0 && val.length <= 150) texts.push(val);
+    }
+
+    var sliceNum = null, totalSlices = null, seriesDesc = null;
+
+    for (var i = 0; i < texts.length; i++) {
+      var t = texts[i];
+      // Match slice pattern: "1:52 (52/313)", "(52/313)", "52/313", "Slice 52 of 313", "Im: 52/313"
+      var m = t.match(/(?:\d+|I):\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
+              t.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) ||
+              t.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) ||
+              t.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+      if (m) {
+        var s = parseInt(m[1], 10);
+        var tot = parseInt(m[3] || m[2], 10);
+        if (s > 0 && tot > 0 && s <= tot) {
+          sliceNum = s;
+          totalSlices = tot;
+          break;
+        }
+      }
+    }
+
+    return { sliceNumber: sliceNum, totalSlices: totalSlices, seriesDescription: seriesDesc, allTexts: texts };
+  }
+
+  function captureAndSendViewport() {
+    try {
+      var container = getActiveViewportContainer();
+      var cv = container ? (container.querySelector('canvas') || container) : document.querySelector('canvas');
+      var dataUrl = null;
+      if (cv && typeof cv.toDataURL === 'function') {
+        try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e) {}
+      }
+      var overlayInfo = parseViewportDOMOverlay(container);
+
+      // Check Cornerstone3D window API if attached
+      var cs = window.cornerstone;
+      var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
+      if (cs && typeof cs.getRenderingEngines === 'function') {
+        try {
           var engines = cs.getRenderingEngines();
           for (var i = 0; i < engines.length; i++) {
             var vps = engines[i].getViewports ? engines[i].getViewports() : [];
             for (var j = 0; j < vps.length; j++) {
               var vp = vps[j];
               var el = vp.element;
-              var isActive = el && (el.classList.contains('active') || el.closest('.active') || vps.length === 1);
-              if (isActive && el) {
-                var cv = el.querySelector('canvas') || el;
-                if (cv && typeof cv.toDataURL === 'function') {
-                  var dataUrl = cv.toDataURL('image/jpeg', 0.95);
-                  var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : 0;
-                  var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+              if (el && (el === container || el.classList.contains('active') || el.closest('.active'))) {
+                var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
+                var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+                if (idx !== null && idx >= 0) {
+                  csSlice = idx + 1;
+                  csTotal = ids ? ids.length : null;
                   var imgId = ids[idx] || '';
-                  var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                  var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                  window.parent.postMessage({
-                    type: 'SNAPSHOT_CAPTURED',
-                    payload: {
-                      dataUrl: dataUrl,
-                      frameNumber: idx + 1,
-                      sliceNumber: idx + 1,
-                      totalSlices: ids.length,
-                      seriesInstanceUid: seriesUid,
-                      sopInstanceUid: sopUid
-                    }
-                  }, '*');
-                  return;
+                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                  csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
                 }
               }
             }
           }
+        } catch(e) {}
+      }
+
+      var finalSlice = csSlice || overlayInfo.sliceNumber || 1;
+      var finalTotal = csTotal || overlayInfo.totalSlices || null;
+
+      window.parent.postMessage({
+        type: 'SNAPSHOT_CAPTURED',
+        payload: {
+          dataUrl: dataUrl,
+          frameNumber: finalSlice,
+          sliceNumber: finalSlice,
+          totalSlices: finalTotal,
+          seriesInstanceUid: csSeriesUid || '',
+          sopInstanceUid: csSopUid || '',
+          seriesDescription: overlayInfo.seriesDescription || ''
         }
-      } catch(e) {}
+      }, '*');
+    } catch(err) {
+      console.warn('[OHIF_BRIDGE] captureAndSendViewport exception:', err);
+    }
+  }
+
+  window.addEventListener('message', function(ev) {
+    var d = ev.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) {} }
+    if (d && (d.type === 'REQUEST_SNAPSHOT' || d.type === 'OHIF_CAPTURE_VIEWPORT' || d.action === 'CAPTURE')) {
+      captureAndSendViewport();
     }
   });
 
-  document.addEventListener('mouseup', sendViewportState, true);
-  document.addEventListener('wheel', function() { setTimeout(sendViewportState, 100); }, true);
-  document.addEventListener('keyup', sendViewportState, true);
-  setInterval(sendViewportState, 1000);
+  document.addEventListener('mouseup', captureAndSendViewport, true);
+  document.addEventListener('keyup', captureAndSendViewport, true);
 })();
 </script>
 `;

@@ -1202,6 +1202,53 @@ async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId, extraU
     deletedCount = delRes.rowCount || 0;
   }
 
+  // Also purge from public.reports table JSONB report_content column
+  try {
+    const repSelect = await pool.query(
+      `SELECT id, study_uid, report_content FROM public.reports 
+       WHERE (study_uid = $1 OR id = $2 OR $1 IS NOT NULL OR $2 IS NOT NULL)`,
+      [studyId || null, reportId ? parseInt(reportId, 10) : null]
+    );
+
+    for (const repRow of repSelect.rows) {
+      let content = repRow.report_content;
+      if (typeof content === 'string') {
+        try { content = JSON.parse(content); } catch (e) { content = null; }
+      }
+      if (content && typeof content === 'object') {
+        let changed = false;
+        const isMatch = (s) => {
+          if (!s) return false;
+          const sId = String(s.id || s.instance_id || '').replace(/^key_db_/, '').replace(/^snap_/, '').replace(/^key_img_/, '').replace(/^key_/, '');
+          const sUrl = s.preview_url || s.url || s.image_path || s.dataUrl || s.previewUrl || '';
+          if (cleanId && (sId === cleanId || String(s.id) === String(imageId) || String(s.instance_id) === String(imageId))) return true;
+          if (extraUrl && sUrl && (sUrl === extraUrl || sUrl.includes(extraUrl) || extraUrl.includes(sUrl))) return true;
+          return false;
+        };
+
+        if (Array.isArray(content.snapshots)) {
+          const beforeLen = content.snapshots.length;
+          content.snapshots = content.snapshots.filter(s => !isMatch(s));
+          if (content.snapshots.length !== beforeLen) changed = true;
+        }
+        if (Array.isArray(content.images)) {
+          const beforeLen = content.images.length;
+          content.images = content.images.filter(s => !isMatch(s));
+          if (content.images.length !== beforeLen) changed = true;
+        }
+
+        if (changed) {
+          await pool.query(
+            "UPDATE public.reports SET report_content = $1::jsonb, updated_at = NOW() WHERE id = $2",
+            [JSON.stringify(content), repRow.id]
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[PACS] Failed purging deleted key image from reports JSONB:", err.message);
+  }
+
   return deletedCount;
 }
 
