@@ -147,14 +147,37 @@ try {
 
     for (var i = 0; i < texts.length; i++) {
       var t = texts[i];
-      // Match slice pattern: "1:52 (52/313)", "(52/313)", "52/313", "Slice 52 of 313", "Im: 52/313"
-      var m = t.match(/(?:\d+|I):\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
-              t.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) ||
-              t.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) ||
-              t.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+      // Pattern 0: "I : 208 (48/255)", "1 : 52 (52/313)" -> 3 numbers: InstNum, SliceNum, TotalSlices
+      var m = t.match(/(?:\d+|I|Im|Slice|Image)\s*:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+      if (m) {
+        var inst = parseInt(m[1], 10);
+        var s = parseInt(m[2], 10);
+        var tot = parseInt(m[3], 10);
+        if (s > 0 && tot > 0 && s <= tot) {
+          sliceNum = s;
+          totalSlices = tot;
+          instNum = inst;
+          break;
+        }
+      }
+
+      // Pattern 1: "(48/255)" -> 2 numbers: SliceNum, TotalSlices
+      m = t.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
       if (m) {
         var s = parseInt(m[1], 10);
-        var tot = parseInt(m[3] || m[2], 10);
+        var tot = parseInt(m[2], 10);
+        if (s > 0 && tot > 0 && s <= tot) {
+          sliceNum = s;
+          totalSlices = tot;
+          break;
+        }
+      }
+
+      // Pattern 2: "Im: 48/255", "Slice 48 of 255", "48/255"
+      m = t.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) || t.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+      if (m) {
+        var s = parseInt(m[1], 10);
+        var tot = parseInt(m[2], 10);
         if (s > 0 && tot > 0 && s <= tot) {
           sliceNum = s;
           totalSlices = tot;
@@ -163,7 +186,7 @@ try {
       }
     }
 
-    return { sliceNumber: sliceNum, totalSlices: totalSlices, seriesDescription: seriesDesc, allTexts: texts };
+    return { sliceNumber: sliceNum, totalSlices: totalSlices, instanceNumber: instNum, seriesDescription: seriesDesc, allTexts: texts };
   }
 
   function captureAndSendViewport() {

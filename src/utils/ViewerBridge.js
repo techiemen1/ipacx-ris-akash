@@ -220,31 +220,42 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const parseSliceCandidates = (textList, basePriority = 100) => {
       const candidates = [];
       for (const val of textList) {
-        // Pattern 0: "1:52 (52/313)", "I: 52 (52/313)", "(52/313)"
-        let m = val.match(/(?:\d+|I):\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
-                val.match(/I:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
-                val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+        // Pattern 0: "I : 208 (48/255)", "1 : 52 (52/313)" -> 3 numbers: InstNum, SliceNum, TotalSlices
+        let m = val.match(/(?:\d+|I|Im|Slice|Image)\s*:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+        if (m) {
+          const instNum = parseInt(m[1], 10);
+          const sn = parseInt(m[2], 10);
+          const tn2 = parseInt(m[3], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, instanceNumber: instNum, text: val, priority: basePriority + 200 });
+            continue;
+          }
+        }
+
+        // Pattern 1: "(48/255)" -> 2 numbers: SliceNum, TotalSlices
+        m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
         if (m) {
           const sn = parseInt(m[1], 10);
-          const tn2 = parseInt(m[3] || m[2], 10);
+          const tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 150 });
+            continue;
+          }
+        }
+
+        // Pattern 2: "Im: 48/255", "Slice 48 of 255", "48/255"
+        m = val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) || val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+        if (m) {
+          const sn = parseInt(m[1], 10);
+          const tn2 = parseInt(m[2], 10);
           if (sn > 0 && tn2 > 0 && sn <= tn2) {
             candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 100 });
             continue;
           }
         }
 
-        // Pattern 1: "Im: 52/313", "Slice 52 of 313", "52/313"
-        m = val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) || val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
-        if (m) {
-          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 80 });
-            continue;
-          }
-        }
-
-        // Pattern 2: "I: 52" or "Sl: 52" or "1:52"
-        m = val.match(/(?:^|\s)(?:i|sl|slice|im|image|\d+)\s*:\s*(\d+)(?:\s|$)/i);
+        // Pattern 3: "I: 48" or "Sl: 48"
+        m = val.match(/(?:^|\s)(?:i|sl|slice|im|image)\s*:\s*(\d+)(?:\s|$)/i);
         if (m) {
           const sn = parseInt(m[1], 10);
           if (sn > 0 && sn <= 2000) {
