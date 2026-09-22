@@ -95,9 +95,15 @@ try {
     return url.replace(/\/$/, "");
   };
 
-  const handleProxyReqAuth = async (proxyReq) => {
-    await getActivePacsCredentials();
-    proxyReq.setHeader("Authorization", getOrthancAuthHeader());
+  const handleProxyReqAuth = (proxyReq) => {
+    try {
+      const authHeader = getOrthancAuthHeader();
+      if (authHeader) {
+        proxyReq.setHeader("Authorization", authHeader);
+      }
+    } catch (e) {
+      // Ignore header setting error
+    }
   };
 
   const ohifBridgeScript = `

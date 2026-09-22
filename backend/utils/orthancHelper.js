@@ -16,9 +16,19 @@ async function getActivePacsCredentials() {
   let password = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
 
   try {
-    const { rows } = await pool.query(
-      "SELECT username, password FROM public.pacs_destinations WHERE is_active = true ORDER BY id ASC LIMIT 1"
-    );
+    let rows = [];
+    try {
+      const res = await pool.query(
+        "SELECT username, password FROM public.pacs WHERE is_active = true ORDER BY id ASC LIMIT 1"
+      );
+      rows = res.rows;
+    } catch (err1) {
+      const res2 = await pool.query(
+        "SELECT username, password FROM public.pacs_destinations WHERE is_active = true ORDER BY id ASC LIMIT 1"
+      ).catch(() => ({ rows: [] }));
+      rows = res2.rows;
+    }
+
     if (rows.length > 0 && rows[0].username) {
       username = String(rows[0].username).trim();
       password = String(rows[0].password || "");

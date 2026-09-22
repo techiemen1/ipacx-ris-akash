@@ -15,9 +15,20 @@ class PacsService {
   }
 
   async save(payload) {
-    const { pacs_name, pacs_type, ae_title, ip_address, port } = payload;
+    let { pacs_name, pacs_type, ae_title, ip_address, port } = payload;
     if (!pacs_name || !pacs_type || !ae_title || !ip_address || !port) {
       throw new BadRequestError("All fields except credentials required");
+    }
+
+    if (ip_address && (ip_address.includes("://") || ip_address.includes(":"))) {
+      const cleanHost = String(ip_address).trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+      if (cleanHost.includes(":")) {
+        const parts = cleanHost.split(":");
+        payload.ip_address = parts[0];
+        if (!payload.port || isNaN(payload.port)) payload.port = parseInt(parts[1], 10);
+      } else {
+        payload.ip_address = cleanHost;
+      }
     }
 
     const saved = await this.repository.upsert(payload);
@@ -44,7 +55,10 @@ class PacsService {
       return { success: false, message: "Host and Port are required" };
     }
 
-    const host = String(pacs.ip_address).trim();
+    let host = String(pacs.ip_address).trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    if (host.includes(":")) {
+      host = host.split(":")[0];
+    }
     const port = parseInt(pacs.port, 10);
     const pacsTypeUpper = String(pacs.pacs_type || "").toUpperCase().trim();
 
