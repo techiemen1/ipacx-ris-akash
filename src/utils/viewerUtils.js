@@ -44,7 +44,7 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
 
-  // If customOhifUrl is empty, root, or contains Orthanc/8042, use same-origin relative proxy path /ohif/
+  // If customOhifUrl is empty, root, or contains Orthanc/8042, use same-origin relative proxy path /ohif/viewer
   if (
     !customOhifUrl ||
     customOhifUrl === "/" ||
@@ -53,12 +53,7 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl.includes("/ohif") ||
     customOhifUrl.toLowerCase().includes("orthanc")
   ) {
-    customOhifUrl = "/ohif";
-  }
-
-  // Ensure trailing slash for directory-style viewer paths before appending query params
-  if (!customOhifUrl.includes("?") && !customOhifUrl.endsWith("/")) {
-    customOhifUrl += "/";
+    customOhifUrl = "/ohif/viewer";
   }
 
   const separator = customOhifUrl.includes("?") ? "&" : "?";
