@@ -88,15 +88,16 @@ app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/sign
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication
 try {
   const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
-  const { getOrthancUrl } = require("./utils/orthancHelper");
-  
-  const orthancUser = process.env.ORTHANC_USER || "orthanc";
-  const orthancPass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
-  const authHeader = "Basic " + Buffer.from(`${orthancUser}:${orthancPass}`).toString("base64");
+  const { getOrthancUrl, getOrthancAuthHeader, getActivePacsCredentials } = require("./utils/orthancHelper");
 
   const getDynamicTarget = async () => {
     const url = await getOrthancUrl();
     return url.replace(/\/$/, "");
+  };
+
+  const handleProxyReqAuth = async (proxyReq) => {
+    await getActivePacsCredentials();
+    proxyReq.setHeader("Authorization", getOrthancAuthHeader());
   };
 
   app.use(
@@ -105,10 +106,7 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      auth: `${orthancUser}:${orthancPass}`,
-      onProxyReq: (proxyReq) => {
-        proxyReq.setHeader("Authorization", authHeader);
-      }
+      onProxyReq: handleProxyReqAuth
     })
   );
 
@@ -118,14 +116,11 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
         const cleanPath = (path || "").replace(/^\/+/, "");
         return "/ohif/viewer" + (cleanPath.startsWith("?") || !cleanPath ? cleanPath : "/" + cleanPath);
       },
-      onProxyReq: (proxyReq) => {
-        proxyReq.setHeader("Authorization", authHeader);
-      }
+      onProxyReq: handleProxyReqAuth
     })
   );
 
@@ -135,13 +130,10 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
         return "/ohif" + (path.startsWith("/") ? path : "/" + path);
       },
-      onProxyReq: (proxyReq) => {
-        proxyReq.setHeader("Authorization", authHeader);
-      }
+      onProxyReq: handleProxyReqAuth
     })
   );
 
@@ -152,7 +144,6 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      auth: `${orthancUser}:${orthancPass}`,
       pathRewrite: (path) => {
         return "/dicom-web" + (path.startsWith("/") ? path : "/" + path);
       },
@@ -170,9 +161,7 @@ try {
           }
           return responseBuffer;
         }),
-        proxyReq: (proxyReq) => {
-          proxyReq.setHeader("Authorization", authHeader);
-        }
+        proxyReq: handleProxyReqAuth
       }
     })
   );
@@ -183,10 +172,7 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      auth: `${orthancUser}:${orthancPass}`,
-      onProxyReq: (proxyReq) => {
-        proxyReq.setHeader("Authorization", authHeader);
-      }
+      onProxyReq: handleProxyReqAuth
     })
   );
 } catch (err) {

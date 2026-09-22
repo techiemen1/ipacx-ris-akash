@@ -1,14 +1,67 @@
 const axios = require("axios");
+const pool = require("../db");
 
 let cachedWorkingOrthancUrl = null;
+let cachedAuthHeader = null;
+let cachedAuthConfig = null;
+let lastAuthCacheTime = 0;
+
+async function getActivePacsCredentials() {
+  const now = Date.now();
+  if (cachedAuthConfig && (now - lastAuthCacheTime < 15000)) {
+    return cachedAuthConfig;
+  }
+
+  let username = process.env.ORTHANC_USER || "orthanc";
+  let password = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
+
+  try {
+    const { rows } = await pool.query(
+      "SELECT username, password FROM public.pacs_destinations WHERE is_active = true ORDER BY id ASC LIMIT 1"
+    );
+    if (rows.length > 0 && rows[0].username) {
+      username = String(rows[0].username).trim();
+      password = String(rows[0].password || "");
+    }
+  } catch (e) {
+    // DB query error fallback to env
+  }
+
+  cachedAuthConfig = { username, password };
+  cachedAuthHeader = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  lastAuthCacheTime = now;
+  return cachedAuthConfig;
+}
+
+function clearOrthancAuthCache() {
+  cachedAuthConfig = null;
+  cachedAuthHeader = null;
+  lastAuthCacheTime = 0;
+}
 
 function orthancAuthConfig() {
-  const user = process.env.ORTHANC_USER || "orthanc";
-  const pass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
+  let user = process.env.ORTHANC_USER || "orthanc";
+  let pass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
+  if (cachedAuthConfig && cachedAuthConfig.username) {
+    user = cachedAuthConfig.username;
+    pass = cachedAuthConfig.password;
+  }
   return { auth: { username: String(user).trim(), password: String(pass) } };
 }
 
+function getOrthancAuthHeader() {
+  if (cachedAuthHeader) return cachedAuthHeader;
+  let user = process.env.ORTHANC_USER || "orthanc";
+  let pass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
+  if (cachedAuthConfig && cachedAuthConfig.username) {
+    user = cachedAuthConfig.username;
+    pass = cachedAuthConfig.password;
+  }
+  return "Basic " + Buffer.from(`${user}:${pass}`).toString("base64");
+}
+
 async function getOrthancUrl() {
+  await getActivePacsCredentials();
   if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
   const candidates = [
     process.env.ORTHANC_URL,
@@ -59,5 +112,8 @@ function extractCleanInstanceId(val) {
 module.exports = {
   getOrthancUrl,
   orthancAuthConfig,
+  getOrthancAuthHeader,
+  getActivePacsCredentials,
+  clearOrthancAuthCache,
   extractCleanInstanceId
 };

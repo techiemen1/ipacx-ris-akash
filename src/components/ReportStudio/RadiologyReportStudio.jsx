@@ -1069,6 +1069,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     // 3. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
     // 4. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
     // 5. Direct DOM instance number / snapResult instance number
+    // Check viewer_state localStorage fallback if iframe detection is cross-origin
+    let savedViewerStateSlice = null;
+    if (studyUID) {
+      try {
+        const savedStateStr = sessionStorage.getItem(`viewer_state_${studyUID}`) || localStorage.getItem(`viewer_state_${studyUID}`);
+        if (savedStateStr) {
+          const parsedState = JSON.parse(savedStateStr);
+          if (parsedState && parsedState.sliceIndex !== undefined && parsedState.sliceIndex !== null) {
+            savedViewerStateSlice = parseInt(parsedState.sliceIndex, 10) + 1;
+          }
+        }
+      } catch (e) {
+        /* ignore localStorage parsing error */
+      }
+    }
+
     const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
@@ -1076,17 +1092,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
           (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
           (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
+          (savedViewerStateSlice && savedViewerStateSlice > 0 ? savedViewerStateSlice : null) ||
           (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
           (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
           null
         );
-
-    // If live iframe auto-detection is unverified, open visual slice picker pre-selected on active series
-    if (overrideSliceNum === null && !detectedSlice) {
-      console.log("[RRS] Live viewer slice auto-detection unverified. Opening Key Image Picker Modal...");
-      setShowSlicePickerModal(true);
-      return;
-    }
 
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
 

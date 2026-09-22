@@ -18,7 +18,9 @@ export default function KeyImageGallery({
   const [editCaptionText, setEditCaptionText] = useState("");
 
   const handleDelete = async (snap) => {
-    const targetId = snap.db_id || snap.id;
+    const targetId = snap.db_id || snap.id || snap.instance_id || snap.sopInstanceUid;
+    const previewUrl = snap.preview_url || snap.previewUrl || snap.url;
+
     if (studyUID && targetId) {
       try {
         await api.delete(`/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images/${encodeURIComponent(targetId)}`);
@@ -27,13 +29,21 @@ export default function KeyImageGallery({
       }
     }
 
+    const filterOutSnap = (s) => {
+      const sId = s.db_id || s.id || s.instance_id || s.sopInstanceUid;
+      const sUrl = s.preview_url || s.previewUrl || s.url;
+      if (targetId && sId === targetId) return false;
+      if (previewUrl && sUrl === previewUrl) return false;
+      return true;
+    };
+
     if (setAttachedSnapshots) {
-      setAttachedSnapshots(prev => prev.filter(s => (s.id || s.db_id) !== targetId));
+      setAttachedSnapshots(prev => prev.filter(filterOutSnap));
     }
 
     if (studyUID) {
       try {
-        const updated = attachedSnapshots.filter(s => (s.id !== snap.id && s.db_id !== snap.db_id && s.preview_url !== snap.preview_url));
+        const updated = attachedSnapshots.filter(filterOutSnap);
         localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
       } catch (e) {
         // ignore localStorage errors

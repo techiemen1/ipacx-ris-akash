@@ -160,10 +160,13 @@ router.get("/", asyncHandler(async (req, res) => {
 }));
 
 router.post("/", asyncHandler(async (req, res) => {
+  const { clearOrthancAuthCache } = require("../utils/orthancHelper");
   const { id, pacs_name, pacs_type, ae_title, ip_address, port, username, password } = req.body;
   const saved = await pacsService.save({
     id, pacs_name, pacs_type, ae_title, ip_address, port, username, password
   });
+
+  clearOrthancAuthCache();
 
   await logAction(req, {
     event: id ? "UPDATE_PACS" : "CREATE_PACS",
@@ -175,8 +178,10 @@ router.post("/", asyncHandler(async (req, res) => {
 }));
 
 router.delete("/:id", asyncHandler(async (req, res) => {
+  const { clearOrthancAuthCache } = require("../utils/orthancHelper");
   const { id } = req.params;
   await pacsService.delete(id);
+  clearOrthancAuthCache();
   await logAction(req, {
     event: "DELETE_PACS",
     page: "PACS_SETTINGS",
@@ -191,14 +196,18 @@ router.post("/test", asyncHandler(async (req, res) => {
 }));
 
 router.post("/:id/activate", asyncHandler(async (req, res) => {
+  const { clearOrthancAuthCache } = require("../utils/orthancHelper");
   const { id } = req.params;
   await pacsService.setActive(id, true);
+  clearOrthancAuthCache();
   res.json({ success: true, message: "PACS node activated" });
 }));
 
 router.post("/:id/deactivate", asyncHandler(async (req, res) => {
+  const { clearOrthancAuthCache } = require("../utils/orthancHelper");
   const { id } = req.params;
   await pacsService.setActive(id, false);
+  clearOrthancAuthCache();
   res.json({ success: true, message: "PACS node deactivated" });
 }));
 
@@ -1124,23 +1133,77 @@ router.get("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
   }
 }));
 
+async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId) {
+  const cleanId = String(imageId).replace(/^key_db_/, '').replace(/^snap_/, '');
+  const isNumeric = /^\d+$/.test(cleanId);
+  const numericId = isNumeric ? parseInt(cleanId, 10) : null;
+  const searchPattern = `%${imageId}%`;
+
+  let query = `
+    SELECT * FROM public.study_key_images 
+    WHERE (
+      (id = $1 AND $1 IS NOT NULL) OR 
+      id::text = $2 OR 
+      preview_url = $2 OR 
+      preview_url LIKE $3 OR 
+      image_path LIKE $3 OR 
+      instance_id = $2 OR 
+      sop_instance_uid = $2
+    )
+  `;
+  const params = [numericId, imageId, searchPattern];
+
+  if (studyId) {
+    query += ` AND (study_uid = $${params.length + 1} OR study_id::text = $${params.length + 1})`;
+    params.push(studyId);
+  }
+  if (reportId) {
+    query += ` AND report_id = $${params.length + 1}`;
+    params.push(reportId);
+  }
+
+  const { rows } = await pool.query(query, params);
+  let deletedCount = 0;
+
+  for (const imgRow of rows) {
+    if (imgRow.image_path && fs.existsSync(imgRow.image_path)) {
+      try { fs.unlinkSync(imgRow.image_path); } catch (e) {}
+    }
+    await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
+    deletedCount++;
+  }
+
+  if (deletedCount === 0) {
+    let delQuery = `
+      DELETE FROM public.study_key_images 
+      WHERE (
+        (id = $1 AND $1 IS NOT NULL) OR 
+        id::text = $2 OR 
+        preview_url = $2 OR 
+        preview_url LIKE $3 OR 
+        image_path LIKE $3 OR 
+        instance_id = $2 OR 
+        sop_instance_uid = $2
+      )
+    `;
+    const delParams = [numericId, imageId, searchPattern];
+    if (studyId) {
+      delQuery += ` AND (study_uid = $${delParams.length + 1} OR study_id::text = $${delParams.length + 1})`;
+      delParams.push(studyId);
+    }
+    const delRes = await pool.query(delQuery, delParams);
+    deletedCount = delRes.rowCount || 0;
+  }
+
+  return deletedCount;
+}
+
 router.delete("/v1/studies/:studyId/key-images/:imageId", asyncHandler(async (req, res) => {
   const { studyId, imageId } = req.params;
   const clinicId = req.user?.clinic_id || 1;
   try {
-    const cleanId = String(imageId).replace(/^key_db_/, '');
-    const { rows } = await pool.query(
-      "SELECT * FROM public.study_key_images WHERE (id::text = $1 OR preview_url = $2) AND (clinic_id = $3 OR $3 IS NULL)",
-      [cleanId, imageId, clinicId]
-    );
-    if (rows.length > 0) {
-      const imgRow = rows[0];
-      if (imgRow.image_path && fs.existsSync(imgRow.image_path)) {
-        try { fs.unlinkSync(imgRow.image_path); } catch (e) {}
-      }
-      await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
-    }
-    res.json({ success: true, message: "Key image removed" });
+    const deletedCount = await deleteKeyImageFromDb(imageId, studyId, null, clinicId);
+    res.json({ success: true, message: `Key image removed (${deletedCount} purged)` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -1176,19 +1239,8 @@ router.delete("/v1/reports/:reportId/key-images/:imageId", asyncHandler(async (r
   const { reportId, imageId } = req.params;
   const clinicId = req.user?.clinic_id || 1;
   try {
-    const cleanId = String(imageId).replace(/^key_db_/, '');
-    const { rows } = await pool.query(
-      "SELECT * FROM public.study_key_images WHERE (id::text = $1 OR preview_url = $2) AND (clinic_id = $3 OR $3 IS NULL)",
-      [cleanId, imageId, clinicId]
-    );
-    if (rows.length > 0) {
-      const imgRow = rows[0];
-      if (imgRow.image_path && fs.existsSync(imgRow.image_path)) {
-        try { fs.unlinkSync(imgRow.image_path); } catch (e) {}
-      }
-      await pool.query("DELETE FROM public.study_key_images WHERE id = $1", [imgRow.id]);
-    }
-    res.json({ success: true, message: "Key image deleted from report" });
+    const deletedCount = await deleteKeyImageFromDb(imageId, null, reportId, clinicId);
+    res.json({ success: true, message: `Key image deleted from report (${deletedCount} purged)` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
