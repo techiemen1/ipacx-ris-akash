@@ -32,22 +32,29 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
-  // Convert absolute same-host URLs (e.g. http://localhost:8042 or http://127.0.0.1:8042) to same-origin relative proxy path
-  if (customOhifUrl && typeof window !== "undefined") {
+  // ALWAYS map direct Orthanc / 8042 / OHIF URLs to same-origin relative proxy path so bridge script is injected and canvas capture is allowed
+  if (customOhifUrl) {
     try {
-      if (customOhifUrl.startsWith("http://") || customOhifUrl.startsWith("https://")) {
-        const u = new URL(customOhifUrl);
-        const hostName = window.location.hostname;
-        if (u.hostname === hostName || u.hostname === "localhost" || u.hostname === "127.0.0.1") {
-          customOhifUrl = (u.pathname && u.pathname !== "/") ? (u.pathname + u.search) : "/ohif/viewer/index.html";
+      if (
+        customOhifUrl.includes(":8042") ||
+        customOhifUrl.includes("Orthanc") ||
+        customOhifUrl.includes("/ohif") ||
+        customOhifUrl.includes("/viewer")
+      ) {
+        const urlObj = new URL(customOhifUrl.startsWith("http") ? customOhifUrl : `http://localhost${customOhifUrl.startsWith("/") ? "" : "/"}${customOhifUrl}`);
+        const pName = urlObj.pathname || "";
+        if (pName.includes("index.html")) {
+          customOhifUrl = pName.startsWith("/ohif") || pName.startsWith("/viewer") ? pName : "/ohif/viewer/index.html";
+        } else {
+          customOhifUrl = "/ohif/viewer/index.html";
         }
       }
     } catch (e) {
-      // Ignore URL parsing errors
+      customOhifUrl = "/ohif/viewer/index.html";
     }
   }
 
-  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
+  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#" || customOhifUrl.includes(":8042")) {
     customOhifUrl = "/ohif/viewer/index.html";
   }
 
