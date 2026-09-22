@@ -100,13 +100,130 @@ try {
     proxyReq.setHeader("Authorization", getOrthancAuthHeader());
   };
 
+  const ohifBridgeScript = `
+<script id="ohif-ris-bridge-script">
+(function() {
+  function sendViewportState() {
+    try {
+      var cs = window.cornerstone;
+      if (cs && typeof cs.getRenderingEngines === 'function') {
+        var engines = cs.getRenderingEngines();
+        for (var i = 0; i < engines.length; i++) {
+          var vps = engines[i].getViewports ? engines[i].getViewports() : [];
+          for (var j = 0; j < vps.length; j++) {
+            var vp = vps[j];
+            var el = vp.element;
+            if (!el) continue;
+            var isActive = el.classList.contains('active') || el.closest('.active') || el.classList.contains('selected') || vps.length === 1;
+            if (isActive) {
+              var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
+              var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+              if (idx !== null && idx >= 0) {
+                var sliceNum = idx + 1;
+                var total = ids ? ids.length : null;
+                var imgId = ids[idx] || '';
+                var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || [])[1] || '';
+                var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || [])[1] || '';
+                window.parent.postMessage({
+                  type: 'OHIF_VIEWPORT_CHANGE',
+                  payload: {
+                    frameNumber: sliceNum,
+                    sliceIndex: idx,
+                    totalSlices: total,
+                    seriesInstanceUid: seriesUid,
+                    sopInstanceUid: sopUid
+                  }
+                }, '*');
+              }
+            }
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  window.addEventListener('message', function(ev) {
+    var d = ev.data;
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) {} }
+    if (d && (d.type === 'REQUEST_SNAPSHOT' || d.type === 'OHIF_CAPTURE_VIEWPORT')) {
+      sendViewportState();
+      try {
+        var cs = window.cornerstone;
+        if (cs && typeof cs.getRenderingEngines === 'function') {
+          var engines = cs.getRenderingEngines();
+          for (var i = 0; i < engines.length; i++) {
+            var vps = engines[i].getViewports ? engines[i].getViewports() : [];
+            for (var j = 0; j < vps.length; j++) {
+              var vp = vps[j];
+              var el = vp.element;
+              var isActive = el && (el.classList.contains('active') || el.closest('.active') || vps.length === 1);
+              if (isActive && el) {
+                var cv = el.querySelector('canvas') || el;
+                if (cv && typeof cv.toDataURL === 'function') {
+                  var dataUrl = cv.toDataURL('image/jpeg', 0.95);
+                  var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : 0;
+                  var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+                  var imgId = ids[idx] || '';
+                  var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || [])[1] || '';
+                  var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || [])[1] || '';
+                  window.parent.postMessage({
+                    type: 'SNAPSHOT_CAPTURED',
+                    payload: {
+                      dataUrl: dataUrl,
+                      frameNumber: idx + 1,
+                      sliceNumber: idx + 1,
+                      totalSlices: ids.length,
+                      seriesInstanceUid: seriesUid,
+                      sopInstanceUid: sopUid
+                    }
+                  }, '*');
+                  return;
+                }
+              }
+            }
+          }
+        }
+      } catch(e) {}
+    }
+  });
+
+  document.addEventListener('mouseup', sendViewportState, true);
+  document.addEventListener('wheel', function() { setTimeout(sendViewportState, 100); }, true);
+  document.addEventListener('keyup', sendViewportState, true);
+  setInterval(sendViewportState, 1000);
+})();
+</script>
+`;
+
+  const handleOhifHtmlInterceptor = responseInterceptor(async (responseBuffer, proxyRes) => {
+    const contentType = proxyRes.headers["content-type"] || "";
+    if (contentType.includes("html") || contentType.includes("text/")) {
+      let body = responseBuffer.toString("utf8");
+      if (!body.includes("ohif-ris-bridge-script")) {
+        if (body.includes("</head>")) {
+          body = body.replace("</head>", `${ohifBridgeScript}</head>`);
+        } else if (body.includes("</body>")) {
+          body = body.replace("</body>", `${ohifBridgeScript}</body>`);
+        } else {
+          body = body + ohifBridgeScript;
+        }
+      }
+      return body;
+    }
+    return responseBuffer;
+  });
+
   app.use(
     "/ohif-proxy",
     createProxyMiddleware({
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      onProxyReq: handleProxyReqAuth
+      selfHandleResponse: true,
+      on: {
+        proxyRes: handleOhifHtmlInterceptor,
+        proxyReq: handleProxyReqAuth
+      }
     })
   );
 
@@ -120,7 +237,11 @@ try {
         const cleanPath = (path || "").replace(/^\/+/, "");
         return "/ohif/viewer" + (cleanPath.startsWith("?") || !cleanPath ? cleanPath : "/" + cleanPath);
       },
-      onProxyReq: handleProxyReqAuth
+      selfHandleResponse: true,
+      on: {
+        proxyRes: handleOhifHtmlInterceptor,
+        proxyReq: handleProxyReqAuth
+      }
     })
   );
 
@@ -133,7 +254,11 @@ try {
       pathRewrite: (path) => {
         return "/ohif" + (path.startsWith("/") ? path : "/" + path);
       },
-      onProxyReq: handleProxyReqAuth
+      selfHandleResponse: true,
+      on: {
+        proxyRes: handleOhifHtmlInterceptor,
+        proxyReq: handleProxyReqAuth
+      }
     })
   );
 

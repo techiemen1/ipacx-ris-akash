@@ -39,7 +39,7 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
         const u = new URL(customOhifUrl);
         const hostName = window.location.hostname;
         if (u.hostname === hostName || u.hostname === "localhost" || u.hostname === "127.0.0.1") {
-          customOhifUrl = u.pathname + u.search;
+          customOhifUrl = (u.pathname && u.pathname !== "/") ? (u.pathname + u.search) : "/ohif/viewer/index.html";
         }
       }
     } catch (e) {
