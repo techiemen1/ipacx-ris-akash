@@ -495,7 +495,8 @@ export default function NativeDicomViewer() {
       }
 
       if (studyUID) {
-        const savedStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images") || "[]";
+        localStorage.removeItem("key_images");
+        const savedStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
         let saved = [];
         try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
         const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== snapshotObj.preview_url)];

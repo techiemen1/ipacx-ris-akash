@@ -1062,7 +1062,8 @@ export default function CreateReport() {
 
         // Also merge local key images captured from mobile/native viewer
         try {
-          const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+          localStorage.removeItem("key_images");
+          const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
           if (localStr) {
             const parsed = JSON.parse(localStr);
             if (Array.isArray(parsed)) {

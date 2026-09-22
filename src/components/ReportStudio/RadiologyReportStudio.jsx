@@ -517,7 +517,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           autoMatchTemplate(mod, bPart, sDesc);
           // Still try to restore local key images if report fetch fails
           try {
-            const localStr = localStorage.getItem(`key_images_${studyUID}`) || localStorage.getItem("key_images");
+            localStorage.removeItem("key_images");
+            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
             if (localStr) {
               const parsed = JSON.parse(localStr);
               if (Array.isArray(parsed)) {
