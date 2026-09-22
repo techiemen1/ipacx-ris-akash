@@ -27,5 +27,10 @@ const pool = new Pool({
   allowExitOnIdle: false
 });
 
+// Prevent idle client crashes from terminating process
+pool.on("error", (err, client) => {
+  console.error("🔴 Unexpected error on idle PostgreSQL client:", err.message);
+});
+
 module.exports = pool;
 

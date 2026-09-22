@@ -14,17 +14,23 @@ router.post("/ping", async (req, res) => {
 
 router.get("/service-status", async (req, res) => {
   const host = process.env.MWL_SERVICE_HOST || "mwl-service";
-  const port = process.env.MWL_SCP_PORT || 11112;
-  
-  let result = await testDicomConnection(host, port, 2000);
-  
-  // If first attempt fails with DNS resolution error and we're not on localhost, try localhost as fallback
-  if (!result.success && (result.error.includes("EAI_AGAIN") || result.error.includes("ENOTFOUND")) && host !== "localhost") {
-    console.warn(`MWL status: could not resolve ${host}, trying localhost...`);
-    result = await testDicomConnection("localhost", port, 2000);
+  const primaryPort = parseInt(process.env.MWL_SCP_PORT || "11118", 10);
+  const portsToTry = [primaryPort, 11118, 11112, 6060];
+  const hostsToTry = [host, "ipacx-mwl-service", "localhost", "127.0.0.1"];
+
+  let lastResult = { success: false, error: "MWL Service Unreachable" };
+
+  for (const h of [...new Set(hostsToTry)]) {
+    for (const p of [...new Set(portsToTry)]) {
+      const result = await testDicomConnection(h, p, 1500);
+      if (result.success) {
+        return res.json({ success: true, host: h, port: p, message: `MWL Service online on ${h}:${p}` });
+      }
+      lastResult = result;
+    }
   }
-  
-  res.json(result);
+
+  res.json(lastResult);
 });
 
 async function ensureMwlTargetsTable() {

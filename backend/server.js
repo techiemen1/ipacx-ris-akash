@@ -649,3 +649,11 @@ pool
   .catch((err) => {
     logger.error("🔴 Failed to connect to PostgreSQL database", { error: err.message });
   });
+
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("🔴 Unhandled Rejection at:", promise, "reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  logger.error("🔴 Uncaught Exception thrown:", err);
+});
