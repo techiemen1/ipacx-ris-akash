@@ -951,31 +951,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             }
           }
 
-          // Try CS3D API
-          if (diagData.hasCS3D) {
-            try {
-              const engines = iframeWin.cornerstone.getRenderingEngines();
-              for (const eng of engines) {
-                const vps = eng.getViewports ? eng.getViewports() : [];
-                for (const vp of vps) {
-                  const el = vp.element;
-                  const area = el ? (el.clientWidth || 0) * (el.clientHeight || 0) : 0;
-                  let idx = null, total = null;
-                  if (typeof vp.getCurrentImageIdIndex === 'function') idx = vp.getCurrentImageIdIndex();
-                  if (typeof vp.getImageIds === 'function') { const ids = vp.getImageIds(); total = ids ? ids.length : null; }
-                  diagData.cs3dViewports.push({ area, idx, total });
-                  if (idx !== null && total && area > 40000 && !directDomSliceInfo) {
-                    directDomSliceInfo = { sliceNumber: idx + 1, totalSlices: total, matchedSeriesId: null, seriesDescription: null, instanceNumber: null };
-                  }
-                }
-              }
-            } catch (e2) { diagData.cs3dError = e2.message; }
-          }
-
-          // Fall back to DOM text parsing
-          if (!directDomSliceInfo) {
-            directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
-          }
+          // Directly invoke enhanced detectViewportSliceInfoFromDOM
+          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
         }
       }
     } catch (e) {

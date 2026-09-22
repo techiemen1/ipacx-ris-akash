@@ -143,293 +143,247 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
 
-    const matchSeriesByCount = (totalImages) => {
-      if (!totalImages || !Array.isArray(studySeriesList)) return null;
-      const candidates = studySeriesList.filter(s =>
-        parseInt(s.total_slices, 10) === totalImages ||
-        (Array.isArray(s.instances) && s.instances.length === totalImages)
-      );
-      if (candidates.length === 1) return candidates[0];
-      if (candidates.length > 1) return candidates[0]; // Best effort
-      return null;
+    // 1. Identify active viewport container element
+    let activeContainer = null;
+
+    // A. Check for explicit active/selected CSS classes or data attributes in OHIF DOM
+    const activeCandidates = Array.from(iframeDoc.querySelectorAll(
+      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, .active'
+    )).filter(el => {
+      // Must contain a canvas or image viewport
+      return el.querySelector('canvas') || el.classList.contains('viewport-element') || el.classList.contains('viewport-wrapper');
+    });
+
+    if (activeCandidates.length > 0) {
+      activeContainer = activeCandidates[0];
+    } else {
+      // B. Check iframeDoc._lastActiveCanvas or any clicked canvas container
+      const lastActive = iframeDoc._lastActiveCanvas;
+      if (lastActive) {
+        activeContainer = lastActive.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || lastActive.parentElement;
+      }
+    }
+
+    // C. Fallback to largest canvas container if no active container explicitly marked
+    if (!activeContainer) {
+      const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
+        .map(c => ({
+          c,
+          area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0),
+          container: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || c.parentElement
+        }))
+        .filter(({ area }) => area > 5000)
+        .sort((a, b) => b.area - a.area);
+
+      if (canvases.length > 0) {
+        activeContainer = canvases[0].container || canvases[0].c;
+      }
+    }
+
+    // Collect text nodes specifically from activeContainer vs global document
+    const activeTexts = [];
+    const globalTexts = [];
+
+    const collectFromNode = (root, targetArray) => {
+      if (!root) return;
+      // 1. TreeWalker text nodes
+      const tw = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      let tn;
+      while ((tn = tw.nextNode())) {
+        const v = tn.nodeValue && tn.nodeValue.trim();
+        if (v && v.length > 0 && v.length <= 150) {
+          targetArray.push(v);
+        }
+      }
+      // 2. Elements textContent
+      const elems = Array.from(root.querySelectorAll('*'));
+      for (const el of elems) {
+        // Exclude left sidebar / thumbnail panel text when collecting global text
+        if (root !== activeContainer && el.closest('.study-browser, .series-quick-switch, .thumbnail-list, .sidebar, .study-browser-container')) {
+          continue;
+        }
+        const txt = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+        if (txt && txt.length > 0 && txt.length <= 150 && !targetArray.includes(txt)) {
+          targetArray.push(txt);
+        }
+      }
     };
 
-    // =====================================================================
-    // STRATEGY A: Cornerstone3D getRenderingEngines API (OHIF v3)
-    // =====================================================================
+    if (activeContainer) {
+      collectFromNode(activeContainer, activeTexts);
+    }
+    collectFromNode(bodyEl, globalTexts);
+
+    console.log('[ViewerBridge] Active viewport DOM texts:', activeTexts.filter(v => /\d/.test(v)).slice(0, 30).join(' | '));
+
+    // Parse slice candidates with pattern scoring
+    const parseSliceCandidates = (textList, basePriority = 100) => {
+      const candidates = [];
+      for (const val of textList) {
+        // Pattern 0: "1:52 (52/313)", "I: 52 (52/313)", "(52/313)"
+        let m = val.match(/(?:\d+|I):\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
+                val.match(/I:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i) ||
+                val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+        if (m) {
+          const sn = parseInt(m[1], 10);
+          const tn2 = parseInt(m[3] || m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 100 });
+            continue;
+          }
+        }
+
+        // Pattern 1: "Im: 52/313", "Slice 52 of 313", "52/313"
+        m = val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) || val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+        if (m) {
+          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 80 });
+            continue;
+          }
+        }
+
+        // Pattern 2: "I: 52" or "Sl: 52" or "1:52"
+        m = val.match(/(?:^|\s)(?:i|sl|slice|im|image|\d+)\s*:\s*(\d+)(?:\s|$)/i);
+        if (m) {
+          const sn = parseInt(m[1], 10);
+          if (sn > 0 && sn <= 2000) {
+            candidates.push({ sliceNumber: sn, totalSlices: null, text: val, priority: basePriority + 40 });
+          }
+        }
+      }
+      return candidates;
+    };
+
+    let sliceCandidates = parseSliceCandidates(activeTexts, 200);
+    if (sliceCandidates.length === 0) {
+      sliceCandidates = parseSliceCandidates(globalTexts, 100);
+    }
+
+    sliceCandidates.sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      const bMulti = (b.totalSlices && b.totalSlices > 1) ? 1 : 0;
+      const aMulti = (a.totalSlices && a.totalSlices > 1) ? 1 : 0;
+      return bMulti - aMulti;
+    });
+
+    let sliceResult = sliceCandidates.length > 0 ? sliceCandidates[0] : null;
+
+    // 2. Resolve matching Series Object
+    let matchedSeriesObj = null;
+    const activeTextStr = activeTexts.join(' ').toLowerCase();
+
+    if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
+      let bestScore = -1;
+
+      for (const s of studySeriesList) {
+        if (!s.series_description) continue;
+        const normDesc = normalize(s.series_description);
+        if (!normDesc) continue;
+
+        let score = 0;
+
+        // Check text matching against ACTIVE viewport text overlay
+        if (activeTextStr) {
+          if (activeTextStr.includes(normDesc)) score += 1000;
+          const tokens = normDesc.split(' ').filter(t => t.length >= 2);
+          for (const tok of tokens) {
+            if (activeTextStr.includes(tok)) score += tok.length >= 4 ? 200 : 50;
+          }
+          if (s.series_number && (activeTextStr.includes(`s: ${s.series_number}`) || activeTextStr.includes(`s:${s.series_number}`) || activeTextStr.includes(`series ${s.series_number}`))) {
+            score += 800;
+          }
+        }
+
+        // If no match in activeTexts, check globalTexts (excluding sidebar thumbnail panel)
+        if (score === 0 && globalTexts.length > 0) {
+          const globalTextStr = globalTexts.join(' ').toLowerCase();
+          if (globalTextStr.includes(normDesc)) score += 100;
+          const tokens = normDesc.split(' ').filter(t => t.length >= 3);
+          for (const tok of tokens) {
+            if (globalTextStr.includes(tok)) score += 20;
+          }
+        }
+
+        if (score > bestScore && score > 30) {
+          bestScore = score;
+          matchedSeriesObj = s;
+        }
+      }
+    }
+
+    // Check Cornerstone3D API for active viewport seriesInstanceUID / imageId
     try {
       const cs = iframeWin && iframeWin.cornerstone;
       if (cs && typeof cs.getRenderingEngines === 'function') {
         const engines = cs.getRenderingEngines();
-        let bestVp = null;
-        let bestArea = 0;
-
         for (const engine of engines) {
           const viewports = engine.getViewports ? engine.getViewports() : [];
           for (const vp of viewports) {
             try {
               const el = vp.element;
-              if (!el) continue;
-              const area = (el.clientWidth || 0) * (el.clientHeight || 0);
-              if (area < 40000) continue; // Skip tiny thumbnails
-              if (area > bestArea) { bestArea = area; bestVp = vp; }
+              const isVpActive = el && (
+                el === activeContainer ||
+                el.classList.contains('active') ||
+                el.closest('.active') ||
+                el.classList.contains('selected')
+              );
+              
+              if (isVpActive || (!matchedSeriesObj && viewports.length === 1)) {
+                const idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
+                const imageIds = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+
+                if (idx !== null && idx >= 0 && imageIds && imageIds[idx]) {
+                  const imgId = imageIds[idx];
+                  const seriesUidMatch = imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i);
+                  if (seriesUidMatch) {
+                    const uid = seriesUidMatch[1];
+                    const found = studySeriesList.find(s =>
+                      String(s.series_instance_uid) === uid ||
+                      String(s.series_id) === uid ||
+                      String(s.orthanc_series_id) === uid
+                    );
+                    if (found) {
+                      matchedSeriesObj = found;
+                    }
+                  }
+
+                  if (!sliceResult && idx >= 0) {
+                    sliceResult = {
+                      sliceNumber: idx + 1,
+                      totalSlices: imageIds.length || (matchedSeriesObj?.total_slices) || null,
+                      priority: 50
+                    };
+                  }
+                }
+              }
             } catch (e) { /* skip */ }
           }
         }
-
-        if (bestVp) {
-          let idx = null;
-          let total = null;
-          if (typeof bestVp.getCurrentImageIdIndex === 'function') idx = bestVp.getCurrentImageIdIndex();
-          if (typeof bestVp.getImageIds === 'function') {
-            const ids = bestVp.getImageIds();
-            total = ids ? ids.length : null;
-          }
-          if (idx !== null && total !== null) {
-            const sliceNumber = idx + 1;
-            console.log('[ViewerBridge] CS3D API → slice', sliceNumber, '/', total);
-            const matched = matchSeriesByCount(total);
-            return {
-              instanceNumber: null,
-              sliceNumber,
-              totalSlices: total,
-              matchedSeriesId: matched ? (matched.series_id || matched.orthanc_series_id || matched.series_instance_uid) : null,
-              seriesDescription: matched ? matched.series_description : null
-            };
-          }
-        }
       }
-    } catch (e) {
-      console.log('[ViewerBridge] CS3D not available:', e.message);
-    }
+    } catch (e) { /* ignore CS3D */ }
 
-    // =====================================================================
-    // STRATEGY B: Legacy cornerstoneTools (OHIF v2)
-    // =====================================================================
-    try {
-      const ct = iframeWin && iframeWin.cornerstoneTools;
-      if (ct && ct.state && ct.state.enabledElements) {
-        let bestArea = 0;
-        let bestResult = null;
-        for (const elData of ct.state.enabledElements) {
-          const stackState = ct.getToolState && ct.getToolState(elData.element, 'stack');
-          if (stackState && stackState.data && stackState.data[0]) {
-            const sd = stackState.data[0];
-            const el = elData.element;
-            const area = el ? (el.clientWidth || 0) * (el.clientHeight || 0) : 0;
-            if (area < 40000) continue;
-            if (area > bestArea) {
-              bestArea = area;
-              const total = sd.imageIds ? sd.imageIds.length : null;
-              const idx = sd.currentImageIdIndex;
-              if (idx !== null && total) {
-                bestResult = { sliceNumber: idx + 1, total };
-              }
-            }
-          }
-        }
-        if (bestResult) {
-          console.log('[ViewerBridge] cornerstoneTools → slice', bestResult.sliceNumber, '/', bestResult.total);
-          const matched = matchSeriesByCount(bestResult.total);
-          return {
-            instanceNumber: null,
-            sliceNumber: bestResult.sliceNumber,
-            totalSlices: bestResult.total,
-            matchedSeriesId: matched ? (matched.series_id || matched.orthanc_series_id) : null,
-            seriesDescription: matched ? matched.series_description : null
-          };
-        }
-      }
-    } catch (e) {
-      // cornerstoneTools not available
-    }
-
-    // =====================================================================
-    // STRATEGY C: DOM text overlay from LARGEST canvas only
-    // =====================================================================
-
-    // Attach click tracker (only once) to track which canvas user last interacted with
-    try {
-      if (iframeDoc && !iframeDoc._activeViewportTrackerAttached) {
-        iframeDoc._activeViewportTrackerAttached = true;
-        const trackActive = (e) => {
-          try {
-            const target = e.target;
-            if (!target) return;
-            const c = target.tagName === 'CANVAS' ? target : target.closest('canvas');
-            if (c) {
-              const area = (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
-              if (area > 10000) iframeDoc._lastActiveCanvas = c;
-            }
-          } catch (err) { /* ignore */ }
-        };
-        iframeDoc.addEventListener('pointerdown', trackActive, true);
-        iframeDoc.addEventListener('click', trackActive, true);
-      }
-    } catch (e) { /* ignore */ }
-
-    // Find all visible canvases, sorted largest first
-    const allCanvases = Array.from(iframeDoc.querySelectorAll('canvas'))
-      .map(c => ({ c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0) }))
-      .filter(({ area }) => area > 5000)
-      .sort((a, b) => b.area - a.area)
-      .map(({ c }) => c);
-
-    if (allCanvases.length === 0) {
-      console.log('[ViewerBridge] No visible canvases in iframe');
-      return null;
-    }
-
-    const largestArea = (() => {
-      const c = allCanvases[0];
-      return (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
-    })();
-
-    // Thumbnail threshold: anything < 20% of largest canvas is a thumbnail
-    const thumbThreshold = largestArea * 0.20;
-
-    // Prefer the user's last-clicked canvas if it's large enough
-    const lastActive = iframeDoc._lastActiveCanvas;
-    const lastActiveArea = lastActive ? ((lastActive.clientWidth || lastActive.width || 0) * (lastActive.clientHeight || lastActive.height || 0)) : 0;
-    const mainCanvas = (lastActive && lastActiveArea >= thumbThreshold) ? lastActive : allCanvases[0];
-
-    const mainArea = (mainCanvas.clientWidth || mainCanvas.width || 0) * (mainCanvas.clientHeight || mainCanvas.height || 0);
-    console.log('[ViewerBridge] Strategy C: largestArea=', largestArea, 'mainArea=', mainArea, 'thumbThreshold=', thumbThreshold);
-
-    // Walk UP from mainCanvas, stopping when we encounter a parent that contains
-    // another large canvas (= a grid container). Everything below that level
-    // belongs to the single active viewport.
-    let mainVpEl = mainCanvas;
-    let par = mainCanvas.parentElement;
-    while (par && par !== bodyEl) {
-      const otherBigCanvases = Array.from(par.querySelectorAll('canvas')).filter(c => {
-        if (c === mainCanvas) return false;
-        const a = (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0);
-        return a >= thumbThreshold;
-      });
-      if (otherBigCanvases.length > 0) break;
-      mainVpEl = par;
-      par = par.parentElement;
-    }
-
-    console.log('[ViewerBridge] Single-viewport container:', mainVpEl.tagName,
-      (mainVpEl.className || '').toString().substring(0, 80));
-
-    // Collect all text from single-viewport container AND iframe body
-    const allTexts = [];
-
-    // 1. Text nodes (raw text)
-    const tw = iframeDoc.createTreeWalker(mainVpEl, NodeFilter.SHOW_TEXT, null, false);
-    let tn;
-    while ((tn = tw.nextNode())) {
-      const v = tn.nodeValue && tn.nodeValue.trim();
-      if (v && v.length > 0 && v.length <= 150) {
-        allTexts.push({ val: v });
+    // Fallback: match series by total slice count ONLY if exactly 1 series matches that slice count
+    if (!matchedSeriesObj && sliceResult?.totalSlices && Array.isArray(studySeriesList)) {
+      const countCandidates = studySeriesList.filter(s =>
+        parseInt(s.total_slices, 10) === sliceResult.totalSlices ||
+        (Array.isArray(s.instances) && s.instances.length === sliceResult.totalSlices)
+      );
+      if (countCandidates.length === 1) {
+        matchedSeriesObj = countCandidates[0];
       }
     }
 
-    // 2. Element innerText & textContent across all child nodes in mainVpEl
-    const allDescendants = Array.from(mainVpEl.querySelectorAll('*'));
-    for (const el of allDescendants) {
-      const txt = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
-      if (txt && txt.length > 0 && txt.length <= 150 && !allTexts.some(t => t.val === txt)) {
-        allTexts.push({ val: txt });
-      }
+    if (sliceResult || matchedSeriesObj) {
+      console.log('[ViewerBridge] Parsed slice info -> slice:', sliceResult?.sliceNumber, '/', sliceResult?.totalSlices, '| series:', matchedSeriesObj?.series_description);
+      return {
+        instanceNumber: null,
+        sliceNumber: sliceResult ? sliceResult.sliceNumber : 1,
+        totalSlices: sliceResult?.totalSlices || matchedSeriesObj?.total_slices || null,
+        matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
+        seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
+      };
     }
-
-    // 3. Main container innerText
-    const mainVpText = (mainVpEl.innerText || mainVpEl.textContent || '').replace(/\s+/g, ' ').trim();
-    if (mainVpText && !allTexts.some(t => t.val === mainVpText)) {
-      allTexts.push({ val: mainVpText });
-    }
-
-    // 4. Iframe body innerText fallback
-    if (iframeDoc.body) {
-      const bodyText = (iframeDoc.body.innerText || iframeDoc.body.textContent || '').replace(/\s+/g, ' ').trim();
-      if (bodyText && !allTexts.some(t => t.val === bodyText)) {
-        allTexts.push({ val: bodyText });
-      }
-    }
-
-    console.log('[ViewerBridge] All texts from single-VP:', allTexts.map(t => t.val).filter(v => /\d/.test(v)).slice(0, 30).join(' | '));
-
-    // Parse for slice info - Prioritize multi-slice series (totalSlices > 1) over 1/1 scout/localizer overlays
-    const parseSlice = (texts) => {
-      const candidates = [];
-
-      // P1: "(73/313)" or "I: 73 (73/313)" or "Im: 73/313" or "Slice 73 of 313"
-      for (const { val } of texts) {
-        const m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/) || 
-                  val.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) ||
-                  val.match(/\b(\d+)\s*\/\s*(\d+)\b/);
-        if (m) {
-          const sn = parseInt(m[1], 10), tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val });
-          }
-        }
-      }
-
-      // P2: "I: 73" or "Sl: 73"
-      if (candidates.length === 0) {
-        for (const { val } of texts) {
-          const m = val.match(/(?:^|\s)(?:i|sl|slice|im|image)\s*:?\s*(\d+)(?:\s|$)/i);
-          if (m) {
-            const sn = parseInt(m[1], 10);
-            if (sn > 0) {
-              candidates.push({ sliceNumber: sn, totalSlices: null, text: val });
-            }
-          }
-        }
-      }
-
-      if (candidates.length === 0) return null;
-
-      // Prefer candidate where totalSlices > 1 (main diagnostic stack) over 1/1 scout
-      const multiSliceCandidate = candidates.find(c => c.totalSlices && c.totalSlices > 1);
-      if (multiSliceCandidate) {
-        console.log('[ViewerBridge] Multi-slice match:', multiSliceCandidate.text, '->', multiSliceCandidate.sliceNumber, '/', multiSliceCandidate.totalSlices);
-        return multiSliceCandidate;
-      }
-
-      console.log('[ViewerBridge] Best-effort match:', candidates[0].text, '->', candidates[0].sliceNumber, '/', candidates[0].totalSlices);
-      return candidates[0];
-    };
-
-    const sliceResult = parseSlice(allTexts);
-    if (!sliceResult) {
-      console.log('[ViewerBridge] No slice text found in single-viewport container');
-      return null;
-    }
-
-    const { sliceNumber, totalSlices } = sliceResult;
-
-    // Resolve series
-    let matchedSeriesObj = matchSeriesByCount(totalSlices);
-
-    if (!matchedSeriesObj && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
-      const vpText = allTexts.map(t => t.val).join(' ').toLowerCase();
-      let bestScore = -1;
-      for (const s of studySeriesList) {
-        const tokens = normalize(s.series_description).split(' ').filter(t => t.length >= 3);
-        let score = 0;
-        for (const tok of tokens) {
-          if (vpText.includes(tok)) score += tok.length >= 5 ? 100 : 10;
-        }
-        if (score > bestScore) { bestScore = score; matchedSeriesObj = s; }
-      }
-      if (bestScore <= 0) matchedSeriesObj = null;
-    }
-
-    console.log('[ViewerBridge] Result → slice:', sliceNumber, '/', totalSlices, '| series:', matchedSeriesObj?.series_description);
-
-    return {
-      instanceNumber: null,
-      sliceNumber,
-      totalSlices: totalSlices || null,
-      matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
-      seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null
-    };
 
   } catch (e) {
     console.warn('[ViewerBridge] detectViewportSliceInfoFromDOM exception:', e);
