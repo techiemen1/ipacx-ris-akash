@@ -5,7 +5,7 @@ import MainLayout from "../layout/MainLayout";
 import api from "../api/axios";
 import axios from "axios";
 import "./PACSpage.css";
-import { openStudyViewer } from "../utils/viewerUtils";
+import { openStudyViewer as openStudyViewerFromUtils } from "../utils/viewerUtils";
 import DiagnosticWorkstationModal from "../components/ReportStudio/DiagnosticWorkstationModal";
 import {
   Server,
@@ -161,9 +161,7 @@ export default function PACSpage() {
     if (isMobile) {
       navigate(`/mobile-viewer?study=${encodeURIComponent(studyUID)}`);
     } else {
-      const currentOrigin = window.location.origin;
-      const path = `/viewer?url=/dicom-web/studies/${encodeURIComponent(studyUID)}/metadata`;
-      window.open(currentOrigin + path, "_blank", "noopener,noreferrer");
+      openStudyViewerFromUtils(studyUID);
     }
   };
 

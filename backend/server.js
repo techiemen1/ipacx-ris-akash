@@ -269,7 +269,7 @@ try {
   const handleOhifHtmlInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
     const contentType = proxyRes.headers["content-type"] || "";
     const contentEncoding = proxyRes.headers["content-encoding"] || "";
-    const isHtml = contentType.includes("html") || contentType.includes("text/") || (req.url && (req.url.includes("index.html") || req.url === "/ohif" || req.url === "/viewer"));
+    const isHtml = contentType.toLowerCase().includes("text/html");
 
     if (isHtml) {
       let body = "";
@@ -327,8 +327,10 @@ try {
       changeOrigin: true,
       pathRewrite: (path) => {
         let clean = (path || "").replace(/index\.html/i, "");
+        if (clean.includes("app-config.js")) return "/ohif/app-config.js";
         clean = clean.replace(/^\/+/, "");
-        return "/ohif/viewer" + (clean.startsWith("?") || !clean ? (clean.startsWith("?") ? clean : "/" + clean) : "/" + clean);
+        if (clean.startsWith("viewer")) clean = clean.substring(6);
+        return "/ohif" + (clean.startsWith("?") || !clean ? (clean.startsWith("?") ? clean : "/" + clean) : (clean.startsWith("/") ? clean : "/" + clean));
       },
       selfHandleResponse: true,
       on: {
@@ -346,6 +348,7 @@ try {
       changeOrigin: true,
       pathRewrite: (path) => {
         let clean = (path || "").replace(/index\.html/i, "");
+        if (clean.includes("app-config.js")) return "/ohif/app-config.js";
         return "/ohif" + (clean.startsWith("/") ? clean : "/" + clean);
       },
       selfHandleResponse: true,
