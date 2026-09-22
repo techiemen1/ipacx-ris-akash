@@ -16,7 +16,7 @@ const cacheService = require("../services/cacheService");
 
 const pacsService = new PacsService(pool);
 
-const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId } = require("../utils/orthancHelper");
+const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId, clearOrthancAuthCache } = require("../utils/orthancHelper");
 
 async function findOrthancStudy(studyUID) {
   const orthancUrl = await getOrthancUrl();
@@ -304,6 +304,7 @@ router.post("/settings", asyncHandler(async (req, res) => {
         [String(key).trim(), String(value).trim()]
       );
     }
+    clearOrthancAuthCache();
     res.json({ success: true, message: "PACS settings saved successfully" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

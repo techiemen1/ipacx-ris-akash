@@ -46,6 +46,7 @@ async function getActivePacsCredentials() {
 function clearOrthancAuthCache() {
   cachedAuthConfig = null;
   cachedAuthHeader = null;
+  cachedWorkingOrthancUrl = null;
   lastAuthCacheTime = 0;
 }
 
@@ -73,7 +74,40 @@ function getOrthancAuthHeader() {
 async function getOrthancUrl() {
   await getActivePacsCredentials();
   if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
+
+  const dbCandidates = [];
+  try {
+    const pacsRes = await pool.query(
+      "SELECT ip_address, port FROM public.pacs WHERE is_active = true ORDER BY id ASC"
+    ).catch(() => ({ rows: [] }));
+    
+    for (const r of (pacsRes.rows || [])) {
+      if (r.ip_address && r.port) {
+        let host = String(r.ip_address).trim();
+        let port = String(r.port).trim();
+        if (host.startsWith("http://") || host.startsWith("https://")) {
+          dbCandidates.push(`${host.replace(/\/+$/, "")}:${port}/`);
+        } else {
+          dbCandidates.push(`http://${host}:${port}/`);
+        }
+      }
+    }
+
+    const settingsRes = await pool.query(
+      "SELECT setting_value FROM public.system_settings WHERE setting_key = 'external_ohif_url' LIMIT 1"
+    ).catch(() => ({ rows: [] }));
+
+    if (settingsRes.rows && settingsRes.rows.length > 0 && settingsRes.rows[0].setting_value) {
+      const ohifVal = String(settingsRes.rows[0].setting_value).trim();
+      try {
+        const parsed = new URL(ohifVal.startsWith("http") ? ohifVal : `http://${ohifVal}`);
+        dbCandidates.push(`${parsed.origin}/`);
+      } catch (e) {}
+    }
+  } catch (e) {}
+
   const candidates = [
+    ...dbCandidates,
     process.env.ORTHANC_URL,
     "http://Orthanc:8042/",
     "http://host.docker.internal:8042/",
