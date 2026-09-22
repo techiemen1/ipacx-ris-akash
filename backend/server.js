@@ -122,12 +122,13 @@ try {
                 var sliceNum = idx + 1;
                 var total = ids ? ids.length : null;
                 var imgId = ids[idx] || '';
-                var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || [])[1] || '';
-                var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || [])[1] || '';
+                var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
                 window.parent.postMessage({
                   type: 'OHIF_VIEWPORT_CHANGE',
                   payload: {
                     frameNumber: sliceNum,
+                    sliceNumber: sliceNum,
                     sliceIndex: idx,
                     totalSlices: total,
                     seriesInstanceUid: seriesUid,
@@ -164,8 +165,8 @@ try {
                   var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : 0;
                   var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
                   var imgId = ids[idx] || '';
-                  var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || [])[1] || '';
-                  var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || [])[1] || '';
+                  var seriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                  var sopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
                   window.parent.postMessage({
                     type: 'SNAPSHOT_CAPTURED',
                     payload: {
@@ -195,20 +196,41 @@ try {
 </script>
 `;
 
-  const handleOhifHtmlInterceptor = responseInterceptor(async (responseBuffer, proxyRes) => {
+  const handleOhifHtmlInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
     const contentType = proxyRes.headers["content-type"] || "";
-    if (contentType.includes("html") || contentType.includes("text/")) {
-      let body = responseBuffer.toString("utf8");
-      if (!body.includes("ohif-ris-bridge-script")) {
-        if (body.includes("</head>")) {
-          body = body.replace("</head>", `${ohifBridgeScript}</head>`);
-        } else if (body.includes("</body>")) {
-          body = body.replace("</body>", `${ohifBridgeScript}</body>`);
+    const contentEncoding = proxyRes.headers["content-encoding"] || "";
+    const isHtml = contentType.includes("html") || contentType.includes("text/") || (req.url && (req.url.includes("index.html") || req.url === "/ohif" || req.url === "/viewer"));
+
+    if (isHtml) {
+      let body = "";
+      let isGzipped = contentEncoding.includes("gzip");
+
+      try {
+        if (isGzipped) {
+          body = zlib.gunzipSync(responseBuffer).toString("utf8");
         } else {
-          body = body + ohifBridgeScript;
+          body = responseBuffer.toString("utf8");
         }
+
+        if (body && !body.includes("ohif-ris-bridge-script")) {
+          if (body.includes("</head>")) {
+            body = body.replace("</head>", `${ohifBridgeScript}</head>`);
+          } else if (body.includes("</body>")) {
+            body = body.replace("</body>", `${ohifBridgeScript}</body>`);
+          } else {
+            body = body + ohifBridgeScript;
+          }
+
+          if (isGzipped) {
+            res.setHeader("content-encoding", "gzip");
+            return zlib.gzipSync(body);
+          } else {
+            return body;
+          }
+        }
+      } catch (err) {
+        logger.warn("OHIF bridge script injection notice: " + err.message);
       }
-      return body;
     }
     return responseBuffer;
   });
