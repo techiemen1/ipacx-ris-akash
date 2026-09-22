@@ -47,11 +47,10 @@ export default function KeyImageGallery({
     }
 
     try {
-      localStorage.removeItem("key_images"); // Purge un-scoped global legacy storage
+      localStorage.removeItem("key_images");
       if (studyUID) {
-        const updated = (attachedSnapshots || []).filter(filterOutSnap);
-        localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
-        sessionStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
+        localStorage.removeItem(`key_images_${studyUID}`);
+        sessionStorage.removeItem(`key_images_${studyUID}`);
       }
     } catch (e) {
       // ignore storage errors
@@ -76,19 +75,6 @@ export default function KeyImageGallery({
       }));
     }
     setEditingId(null);
-    if (studyUID) {
-      try {
-        const updated = attachedSnapshots.map(s => {
-          if ((s.id && s.id === snap.id) || (s.db_id && s.db_id === snap.db_id)) {
-            return { ...s, caption: editCaptionText };
-          }
-          return s;
-        });
-        localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
-      } catch (e) {
-        // ignore localStorage errors
-      }
-    }
   };
 
   const [sliceInput, setSliceInput] = useState(1);

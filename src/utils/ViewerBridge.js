@@ -282,7 +282,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     // 2. Resolve matching Series Object
     let matchedSeriesObj = null;
-    const activeTextStr = activeTexts.join(' ').toLowerCase();
+    const rawActiveTextStr = activeTexts.join(' ').toLowerCase();
+    const activeTextStr = normalize(rawActiveTextStr);
 
     if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
       let bestScore = -1;
@@ -301,14 +302,14 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
           for (const tok of tokens) {
             if (activeTextStr.includes(tok)) score += tok.length >= 4 ? 200 : 50;
           }
-          if (s.series_number && (activeTextStr.includes(`s: ${s.series_number}`) || activeTextStr.includes(`s:${s.series_number}`) || activeTextStr.includes(`series ${s.series_number}`))) {
+          if (s.series_number && (rawActiveTextStr.includes(`s: ${s.series_number}`) || rawActiveTextStr.includes(`s:${s.series_number}`) || rawActiveTextStr.includes(`series ${s.series_number}`))) {
             score += 800;
           }
         }
 
         // If no match in activeTexts, check globalTexts (excluding sidebar thumbnail panel)
         if (score === 0 && globalTexts.length > 0) {
-          const globalTextStr = globalTexts.join(' ').toLowerCase();
+          const globalTextStr = normalize(globalTexts.join(' '));
           if (globalTextStr.includes(normDesc)) score += 100;
           const tokens = normDesc.split(' ').filter(t => t.length >= 3);
           for (const tok of tokens) {
@@ -400,6 +401,64 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     console.warn('[ViewerBridge] detectViewportSliceInfoFromDOM exception:', e);
   }
   return null;
+}
+
+export function findSeriesInList(studySeriesList = [], target) {
+  if (!Array.isArray(studySeriesList) || studySeriesList.length === 0 || !target) {
+    return (studySeriesList || [])[0] || null;
+  }
+
+  const cleanTarget = String(target).trim();
+  const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
+  const normTarget = normalize(cleanTarget);
+
+  // 1. Direct ID / UID equality
+  let found = studySeriesList.find(s => 
+    String(s.series_id) === cleanTarget ||
+    String(s.series_instance_uid) === cleanTarget ||
+    String(s.orthanc_series_id) === cleanTarget
+  );
+  if (found) return found;
+
+  // 2. Parse Series Number from target string (e.g. "S:4 - C_Spine 1.0 B20s (313)" -> seriesNumber 4)
+  const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S)(\d+)/i) || cleanTarget.match(/^(\d+)\b/);
+  if (sNumMatch) {
+    const sNum = parseInt(sNumMatch[1], 10);
+    found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+    if (found) return found;
+  }
+
+  // 3. Exact or Substring match on normalized series_description
+  found = studySeriesList.find(s => {
+    if (!s.series_description) return false;
+    const normDesc = normalize(s.series_description);
+    return normDesc === normTarget || normTarget.includes(normDesc) || normDesc.includes(normTarget);
+  });
+  if (found) return found;
+
+  // 4. Match by token overlap on non-scout series
+  const targetTokens = normTarget.split(' ').filter(t => t.length >= 2 && !/^(s|\d+)$/.test(t));
+  if (targetTokens.length > 0) {
+    let bestMatch = null;
+    let maxTokens = 0;
+    for (const s of studySeriesList) {
+      if (!s.series_description) continue;
+      const sDescNorm = normalize(s.series_description);
+      const matches = targetTokens.filter(t => sDescNorm.includes(t)).length;
+      if (matches > maxTokens) {
+        maxTokens = matches;
+        bestMatch = s;
+      }
+    }
+    if (bestMatch && maxTokens > 0) return bestMatch;
+  }
+
+  // 5. Prefer first non-scout diagnostic series over scout/topogram
+  const nonScout = studySeriesList.filter(s => {
+    const d = normalize(s.series_description || "");
+    return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
+  });
+  return nonScout.length > 0 ? nonScout[0] : studySeriesList[0];
 }
 
 /**

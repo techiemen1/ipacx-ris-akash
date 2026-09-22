@@ -149,7 +149,7 @@ try {
       if (val && val.length > 0 && val.length <= 150) texts.push(val);
     }
 
-    var sliceNum = null, totalSlices = null, seriesDesc = null;
+    var sliceNum = null, totalSlices = null, instNum = null, seriesDesc = null;
 
     for (var i = 0; i < texts.length; i++) {
       var t = texts[i];
@@ -192,7 +192,66 @@ try {
       }
     }
 
+    for (var j = 0; j < texts.length; j++) {
+      var txt = texts[j];
+      if (!txt) continue;
+      if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(txt)) continue;
+      if (/\d+\s*\/\s*\d+/.test(txt)) continue;
+      if (/^[WwLl]:\s*\d+/.test(txt) || /W:\s*\d+\s+L:\s*\d+/i.test(txt)) continue;
+      if (/^[APLRHF]{1,2}$/i.test(txt)) continue;
+      if (/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(txt)) continue;
+      if (/^\d+$/.test(txt)) continue;
+      if (txt.length >= 3 && !seriesDesc) {
+        seriesDesc = txt;
+      }
+    }
+
     return { sliceNumber: sliceNum, totalSlices: totalSlices, instanceNumber: instNum, seriesDescription: seriesDesc, allTexts: texts };
+  }
+
+  function sendViewportChange() {
+    try {
+      var container = getActiveViewportContainer();
+      var overlayInfo = parseViewportDOMOverlay(container);
+      var cs = window.cornerstone;
+      var csSlice = null, csTotal = null, csSeriesUid = null;
+      if (cs && typeof cs.getRenderingEngines === 'function') {
+        try {
+          var engines = cs.getRenderingEngines();
+          for (var i = 0; i < engines.length; i++) {
+            var vps = engines[i].getViewports ? engines[i].getViewports() : [];
+            for (var j = 0; j < vps.length; j++) {
+              var vp = vps[j];
+              var el = vp.element;
+              if (el && (el === container || el.classList.contains('active') || el.closest('.active'))) {
+                var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
+                var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+                if (idx !== null && idx >= 0) {
+                  csSlice = idx + 1;
+                  csTotal = ids ? ids.length : null;
+                  var imgId = ids[idx] || '';
+                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                }
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      var finalSlice = csSlice || overlayInfo.sliceNumber || 1;
+      var finalTotal = csTotal || overlayInfo.totalSlices || null;
+
+      window.parent.postMessage({
+        type: 'OHIF_VIEWPORT_CHANGE',
+        payload: {
+          frameNumber: finalSlice,
+          sliceNumber: finalSlice,
+          totalSlices: finalTotal,
+          seriesInstanceUid: csSeriesUid || '',
+          seriesDescription: overlayInfo.seriesDescription || ''
+        }
+      }, '*');
+    } catch(err) {}
   }
 
   function captureAndSendViewport() {
@@ -205,7 +264,6 @@ try {
       }
       var overlayInfo = parseViewportDOMOverlay(container);
 
-      // Check Cornerstone3D window API if attached
       var cs = window.cornerstone;
       var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
       if (cs && typeof cs.getRenderingEngines === 'function') {
@@ -260,8 +318,8 @@ try {
     }
   });
 
-  document.addEventListener('mouseup', captureAndSendViewport, true);
-  document.addEventListener('keyup', captureAndSendViewport, true);
+  document.addEventListener('mouseup', sendViewportChange, true);
+  document.addEventListener('keyup', sendViewportChange, true);
 })();
 </script>
 `;

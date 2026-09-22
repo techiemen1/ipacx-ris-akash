@@ -26,7 +26,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList } from "../../utils/ViewerBridge";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
 
@@ -335,62 +335,18 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const activeSeriesId = directDomSliceInfo?.matchedSeriesId ||
+    const activeSeriesTarget = directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
+      directDomSliceInfo?.seriesDescription ||
+      snapResult?.seriesDescription ||
       activeViewportInfo?.seriesInstanceUid || 
+      activeViewportInfo?.seriesDescription ||
       overrideSeriesId || 
       selectedSeriesId;
 
-    let seriesObj = null;
-    if (studySeriesList && studySeriesList.length > 0) {
-      if (activeSeriesId) {
-        const cleanTarget = String(activeSeriesId).trim();
-        const numTarget = cleanTarget.replace(/^S:?/i, "");
-        seriesObj = studySeriesList.find(s => 
-          String(s.series_id) === cleanTarget ||
-          String(s.series_instance_uid) === cleanTarget ||
-          String(s.orthanc_series_id) === cleanTarget ||
-          String(s.series_number) === numTarget
-        );
-      }
-      if (!seriesObj && (directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription)) {
-        const targetDesc = String(directDomSliceInfo?.seriesDescription || snapResult?.seriesDescription).toLowerCase().replace(/\s+/g, ' ').trim();
-        seriesObj = studySeriesList.find(s => {
-          if (!s.series_description) return false;
-          const sDescClean = String(s.series_description).toLowerCase().replace(/\s+/g, ' ').trim();
-          return sDescClean === targetDesc || sDescClean.includes(targetDesc) || targetDesc.includes(sDescClean);
-        });
-
-        if (!seriesObj) {
-          const targetTokens = targetDesc.split(/[\s_-]+/).filter(t => t.length >= 3);
-          for (const s of studySeriesList) {
-            if (!s.series_description) continue;
-            const sClean = String(s.series_description).toLowerCase();
-            const matchCount = targetTokens.filter(t => sClean.includes(t)).length;
-            if (targetTokens.length > 0 && matchCount === targetTokens.length) {
-              seriesObj = s;
-              break;
-            }
-          }
-        }
-      }
-      if (!seriesObj && selectedSeriesId) {
-        seriesObj = studySeriesList.find(s => 
-          String(s.series_id) === String(selectedSeriesId) ||
-          String(s.series_instance_uid) === String(selectedSeriesId) ||
-          String(s.orthanc_series_id) === String(selectedSeriesId)
-        );
-      }
-      if (!seriesObj) {
-        const nonScoutSeries = studySeriesList.filter(s => {
-          const d = String(s.series_description || "").toLowerCase();
-          return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
-        });
-        seriesObj = nonScoutSeries.length > 0 ? nonScoutSeries[0] : studySeriesList[0];
-      }
-      if (seriesObj && seriesObj.series_id) {
-        setSelectedSeriesId(String(seriesObj.series_id));
-      }
+    const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget) || findSeriesInList(studySeriesList, selectedSeriesId);
+    if (seriesObj && seriesObj.series_id) {
+      setSelectedSeriesId(String(seriesObj.series_id));
     }
 
     // Resolve detected slice candidate with strict priority:
@@ -473,7 +429,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     try {
       const capturePayload = {
         studyUID: studyUID,
-        seriesUID: seriesObj?.series_id || activeSeriesId,
+        seriesUID: seriesObj?.series_id || activeSeriesTarget,
         sliceNumber: displaySliceNum,
         totalSlices: totalSlices,
         seriesDescription: seriesDesc,
@@ -511,17 +467,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       };
     }
 
-    if (studyUID) {
-      try {
-        const localStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
-        let parsed = [];
-        try { parsed = JSON.parse(localStr); } catch (e) { parsed = []; }
-        const updated = [snapObj, ...(Array.isArray(parsed) ? parsed.filter(s => (s.id || s.instance_id) !== snapObj.id) : [])];
-        localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
-      } catch (e) {
-        // ignore localStorage errors
-      }
-    }
+
 
     setAttachedSnapshots(prev => [...prev, snapObj]);
     setToastMsg(`✓ Key Image (${fullCaption}) attached to report!`);
@@ -770,33 +716,15 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             }).filter(s => !!s.preview_url || !!s.dataUrl);
           }
 
-          // Merge key images captured for this specific study
+          // Purge legacy local storage key images so DB remains single source of truth
           try {
-            localStorage.removeItem("key_images"); // Purge old un-scoped legacy key_images
-            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
-            if (localStr) {
-              const parsed = JSON.parse(localStr);
-              if (Array.isArray(parsed)) {
-                parsed.forEach((item, idx) => {
-                  if (typeof item === "object" && item.studyUID && item.studyUID !== studyUID) return;
-                  const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url || item.dataUrl);
-                  if (url && !normalizedSnapshots.some(s => s.preview_url === url || s.dataUrl === url)) {
-                    const sliceNum = typeof item === "object" ? (item.sliceNumber || item.slice_number) : null;
-                    const seriesDesc = typeof item === "object" ? (item.seriesDesc || item.series_desc) : null;
-                    const caption = item.caption || ((sliceNum && seriesDesc) ? `${seriesDesc} | Slice ${sliceNum}` : (sliceNum ? `Slice ${sliceNum}` : `Key Image ${normalizedSnapshots.length + 1}`));
-                    normalizedSnapshots.push({
-                      id: item.id || `local_${Date.now()}_${idx}`,
-                      instance_id: item.instance_id || item.id || `inst_${Date.now()}`,
-                      preview_url: url,
-                      dataUrl: url,
-                      caption: caption
-                    });
-                  }
-                });
-              }
+            localStorage.removeItem("key_images");
+            if (studyUID) {
+              localStorage.removeItem(`key_images_${studyUID}`);
+              sessionStorage.removeItem(`key_images_${studyUID}`);
             }
           } catch (e) {
-            console.warn("Failed to parse local key images:", e);
+            /* ignore */
           }
 
           if (savedFindings || savedConclusion || savedHistory || normalizedSnapshots.length > 0) {
@@ -823,30 +751,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           }
         } else {
           autoMatchTemplate(mod, bPart, realDesc);
-          // Still try to restore local key images if report fetch fails
-          let fallbackSnaps = [];
-          try {
-            const localStr = studyUID ? localStorage.getItem(`key_images_${studyUID}`) : null;
-            if (localStr) {
-              const parsed = JSON.parse(localStr);
-              if (Array.isArray(parsed)) {
-                fallbackSnaps = parsed
-                  .filter(item => typeof item !== "object" || !item.studyUID || item.studyUID === studyUID)
-                  .map((item, idx) => {
-                    const url = typeof item === "string" ? item : (item.previewUrl || item.preview_url || item.url || item.dataUrl);
-                    return {
-                      id: `fallback_${Date.now()}_${idx}`,
-                      instance_id: item.instance_id || `inst_${Date.now()}`,
-                      preview_url: url,
-                      caption: item.caption || `Key Image #${idx + 1}`
-                    };
-                  }).filter(s => !!s.preview_url);
-              }
-            }
-          } catch (e) {
-            console.warn("Failed to parse local key images fallback:", e);
-          }
-          setAttachedSnapshots(fallbackSnaps);
+          setAttachedSnapshots([]);
         }
       } catch (err) {
         console.error("Failed to load study for Workstation Modal:", err);
