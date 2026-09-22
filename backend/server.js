@@ -326,8 +326,9 @@ try {
       router: getDynamicTarget,
       changeOrigin: true,
       pathRewrite: (path) => {
-        const cleanPath = (path || "").replace(/^\/+/, "");
-        return "/ohif/viewer" + (cleanPath.startsWith("?") || !cleanPath ? cleanPath : "/" + cleanPath);
+        let clean = (path || "").replace(/index\.html/i, "");
+        clean = clean.replace(/^\/+/, "");
+        return "/ohif/viewer" + (clean.startsWith("?") || !clean ? (clean.startsWith("?") ? clean : "/" + clean) : "/" + clean);
       },
       selfHandleResponse: true,
       on: {
@@ -344,7 +345,8 @@ try {
       router: getDynamicTarget,
       changeOrigin: true,
       pathRewrite: (path) => {
-        return "/ohif" + (path.startsWith("/") ? path : "/" + path);
+        let clean = (path || "").replace(/index\.html/i, "");
+        return "/ohif" + (clean.startsWith("/") ? clean : "/" + clean);
       },
       selfHandleResponse: true,
       on: {

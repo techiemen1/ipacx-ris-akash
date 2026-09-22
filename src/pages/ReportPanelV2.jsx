@@ -8,6 +8,7 @@ import "./ReportPanel.css";
 import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
 import { normalizeRadiologyDictation } from "../utils/RadiologyVoiceDictationEngine";
+import { getViewerUrl } from "../utils/viewerUtils";
 
 /* ===========================
       RichEditor component
@@ -1644,7 +1645,7 @@ export default function CreateReport() {
         {/* SIDE IMAGE VIEWER */}
         <div className={`reporting-image-viewer ${showViewerPane ? "visible" : ""}`}>
           <iframe
-            src={`/viewer/viewer/dicomweb?StudyInstanceUIDs=${studyUID}`}
+            src={studyUID ? getViewerUrl(studyUID) : ""}
             title="DICOM Images"
           />
         </div>

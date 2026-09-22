@@ -6,6 +6,7 @@
 
 import api from "../api/axios";
 import { requestViewerSnapshot, detectViewportSliceInfoFromDOM } from "../utils/ViewerBridge";
+import { getViewerUrl } from "../utils/viewerUtils";
 
 class KeyImageService {
   /**
@@ -217,7 +218,9 @@ class KeyImageService {
       if (navigate) navigate(mobileUrl);
       else window.open(mobileUrl, "_blank");
     } else {
-      const viewerUrl = `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID)}&SeriesInstanceUID=${encodeURIComponent(seriesUID || '')}&SOPInstanceUID=${encodeURIComponent(keyImage.sop_instance_uid || '')}&initialFrame=${sliceNum}`;
+      const baseUrl = getViewerUrl(studyUID);
+      const separator = baseUrl.includes("?") ? "&" : "?";
+      const viewerUrl = `${baseUrl}${separator}SeriesInstanceUID=${encodeURIComponent(seriesUID || '')}&SOPInstanceUID=${encodeURIComponent(keyImage.sop_instance_uid || '')}&initialFrame=${sliceNum}`;
       window.open(viewerUrl, "_blank");
     }
   }

@@ -8,6 +8,7 @@ import "./CreateReport.css";
 import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
 import { normalizeRadiologyDictation } from "../utils/RadiologyVoiceDictationEngine";
+import { getViewerUrl } from "../utils/viewerUtils";
 
 /* ===========================
       RichEditor component
@@ -1597,11 +1598,7 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
 >
  <iframe
           title="OHIF Viewer"
-          src={
-            studyUID
-              ? `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID)}`
-              : ""
-          }
+          src={studyUID ? getViewerUrl(studyUID) : ""}
           style={{ width: "100%", height: "100%", border: "none" }}
         />
       </div>

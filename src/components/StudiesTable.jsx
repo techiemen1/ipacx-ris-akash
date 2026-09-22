@@ -1,4 +1,6 @@
 import React from "react";
+import { openStudyViewer } from "../utils/viewerUtils";
+
 export default function StudiesTable({
   studies = [],
   mode = "pacs", // "pacs" | "report"
@@ -8,13 +10,7 @@ export default function StudiesTable({
 }) {
   const openViewer = (study) => {
     if (!study?.StudyInstanceUID) return;
-    
-    // Use the new local OHIF viewer service
-    // Relative path ensures it works on localhost or production domain
-    window.open(
-      `/viewer/viewer/dicomweb?StudyInstanceUIDs=${study.StudyInstanceUID}`,
-      "_blank"
-    );
+    openStudyViewer(study.StudyInstanceUID);
   };
 
   return (

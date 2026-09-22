@@ -68,7 +68,7 @@ router.get("/retrieve/:studyUID", async (req, res) => {
             study: studyRes.data,
             instance_count: instancesRes.data.length,
             archive_url: `${ORTHANC_URL}studies/${studyId}/archive`,
-            viewer_url: `/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID)}`,
+            viewer_url: `/ohif/viewer/?StudyInstanceUIDs=${encodeURIComponent(studyUID)}`,
         });
     } catch (err) {
         console.error("DICOM retrieve error:", err.message);

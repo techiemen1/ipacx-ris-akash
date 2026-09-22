@@ -32,35 +32,28 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
-  // ALWAYS map direct Orthanc / 8042 / OHIF URLs to same-origin relative proxy path so bridge script is injected and canvas capture is allowed
-  if (customOhifUrl) {
-    try {
-      if (
-        customOhifUrl.includes(":8042") ||
-        customOhifUrl.includes("Orthanc") ||
-        customOhifUrl.includes("/ohif") ||
-        customOhifUrl.includes("/viewer")
-      ) {
-        const urlObj = new URL(customOhifUrl.startsWith("http") ? customOhifUrl : `http://localhost${customOhifUrl.startsWith("/") ? "" : "/"}${customOhifUrl}`);
-        const pName = urlObj.pathname || "";
-        if (pName.includes("index.html")) {
-          customOhifUrl = pName.startsWith("/ohif") || pName.startsWith("/viewer") ? pName : "/ohif/viewer/index.html";
-        } else {
-          customOhifUrl = "/ohif/viewer/index.html";
-        }
-      }
-    } catch (e) {
-      customOhifUrl = "/ohif/viewer/index.html";
-    }
+  // Strip index.html from path if present, as Orthanc OHIF plugin returns 404 for /index.html
+  if (customOhifUrl.endsWith("/index.html")) {
+    customOhifUrl = customOhifUrl.slice(0, -11);
+  } else if (customOhifUrl.endsWith("index.html")) {
+    customOhifUrl = customOhifUrl.slice(0, -10);
   }
 
-  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#" || customOhifUrl.includes(":8042")) {
-    customOhifUrl = "/ohif/viewer/index.html";
-  }
-
+  // Remove existing StudyInstanceUIDs query param if user pasted a full link
   if (customOhifUrl.includes("StudyInstanceUIDs=")) {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
+
+  // Fallback to internal same-origin relative proxy path if empty or root
+  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
+    customOhifUrl = "/ohif/viewer";
+  }
+
+  // Ensure trailing slash for directory-style viewer paths before appending query params
+  if (!customOhifUrl.includes("?") && !customOhifUrl.endsWith("/")) {
+    customOhifUrl += "/";
+  }
+
   const separator = customOhifUrl.includes("?") ? "&" : "?";
   return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
