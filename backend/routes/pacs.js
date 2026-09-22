@@ -1133,11 +1133,12 @@ router.get("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
   }
 }));
 
-async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId) {
-  const cleanId = String(imageId).replace(/^key_db_/, '').replace(/^snap_/, '');
+async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId, extraUrl = null) {
+  const cleanId = String(imageId || '').replace(/^key_db_/, '').replace(/^snap_/, '').replace(/^key_img_/, '').replace(/^key_/, '');
   const isNumeric = /^\d+$/.test(cleanId);
   const numericId = isNumeric ? parseInt(cleanId, 10) : null;
-  const searchPattern = `%${imageId}%`;
+  const searchPattern = `%${cleanId || imageId}%`;
+  const extraUrlPattern = extraUrl ? `%${extraUrl}%` : searchPattern;
 
   let query = `
     SELECT * FROM public.study_key_images 
@@ -1146,12 +1147,15 @@ async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId) {
       id::text = $2 OR 
       preview_url = $2 OR 
       preview_url LIKE $3 OR 
+      preview_url LIKE $4 OR 
       image_path LIKE $3 OR 
       instance_id = $2 OR 
-      sop_instance_uid = $2
+      instance_id = $5 OR 
+      sop_instance_uid = $2 OR 
+      sop_instance_uid = $5
     )
   `;
-  const params = [numericId, imageId, searchPattern];
+  const params = [numericId, imageId, searchPattern, extraUrlPattern, cleanId];
 
   if (studyId) {
     query += ` AND (study_uid = $${params.length + 1} OR study_id::text = $${params.length + 1})`;
@@ -1181,12 +1185,15 @@ async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId) {
         id::text = $2 OR 
         preview_url = $2 OR 
         preview_url LIKE $3 OR 
+        preview_url LIKE $4 OR 
         image_path LIKE $3 OR 
         instance_id = $2 OR 
-        sop_instance_uid = $2
+        instance_id = $5 OR 
+        sop_instance_uid = $2 OR 
+        sop_instance_uid = $5
       )
     `;
-    const delParams = [numericId, imageId, searchPattern];
+    const delParams = [numericId, imageId, searchPattern, extraUrlPattern, cleanId];
     if (studyId) {
       delQuery += ` AND (study_uid = $${delParams.length + 1} OR study_id::text = $${delParams.length + 1})`;
       delParams.push(studyId);
@@ -1200,9 +1207,10 @@ async function deleteKeyImageFromDb(imageId, studyId, reportId, clinicId) {
 
 router.delete("/v1/studies/:studyId/key-images/:imageId", asyncHandler(async (req, res) => {
   const { studyId, imageId } = req.params;
+  const { preview_url } = req.query || {};
   const clinicId = req.user?.clinic_id || 1;
   try {
-    const deletedCount = await deleteKeyImageFromDb(imageId, studyId, null, clinicId);
+    const deletedCount = await deleteKeyImageFromDb(imageId, studyId, null, clinicId, preview_url);
     res.json({ success: true, message: `Key image removed (${deletedCount} purged)` });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

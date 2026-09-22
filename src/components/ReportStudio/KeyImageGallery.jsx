@@ -21,9 +21,14 @@ export default function KeyImageGallery({
     const targetId = snap.db_id || snap.id || snap.instance_id || snap.sopInstanceUid;
     const previewUrl = snap.preview_url || snap.previewUrl || snap.url;
 
-    if (studyUID && targetId) {
+    if (studyUID && (targetId || previewUrl)) {
       try {
-        await api.delete(`/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images/${encodeURIComponent(targetId)}`);
+        const queryParams = new URLSearchParams();
+        if (previewUrl) queryParams.append('preview_url', previewUrl);
+        if (snap.sliceNumber || snap.slice_number) queryParams.append('sliceNumber', snap.sliceNumber || snap.slice_number);
+
+        const deleteUrl = `/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images/${encodeURIComponent(targetId || 'by-url')}?${queryParams.toString()}`;
+        await api.delete(deleteUrl);
       } catch (err) {
         console.warn("Failed deleting key image from backend DB:", err.message);
       }
@@ -32,7 +37,7 @@ export default function KeyImageGallery({
     const filterOutSnap = (s) => {
       const sId = s.db_id || s.id || s.instance_id || s.sopInstanceUid;
       const sUrl = s.preview_url || s.previewUrl || s.url;
-      if (targetId && sId === targetId) return false;
+      if (targetId && (sId === targetId || String(sId) === String(targetId))) return false;
       if (previewUrl && sUrl === previewUrl) return false;
       return true;
     };
@@ -43,10 +48,11 @@ export default function KeyImageGallery({
 
     if (studyUID) {
       try {
-        const updated = attachedSnapshots.filter(filterOutSnap);
+        const updated = (attachedSnapshots || []).filter(filterOutSnap);
         localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
+        sessionStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
       } catch (e) {
-        // ignore localStorage errors
+        // ignore storage errors
       }
     }
   };
