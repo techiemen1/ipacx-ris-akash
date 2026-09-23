@@ -184,7 +184,7 @@ export default function KeyImageGallery({
           {onAttachActiveSlice && (
             <button
               type="button"
-              onClick={() => onAttachActiveSlice(sliceInput, null)}
+              onClick={() => onAttachActiveSlice(sliceInput, selectedSeriesId)}
               style={{
                 background: "#059669",
                 color: "#ffffff",

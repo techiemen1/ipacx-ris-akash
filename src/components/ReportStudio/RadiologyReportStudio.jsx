@@ -975,6 +975,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     let displaySliceNum = detectedSlice || 1;
 
     const activeSeriesTarget = 
+      overrideSeriesId ||
       snapResult?.matchedSeriesId || 
       snapResult?.seriesInstanceUid ||
       directDomSliceInfo?.matchedSeriesId ||
@@ -982,7 +983,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       directDomSliceInfo?.seriesDescription ||
       snapResult?.seriesDescription ||
       activeViewportInfo?.seriesDescription ||
-      overrideSeriesId ||
       selectedSeriesId;
 
     const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);
