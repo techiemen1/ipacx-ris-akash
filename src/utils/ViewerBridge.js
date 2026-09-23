@@ -446,29 +446,38 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
   const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
   const normTarget = normalize(cleanTarget);
 
-  // 1. Direct ID / UID equality
-  let found = candidates.find(s => 
+  // 1. Direct ID / UID / Orthanc Series ID / Instance ID equality across ALL series
+  let found = studySeriesList.find(s => 
     String(s.series_id) === cleanTarget ||
     String(s.series_instance_uid) === cleanTarget ||
-    String(s.orthanc_series_id) === cleanTarget
+    String(s.orthanc_series_id) === cleanTarget ||
+    (Array.isArray(s.instances) && s.instances.some(inst => 
+      String(inst.sop_instance_uid) === cleanTarget || 
+      String(inst.orthanc_instance_id) === cleanTarget || 
+      String(inst.id) === cleanTarget
+    ))
   );
   if (found) return found;
 
-  // 2. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
+  // 2. Exact Series Description Equality across studySeriesList
+  found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
+  if (found) return found;
+
+  // 3. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
   if (!cleanTarget.includes('.')) {
     const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
     if (sNumMatch) {
       const sNum = parseInt(sNumMatch[1], 10);
-      found = candidates.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+      found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
       if (found) return found;
     }
   }
 
-  // 3. Exact or Substring match on normalized series_description
+  // 4. Substring match on normalized series_description (preferring candidate list)
   found = candidates.find(s => {
     if (!s.series_description) return false;
     const normDesc = normalize(s.series_description);
-    return normDesc === normTarget || normTarget.includes(normDesc) || normDesc.includes(normTarget);
+    return normTarget.includes(normDesc) || normDesc.includes(normTarget);
   });
   if (found) return found;
 

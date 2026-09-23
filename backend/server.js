@@ -230,6 +230,38 @@ try {
     return { sliceNumber: sliceNum, totalSlices: totalSlices, instanceNumber: instNum, seriesDescription: seriesDesc, allTexts: texts };
   }
 
+  function getOhifServicesInfo() {
+    try {
+      var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
+      if (!sm || !sm.services) return null;
+      var vpgs = sm.services.viewportGridService;
+      var dss = sm.services.displaySetService;
+      if (!vpgs) return null;
+      var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
+      var gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
+      var activeVp = (gridState && gridState.viewports && activeVpId) ? gridState.viewports.get(activeVpId) : null;
+      
+      if (!activeVp && gridState && gridState.viewports && gridState.viewports.size > 0) {
+        activeVp = gridState.viewports.values().next().value;
+      }
+
+      if (activeVp) {
+        var dsUid = activeVp.displaySetInstanceUID;
+        var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
+        if (ds) {
+          return {
+            seriesDescription: ds.SeriesDescription || ds.seriesDescription || null,
+            seriesInstanceUid: ds.SeriesInstanceUID || ds.seriesInstanceUid || null,
+            seriesNumber: ds.SeriesNumber || ds.seriesNumber || null,
+            sopInstanceUid: activeVp.SOPInstanceUID || (ds.images && ds.images[0] ? ds.images[0].SOPInstanceUID : null),
+            totalSlices: ds.numImageFrames || (ds.images ? ds.images.length : null)
+          };
+        }
+      }
+    } catch(e) {}
+    return null;
+  }
+
   function getActiveCornerstoneInfo(container) {
     var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
     try {
@@ -275,9 +307,12 @@ try {
       var container = getActiveViewportContainer();
       var overlayInfo = parseViewportDOMOverlay(container);
       var csInfo = getActiveCornerstoneInfo(container);
+      var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
+      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -285,8 +320,9 @@ try {
           frameNumber: finalSlice,
           sliceNumber: finalSlice,
           totalSlices: finalTotal,
-          seriesInstanceUid: csInfo.csSeriesUid || '',
-          seriesDescription: overlayInfo.seriesDescription || ''
+          seriesInstanceUid: finalSeriesUid,
+          seriesDescription: finalSeriesDesc,
+          seriesNumber: ohifInfo ? ohifInfo.seriesNumber : null
         }
       }, '*');
     } catch(err) {}
@@ -302,9 +338,13 @@ try {
       }
       var overlayInfo = parseViewportDOMOverlay(container);
       var csInfo = getActiveCornerstoneInfo(container);
+      var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
+      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
+      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',
@@ -313,9 +353,10 @@ try {
           frameNumber: finalSlice,
           sliceNumber: finalSlice,
           totalSlices: finalTotal,
-          seriesInstanceUid: csInfo.csSeriesUid || '',
-          sopInstanceUid: csInfo.csSopUid || '',
-          seriesDescription: overlayInfo.seriesDescription || ''
+          seriesInstanceUid: finalSeriesUid,
+          sopInstanceUid: finalSopUid,
+          seriesDescription: finalSeriesDesc,
+          seriesNumber: ohifInfo ? ohifInfo.seriesNumber : null
         }
       }, '*');
     } catch(err) {
