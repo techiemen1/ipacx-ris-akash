@@ -547,17 +547,16 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         const sUid = payload.seriesInstanceUid || payload.seriesInstanceUID;
         const iNum = payload.instanceNumber || payload.sopInstanceUid;
 
-        if (dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500)) {
-          window.removeEventListener('message', handler);
-          resolve({
-            dataUrl: dUrl || null,
-            instanceNumber: iNum || null,
-            sliceNumber: fNum ? parseInt(fNum, 10) : null,
-            totalSlices: tSlices ? parseInt(tSlices, 10) : null,
-            matchedSeriesId: sUid || null,
-            seriesDescription: sDesc || null
-          });
-        }
+        window.removeEventListener('message', handler);
+        resolve({
+          dataUrl: dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500) ? dUrl : null,
+          instanceNumber: iNum || null,
+          sliceNumber: fNum ? parseInt(fNum, 10) : null,
+          totalSlices: tSlices ? parseInt(tSlices, 10) : null,
+          matchedSeriesId: sUid || null,
+          seriesDescription: sDesc || null,
+          seriesNumber: payload.seriesNumber || null
+        });
       }
     };
 
@@ -565,7 +564,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
     setTimeout(() => {
       window.removeEventListener('message', handler);
       resolve(null);
-    }, 1200);
+    }, 1500);
   });
 
   const postMsgRes = await waitPostMessage;

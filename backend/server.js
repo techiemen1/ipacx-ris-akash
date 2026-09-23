@@ -143,11 +143,11 @@ try {
     var texts = [];
     if (!container) container = getActiveViewportContainer();
     
-    // Ignore sidebar, thumbnail lists, and navigation drawers
+    // Ignore sidebar, thumbnail lists, study browser, and navigation drawers
     var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
       acceptNode: function(node) {
         if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-        var p = node.parentElement.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header');
+        var p = node.parentElement.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="StudyBrowser"], [data-cy="study-browser"]');
         if (p) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
@@ -202,12 +202,14 @@ try {
       }
     }
 
-    // Priority 1: Check text specifically inside top-right overlay quadrant element
-    var topRightEl = container ? container.querySelector('.top-right, [class*="top-right"], .cornerstone-overlay-top-right, .viewport-overlay-top-right, [data-overlay-location="top-right"]') : null;
-    if (topRightEl) {
-      var trText = (topRightEl.textContent || topRightEl.innerText || '').replace(/\s+/g, ' ').trim();
-      if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/.test(trText)) {
+    // Priority 1: Check overlay quadrant elements for Series Description
+    var overlayEls = container ? container.querySelectorAll('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : [];
+    for (var k = 0; k < overlayEls.length; k++) {
+      var el = overlayEls[k];
+      var trText = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
+      if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/i.test(trText) && !/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(trText) && !/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(trText)) {
         seriesDesc = trText;
+        break;
       }
     }
 
