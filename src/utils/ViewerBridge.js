@@ -285,6 +285,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const rawActiveTextStr = activeTexts.join(' ').toLowerCase();
     const activeTextStr = normalize(rawActiveTextStr);
 
+    // Check top-right overlay quadrant specifically for active series description
+    const topRightEl = activeContainer ? activeContainer.querySelector('.top-right, [class*="top-right"], .cornerstone-overlay-top-right, .viewport-overlay-top-right, [data-overlay-location="top-right"]') : null;
+    const topRightText = topRightEl ? normalize(topRightEl.textContent || topRightEl.innerText || '') : '';
+
     if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
       let bestScore = -1;
 
@@ -294,6 +298,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         if (!normDesc) continue;
 
         let score = 0;
+
+        if (topRightText && (topRightText === normDesc || topRightText.includes(normDesc) || normDesc.includes(topRightText))) {
+          score += 2000;
+        }
 
         // Check text matching against ACTIVE viewport text overlay
         if (activeTextStr) {

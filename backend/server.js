@@ -202,17 +202,28 @@ try {
       }
     }
 
-    for (var j = 0; j < texts.length; j++) {
-      var txt = texts[j];
-      if (!txt) continue;
-      if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(txt)) continue;
-      if (/\d+\s*\/\s*\d+/.test(txt)) continue;
-      if (/^[WwLl]:\s*\d+/.test(txt) || /W:\s*\d+\s+L:\s*\d+/i.test(txt)) continue;
-      if (/^[APLRHF]{1,2}$/i.test(txt)) continue;
-      if (/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(txt)) continue;
-      if (/^\d+$/.test(txt)) continue;
-      if (txt.length >= 3 && !seriesDesc) {
-        seriesDesc = txt;
+    // Priority 1: Check text specifically inside top-right overlay quadrant element
+    var topRightEl = container ? container.querySelector('.top-right, [class*="top-right"], .cornerstone-overlay-top-right, .viewport-overlay-top-right, [data-overlay-location="top-right"]') : null;
+    if (topRightEl) {
+      var trText = (topRightEl.textContent || topRightEl.innerText || '').replace(/\s+/g, ' ').trim();
+      if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/.test(trText)) {
+        seriesDesc = trText;
+      }
+    }
+
+    if (!seriesDesc) {
+      for (var j = 0; j < texts.length; j++) {
+        var txt = texts[j];
+        if (!txt) continue;
+        if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(txt)) continue;
+        if (/\d+\s*\/\s*\d+/.test(txt)) continue;
+        if (/^[WwLl]:\s*\d+/.test(txt) || /W:\s*\d+\s+L:\s*\d+/i.test(txt)) continue;
+        if (/^[APLRHF]{1,2}$/i.test(txt)) continue;
+        if (/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(txt)) continue;
+        if (/^\d+$/.test(txt)) continue;
+        if (txt.length >= 3 && !seriesDesc) {
+          seriesDesc = txt;
+        }
       }
     }
 
