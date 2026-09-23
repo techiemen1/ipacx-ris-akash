@@ -960,13 +960,13 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     const activeSeriesTarget = 
       overrideSeriesId ||
-      selectedSeriesId ||
       directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
+      activeViewportInfo?.seriesInstanceUid || 
       directDomSliceInfo?.seriesDescription ||
       snapResult?.seriesDescription ||
-      activeViewportInfo?.seriesInstanceUid || 
-      activeViewportInfo?.seriesDescription;
+      activeViewportInfo?.seriesDescription ||
+      selectedSeriesId;
 
     const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget) || findSeriesInList(studySeriesList, selectedSeriesId);
     if (seriesObj && seriesObj.series_id) {
