@@ -428,7 +428,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         studyUID: studyUID,
         seriesUID: seriesObj?.series_id || activeSeriesTarget,
         sliceNumber: displaySliceNum,
-        totalSlices: totalSlices,
+        totalSlices: resolvedTotalSlices,
         seriesDescription: seriesDesc,
         instanceId: targetInst?.instance_id,
         dataUrl: validDataUrl,
