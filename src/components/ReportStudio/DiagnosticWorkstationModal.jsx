@@ -352,7 +352,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     let displaySliceNum = detectedSlice || 1;
 
     const activeSeriesTarget = 
-      overrideSeriesId ||
       snapResult?.matchedSeriesId || 
       snapResult?.seriesInstanceUid ||
       directDomSliceInfo?.matchedSeriesId ||
@@ -360,6 +359,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       directDomSliceInfo?.seriesDescription ||
       snapResult?.seriesDescription ||
       activeViewportInfo?.seriesDescription ||
+      overrideSeriesId ||
       selectedSeriesId;
 
     const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);

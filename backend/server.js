@@ -230,37 +230,54 @@ try {
     return { sliceNumber: sliceNum, totalSlices: totalSlices, instanceNumber: instNum, seriesDescription: seriesDesc, allTexts: texts };
   }
 
+  function getActiveCornerstoneInfo(container) {
+    var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
+    try {
+      var cs = window.cornerstone;
+      if (cs && typeof cs.getRenderingEngines === 'function') {
+        var engines = cs.getRenderingEngines();
+        for (var i = 0; i < engines.length; i++) {
+          var vps = engines[i].getViewports ? engines[i].getViewports() : [];
+          for (var j = 0; j < vps.length; j++) {
+            var vp = vps[j];
+            var el = vp.element;
+            if (!el) continue;
+            var isMatch = (
+              el === container ||
+              el.contains(container) ||
+              (container && container.contains && container.contains(el)) ||
+              el.querySelector('canvas') === container ||
+              el.classList.contains('active') ||
+              el.closest('.active') ||
+              el.classList.contains('selected')
+            );
+            if (isMatch || (!csSeriesUid && vps.length === 1)) {
+              var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
+              var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+              if (idx !== null && idx >= 0 && ids && ids.length > 0) {
+                csSlice = idx + 1;
+                csTotal = ids.length;
+                var imgId = ids[idx] || '';
+                csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                if (csSeriesUid) break;
+              }
+            }
+          }
+        }
+      }
+    } catch(e) {}
+    return { csSlice: csSlice, csTotal: csTotal, csSeriesUid: csSeriesUid, csSopUid: csSopUid };
+  }
+
   function sendViewportChange() {
     try {
       var container = getActiveViewportContainer();
       var overlayInfo = parseViewportDOMOverlay(container);
-      var cs = window.cornerstone;
-      var csSlice = null, csTotal = null, csSeriesUid = null;
-      if (cs && typeof cs.getRenderingEngines === 'function') {
-        try {
-          var engines = cs.getRenderingEngines();
-          for (var i = 0; i < engines.length; i++) {
-            var vps = engines[i].getViewports ? engines[i].getViewports() : [];
-            for (var j = 0; j < vps.length; j++) {
-              var vp = vps[j];
-              var el = vp.element;
-              if (el && (el === container || el.classList.contains('active') || el.closest('.active'))) {
-                var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
-                var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
-                if (idx !== null && idx >= 0) {
-                  csSlice = idx + 1;
-                  csTotal = ids ? ids.length : null;
-                  var imgId = ids[idx] || '';
-                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                }
-              }
-            }
-          }
-        } catch(e) {}
-      }
+      var csInfo = getActiveCornerstoneInfo(container);
 
-      var finalSlice = csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csTotal || overlayInfo.totalSlices || null;
+      var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
+      var finalTotal = csInfo.csTotal || overlayInfo.totalSlices || null;
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -268,7 +285,7 @@ try {
           frameNumber: finalSlice,
           sliceNumber: finalSlice,
           totalSlices: finalTotal,
-          seriesInstanceUid: csSeriesUid || '',
+          seriesInstanceUid: csInfo.csSeriesUid || '',
           seriesDescription: overlayInfo.seriesDescription || ''
         }
       }, '*');
@@ -284,35 +301,10 @@ try {
         try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e) {}
       }
       var overlayInfo = parseViewportDOMOverlay(container);
+      var csInfo = getActiveCornerstoneInfo(container);
 
-      var cs = window.cornerstone;
-      var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
-      if (cs && typeof cs.getRenderingEngines === 'function') {
-        try {
-          var engines = cs.getRenderingEngines();
-          for (var i = 0; i < engines.length; i++) {
-            var vps = engines[i].getViewports ? engines[i].getViewports() : [];
-            for (var j = 0; j < vps.length; j++) {
-              var vp = vps[j];
-              var el = vp.element;
-              if (el && (el === container || el.classList.contains('active') || el.closest('.active'))) {
-                var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
-                var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
-                if (idx !== null && idx >= 0) {
-                  csSlice = idx + 1;
-                  csTotal = ids ? ids.length : null;
-                  var imgId = ids[idx] || '';
-                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                  csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                }
-              }
-            }
-          }
-        } catch(e) {}
-      }
-
-      var finalSlice = csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csTotal || overlayInfo.totalSlices || null;
+      var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
+      var finalTotal = csInfo.csTotal || overlayInfo.totalSlices || null;
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',
@@ -321,8 +313,8 @@ try {
           frameNumber: finalSlice,
           sliceNumber: finalSlice,
           totalSlices: finalTotal,
-          seriesInstanceUid: csSeriesUid || '',
-          sopInstanceUid: csSopUid || '',
+          seriesInstanceUid: csInfo.csSeriesUid || '',
+          sopInstanceUid: csInfo.csSopUid || '',
           seriesDescription: overlayInfo.seriesDescription || ''
         }
       }, '*');
