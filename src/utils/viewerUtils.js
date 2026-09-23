@@ -30,6 +30,10 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     return `/mobile-viewer?study=${encodeURIComponent(studyUID.trim())}`;
   }
 
+  if (mode === "iframe" || mode === "embedded") {
+    return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  }
+
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
   // Strip index.html from path if present, as Orthanc OHIF plugin returns 404 for /index.html

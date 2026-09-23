@@ -232,7 +232,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     }
   }, [studyUID]);
 
-  const viewerUrl = getViewerUrl(studyUID);
+  const viewerUrl = getViewerUrl(studyUID, "iframe");
 
   // Sync innerHTML safely when initial loading finishes
   useEffect(() => {

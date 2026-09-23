@@ -480,7 +480,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const findingsRef = useRef(null);
   const conclusionRef = useRef(null);
 
-  const viewerUrl = getViewerUrl(studyUID);
+  const viewerUrl = getViewerUrl(studyUID, "iframe");
 
   // Handle smooth viewMode changes without losing typed findings/conclusion DOM state
   const handleSetViewMode = (newMode) => {
