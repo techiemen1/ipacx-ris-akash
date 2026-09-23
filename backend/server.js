@@ -141,8 +141,18 @@ try {
 
   function parseViewportDOMOverlay(container) {
     var texts = [];
-    if (!container) container = document.body;
-    var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    if (!container) container = getActiveViewportContainer();
+    
+    // Ignore sidebar, thumbnail lists, and navigation drawers
+    var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(node) {
+        if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
+        var p = node.parentElement.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header');
+        if (p) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }, false);
+
     var tn;
     while ((tn = tw.nextNode())) {
       var val = tn.nodeValue ? tn.nodeValue.trim() : '';
