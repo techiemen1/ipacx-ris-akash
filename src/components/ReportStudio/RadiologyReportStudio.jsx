@@ -958,6 +958,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
+    const detectedSlice = overrideSliceNum !== null 
+      ? parseInt(overrideSliceNum, 10) 
+      : (
+          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
+          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
+          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
+          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
+          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
+          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
+          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
+          null
+        );
+
+    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
+    let displaySliceNum = detectedSlice || 1;
+
     const activeSeriesTarget = 
       overrideSeriesId ||
       directDomSliceInfo?.matchedSeriesId ||
@@ -968,7 +984,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       activeViewportInfo?.seriesDescription ||
       selectedSeriesId;
 
-    const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget) || findSeriesInList(studySeriesList, selectedSeriesId);
+    const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
     }
@@ -1001,32 +1017,12 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       }
     }
 
-    const detectedSlice = overrideSliceNum !== null 
-      ? parseInt(overrideSliceNum, 10) 
-      : (
-          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
-          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
-          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
-          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
-          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
-          (savedViewerStateSlice && savedViewerStateSlice > 0 ? savedViewerStateSlice : null) ||
-          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
-          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
-          null
-        );
-
-    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
-
-    let displaySliceNum = detectedSlice;
-
-    if (!displaySliceNum || isNaN(displaySliceNum) || displaySliceNum < 1) {
-      displaySliceNum = 1;
-    }
-    displaySliceNum = Math.min(Math.max(1, displaySliceNum), totalSlices);
+    const resolvedTotalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
+    displaySliceNum = Math.min(Math.max(1, displaySliceNum), resolvedTotalSlices);
 
     const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
-    const fullCaption = totalSlices > 1 
-      ? `${seriesDesc} | ${displaySliceNum}/${totalSlices}` 
+    const fullCaption = resolvedTotalSlices > 1 
+      ? `${seriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
       : `${seriesDesc} | ${displaySliceNum}`;
 
     let targetInst = null;

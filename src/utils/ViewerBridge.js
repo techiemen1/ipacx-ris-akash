@@ -308,16 +308,21 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         }
 
         // If no match in activeTexts, check globalTexts (excluding sidebar thumbnail panel)
-        if (score === 0 && globalTexts.length > 0) {
+        const isScoutSeries = /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
+        if (score === 0 && globalTexts.length > 0 && !isScoutSeries) {
           const globalTextStr = normalize(globalTexts.join(' '));
-          if (globalTextStr.includes(normDesc)) score += 100;
+          if (globalTextStr.includes(normDesc)) score += 50;
           const tokens = normDesc.split(' ').filter(t => t.length >= 3);
           for (const tok of tokens) {
-            if (globalTextStr.includes(tok)) score += 20;
+            if (globalTextStr.includes(tok)) score += 10;
           }
         }
 
-        if (score > bestScore && score > 30) {
+        if (isScoutSeries && sliceResult?.totalSlices > 1) {
+          score -= 2000;
+        }
+
+        if (score > bestScore && score > 0) {
           bestScore = score;
           matchedSeriesObj = s;
         }
@@ -403,9 +408,30 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
   return null;
 }
 
-export function findSeriesInList(studySeriesList = [], target) {
-  if (!Array.isArray(studySeriesList) || studySeriesList.length === 0 || !target) {
-    return (studySeriesList || [])[0] || null;
+export function findSeriesInList(studySeriesList = [], target, hintSliceNum = null, hintTotalSlices = null) {
+  if (!Array.isArray(studySeriesList) || studySeriesList.length === 0) {
+    return null;
+  }
+
+  const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || '');
+
+  // Filter candidates by slice count hints
+  let candidates = studySeriesList;
+  if (hintTotalSlices && hintTotalSlices > 1) {
+    const matchingCount = studySeriesList.filter(s => parseInt(s.total_slices, 10) === parseInt(hintTotalSlices, 10));
+    if (matchingCount.length > 0) {
+      candidates = matchingCount;
+    } else {
+      candidates = studySeriesList.filter(s => !isScout(s) && parseInt(s.total_slices, 10) > 1);
+    }
+  } else if (hintSliceNum && hintSliceNum > 1) {
+    candidates = studySeriesList.filter(s => !isScout(s) && parseInt(s.total_slices, 10) >= hintSliceNum);
+  }
+  if (candidates.length === 0) candidates = studySeriesList;
+
+  if (!target || !String(target).trim()) {
+    const nonScout = candidates.filter(s => !isScout(s));
+    return nonScout.length > 0 ? nonScout[0] : candidates[0];
   }
 
   const cleanTarget = String(target).trim();
@@ -413,7 +439,7 @@ export function findSeriesInList(studySeriesList = [], target) {
   const normTarget = normalize(cleanTarget);
 
   // 1. Direct ID / UID equality
-  let found = studySeriesList.find(s => 
+  let found = candidates.find(s => 
     String(s.series_id) === cleanTarget ||
     String(s.series_instance_uid) === cleanTarget ||
     String(s.orthanc_series_id) === cleanTarget
@@ -421,18 +447,17 @@ export function findSeriesInList(studySeriesList = [], target) {
   if (found) return found;
 
   // 2. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
-  // Do NOT match random numbers in DICOM UIDs (e.g., "1.3.12...")
   if (!cleanTarget.includes('.')) {
     const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
     if (sNumMatch) {
       const sNum = parseInt(sNumMatch[1], 10);
-      found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+      found = candidates.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
       if (found) return found;
     }
   }
 
   // 3. Exact or Substring match on normalized series_description
-  found = studySeriesList.find(s => {
+  found = candidates.find(s => {
     if (!s.series_description) return false;
     const normDesc = normalize(s.series_description);
     return normDesc === normTarget || normTarget.includes(normDesc) || normDesc.includes(normTarget);
@@ -444,7 +469,7 @@ export function findSeriesInList(studySeriesList = [], target) {
   if (targetTokens.length > 0) {
     let bestMatch = null;
     let maxTokens = 0;
-    for (const s of studySeriesList) {
+    for (const s of candidates) {
       if (!s.series_description) continue;
       const sDescNorm = normalize(s.series_description);
       const matches = targetTokens.filter(t => sDescNorm.includes(t)).length;
@@ -457,11 +482,8 @@ export function findSeriesInList(studySeriesList = [], target) {
   }
 
   // 5. Prefer first non-scout diagnostic series over scout/topogram
-  const nonScout = studySeriesList.filter(s => {
-    const d = normalize(s.series_description || "");
-    return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
-  });
-  return nonScout.length > 0 ? nonScout[0] : studySeriesList[0];
+  const nonScout = candidates.filter(s => !isScout(s));
+  return nonScout.length > 0 ? nonScout[0] : candidates[0];
 }
 
 /**
