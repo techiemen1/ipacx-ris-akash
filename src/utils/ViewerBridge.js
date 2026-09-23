@@ -516,9 +516,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         data.type === MESSAGE_TYPES.SNAPSHOT_CAPTURED ||
         data.type === MESSAGE_TYPES.OHIF_SNAPSHOT ||
         data.type === MESSAGE_TYPES.ADD_KEY_IMAGE ||
-        data.eventName === 'SNAPSHOT_CAPTURED' ||
-        data.type === MESSAGE_TYPES.VIEWPORT_CHANGE ||
-        data.type === 'OHIF_VIEWPORT_CHANGE'
+        data.eventName === 'SNAPSHOT_CAPTURED'
       ) {
         const payload = data.payload || data;
         const dUrl = payload.dataUrl || payload.imageUrl || payload.url;
@@ -528,7 +526,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         const sUid = payload.seriesInstanceUid || payload.seriesInstanceUID;
         const iNum = payload.instanceNumber || payload.sopInstanceUid;
 
-        if (dUrl || fNum) {
+        if (dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500)) {
           window.removeEventListener('message', handler);
           resolve({
             dataUrl: dUrl || null,
