@@ -958,14 +958,15 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const activeSeriesTarget = directDomSliceInfo?.matchedSeriesId ||
+    const activeSeriesTarget = 
+      overrideSeriesId ||
+      selectedSeriesId ||
+      directDomSliceInfo?.matchedSeriesId ||
       snapResult?.matchedSeriesId || 
       directDomSliceInfo?.seriesDescription ||
       snapResult?.seriesDescription ||
       activeViewportInfo?.seriesInstanceUid || 
-      activeViewportInfo?.seriesDescription ||
-      overrideSeriesId || 
-      selectedSeriesId;
+      activeViewportInfo?.seriesDescription;
 
     const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget) || findSeriesInList(studySeriesList, selectedSeriesId);
     if (seriesObj && seriesObj.series_id) {

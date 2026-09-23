@@ -420,12 +420,15 @@ export function findSeriesInList(studySeriesList = [], target) {
   );
   if (found) return found;
 
-  // 2. Parse Series Number from target string (e.g. "S:4 - C_Spine 1.0 B20s (313)" -> seriesNumber 4)
-  const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S)(\d+)/i) || cleanTarget.match(/^(\d+)\b/);
-  if (sNumMatch) {
-    const sNum = parseInt(sNumMatch[1], 10);
-    found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
-    if (found) return found;
+  // 2. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
+  // Do NOT match random numbers in DICOM UIDs (e.g., "1.3.12...")
+  if (!cleanTarget.includes('.')) {
+    const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
+    if (sNumMatch) {
+      const sNum = parseInt(sNumMatch[1], 10);
+      found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+      if (found) return found;
+    }
   }
 
   // 3. Exact or Substring match on normalized series_description
