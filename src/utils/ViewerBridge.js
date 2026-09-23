@@ -423,7 +423,42 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
 
   const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || '');
 
-  // Filter candidates by slice count hints
+  const cleanTarget = String(target || '').trim();
+  const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
+  const normTarget = normalize(cleanTarget);
+
+  let found = null;
+
+  if (cleanTarget) {
+    // 1. Direct ID / UID / Orthanc Series ID / Instance ID equality across full studySeriesList
+    found = studySeriesList.find(s => 
+      String(s.series_id) === cleanTarget ||
+      String(s.series_instance_uid) === cleanTarget ||
+      String(s.orthanc_series_id) === cleanTarget ||
+      (Array.isArray(s.instances) && s.instances.some(inst => 
+        String(inst.sop_instance_uid) === cleanTarget || 
+        String(inst.orthanc_instance_id) === cleanTarget || 
+        String(inst.id) === cleanTarget
+      ))
+    );
+    if (found) return found;
+
+    // 2. Exact Series Description Equality across full studySeriesList
+    found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
+    if (found) return found;
+
+    // 3. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
+    if (!cleanTarget.includes('.')) {
+      const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
+      if (sNumMatch) {
+        const sNum = parseInt(sNumMatch[1], 10);
+        found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+        if (found) return found;
+      }
+    }
+  }
+
+  // Filter candidates by slice count hints for fuzzy token matching
   let candidates = studySeriesList;
   if (hintTotalSlices && hintTotalSlices > 1) {
     const matchingCount = studySeriesList.filter(s => parseInt(s.total_slices, 10) === parseInt(hintTotalSlices, 10));
@@ -437,40 +472,9 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
   }
   if (candidates.length === 0) candidates = studySeriesList;
 
-  if (!target || !String(target).trim()) {
+  if (!cleanTarget) {
     const nonScout = candidates.filter(s => !isScout(s));
     return nonScout.length > 0 ? nonScout[0] : candidates[0];
-  }
-
-  const cleanTarget = String(target).trim();
-  const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
-  const normTarget = normalize(cleanTarget);
-
-  // 1. Direct ID / UID / Orthanc Series ID / Instance ID equality across ALL series
-  let found = studySeriesList.find(s => 
-    String(s.series_id) === cleanTarget ||
-    String(s.series_instance_uid) === cleanTarget ||
-    String(s.orthanc_series_id) === cleanTarget ||
-    (Array.isArray(s.instances) && s.instances.some(inst => 
-      String(inst.sop_instance_uid) === cleanTarget || 
-      String(inst.orthanc_instance_id) === cleanTarget || 
-      String(inst.id) === cleanTarget
-    ))
-  );
-  if (found) return found;
-
-  // 2. Exact Series Description Equality across studySeriesList
-  found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
-  if (found) return found;
-
-  // 3. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
-  if (!cleanTarget.includes('.')) {
-    const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
-    if (sNumMatch) {
-      const sNum = parseInt(sNumMatch[1], 10);
-      found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
-      if (found) return found;
-    }
   }
 
   // 4. Substring match on normalized series_description (preferring candidate list)
