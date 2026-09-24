@@ -277,11 +277,29 @@ try {
       var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
       if (!sm || !sm.services) return null;
       var vpgs = sm.services.viewportGridService;
+      var cvps = sm.services.cornerstoneViewportService;
       var dss = sm.services.displaySetService;
       if (!vpgs) return null;
 
       var gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
       var activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
+
+      var csSlice = null;
+      var csTotal = null;
+
+      if (cvps && activeVpId && typeof cvps.getCornerstoneViewport === 'function') {
+        try {
+          var csvp = cvps.getCornerstoneViewport(activeVpId);
+          if (csvp) {
+            var idx = typeof csvp.getCurrentImageIdIndex === 'function' ? csvp.getCurrentImageIdIndex() : (typeof csvp.sliceIndex === 'number' ? csvp.sliceIndex : null);
+            var ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
+            if (idx !== null && idx >= 0) {
+              csSlice = idx + 1;
+              csTotal = ids ? ids.length : null;
+            }
+          }
+        } catch(e) {}
+      }
 
       var activeVp = null;
       if (gridState && gridState.viewports) {
@@ -304,13 +322,20 @@ try {
         var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
         if (ds) {
           return {
+            sliceIndex: csSlice,
+            totalSlices: csTotal || ds.numImageFrames || (ds.images ? ds.images.length : null),
             seriesDescription: ds.SeriesDescription || ds.seriesDescription || null,
             seriesInstanceUid: ds.SeriesInstanceUID || ds.seriesInstanceUid || null,
             seriesNumber: ds.SeriesNumber || ds.seriesNumber || null,
-            sopInstanceUid: activeVp.SOPInstanceUID || (ds.images && ds.images[0] ? ds.images[0].SOPInstanceUID : null),
-            totalSlices: ds.numImageFrames || (ds.images ? ds.images.length : null)
+            sopInstanceUid: activeVp.SOPInstanceUID || (ds.images && csSlice && ds.images[csSlice - 1] ? ds.images[csSlice - 1].SOPInstanceUID : (ds.images && ds.images[0] ? ds.images[0].SOPInstanceUID : null))
           };
         }
+      }
+      if (csSlice) {
+        return {
+          sliceIndex: csSlice,
+          totalSlices: csTotal
+        };
       }
     } catch(e) {}
     return null;
@@ -319,7 +344,7 @@ try {
   function getActiveCornerstoneInfo(container) {
     var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null, csSeriesDesc = null, csSeriesNum = null;
     try {
-      var cs = window.cornerstone || window.cornerstoneCore;
+      var cs = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
       if (cs && typeof cs.getRenderingEngines === 'function') {
         var engines = cs.getRenderingEngines();
         for (var i = 0; i < engines.length; i++) {
@@ -366,7 +391,7 @@ try {
                 if (!csSopUid) {
                   csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
                 }
-                if (csSeriesUid || csSeriesDesc) break;
+                if (csSeriesUid || csSeriesDesc || csSlice) break;
               }
             }
           }
@@ -383,7 +408,7 @@ try {
       var csInfo = getActiveCornerstoneInfo(container);
       var ohifInfo = getOhifServicesInfo();
 
-      var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
+      var finalSlice = (ohifInfo && ohifInfo.sliceIndex) || csInfo.csSlice || overlayInfo.sliceNumber || 1;
       var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
       var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
@@ -410,14 +435,14 @@ try {
       var container = getActiveViewportContainer();
       var cv = container ? (container.querySelector('canvas') || container) : document.querySelector('canvas');
       var dataUrl = null;
-      if (cv && typeof cv.toDataURL === 'function') {
+      if (cv && cv.tagName === 'CANVAS' && typeof cv.toDataURL === 'function') {
         try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e) {}
       }
       var overlayInfo = parseViewportDOMOverlay(container);
       var csInfo = getActiveCornerstoneInfo(container);
       var ohifInfo = getOhifServicesInfo();
 
-      var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
+      var finalSlice = (ohifInfo && ohifInfo.sliceIndex) || csInfo.csSlice || overlayInfo.sliceNumber || 1;
       var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
       var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';

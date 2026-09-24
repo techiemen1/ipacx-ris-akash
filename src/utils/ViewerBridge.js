@@ -358,7 +358,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     // Check Cornerstone3D API for active viewport seriesInstanceUID / imageId
     try {
-      const cs = iframeWin && iframeWin.cornerstone;
+      const cs = iframeWin && (iframeWin.cornerstone3D || iframeWin.cornerstone || iframeWin.cornerstoneCore);
       if (cs && typeof cs.getRenderingEngines === 'function') {
         const engines = cs.getRenderingEngines();
         for (const engine of engines) {
@@ -392,11 +392,11 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
                     }
                   }
 
-                  if (!sliceResult && idx >= 0) {
+                  if (idx >= 0) {
                     sliceResult = {
                       sliceNumber: idx + 1,
                       totalSlices: imageIds.length || (matchedSeriesObj?.total_slices) || null,
-                      priority: 50
+                      priority: 900
                     };
                   }
                 }
