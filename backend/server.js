@@ -259,12 +259,7 @@ try {
       if (!vpgs) return null;
       var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
       var gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-      var activeVp = (gridState && gridState.viewports && activeVpId) ? gridState.viewports.get(activeVpId) : null;
-      
-      if (!activeVp && gridState && gridState.viewports && gridState.viewports.size > 0) {
-        activeVp = gridState.viewports.values().next().value;
-      }
-
+      // Do NOT fall back to first viewport in grid if activeVp is null
       if (activeVp) {
         var dsUid = activeVp.displaySetInstanceUID;
         var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
@@ -351,9 +346,9 @@ try {
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
       var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
-      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
-      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
+      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
+      var finalSeriesDesc = csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -383,10 +378,10 @@ try {
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
       var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
-      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
-      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
-      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
+      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
+      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
+      var finalSeriesDesc = csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',
