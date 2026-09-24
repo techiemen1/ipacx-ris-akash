@@ -329,10 +329,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
           }
         }
 
-        if (isScoutSeries && sliceResult?.totalSlices > 1) {
-          score -= 2000;
-        }
-
         if (score > bestScore && score > 0) {
           bestScore = score;
           matchedSeriesObj = s;
@@ -397,13 +393,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         parseInt(s.total_slices, 10) === sliceResult.totalSlices ||
         (Array.isArray(s.instances) && s.instances.length === sliceResult.totalSlices)
       );
-      if (countCandidates.length === 1) {
+      if (countCandidates.length > 0) {
         matchedSeriesObj = countCandidates[0];
-      } else if (countCandidates.length > 1) {
-        const nonScoutCandidates = countCandidates.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ''));
-        if (nonScoutCandidates.length > 0) {
-          matchedSeriesObj = nonScoutCandidates[0];
-        }
       }
     }
 

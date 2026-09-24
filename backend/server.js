@@ -125,6 +125,12 @@ try {
   document.addEventListener('click', trackActiveViewport, true);
 
   function getActiveViewportContainer() {
+    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl)) {
+      return lastActiveViewportEl;
+    }
+    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]');
+    if (activeEl) return activeEl;
+
     try {
       var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
       if (sm && sm.services && sm.services.viewportGridService) {
@@ -142,12 +148,6 @@ try {
         }
       }
     } catch (e) {}
-
-    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl)) {
-      return lastActiveViewportEl;
-    }
-    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]');
-    if (activeEl) return activeEl;
 
     var canvases = Array.from(document.querySelectorAll('canvas')).map(function(c) {
       return { c: c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0), parent: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || c.parentElement };
@@ -367,10 +367,10 @@ try {
       var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
       var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesDesc = overlayInfo.seriesDescription || (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || '';
       var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
@@ -401,10 +401,10 @@ try {
       var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
       var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesDesc = overlayInfo.seriesDescription || (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || '';
       var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
