@@ -285,9 +285,9 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const rawActiveTextStr = activeTexts.join(' ').toLowerCase();
     const activeTextStr = normalize(rawActiveTextStr);
 
-    // Check top-right overlay quadrant specifically for active series description
-    const topRightEl = activeContainer ? activeContainer.querySelector('.top-right, [class*="top-right"], .cornerstone-overlay-top-right, .viewport-overlay-top-right, [data-overlay-location="top-right"]') : null;
-    const topRightText = topRightEl ? normalize(topRightEl.textContent || topRightEl.innerText || '') : '';
+    // Check top-left and top-right overlay quadrants specifically for active series description
+    const overlayHeaderEl = activeContainer ? activeContainer.querySelector('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : null;
+    const overlayHeaderText = overlayHeaderEl ? normalize(overlayHeaderEl.textContent || overlayHeaderEl.innerText || '') : '';
 
     if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
       let bestScore = -1;
@@ -299,8 +299,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
         let score = 0;
 
-        if (topRightText && (topRightText === normDesc || topRightText.includes(normDesc) || normDesc.includes(topRightText))) {
-          score += 2000;
+        if (overlayHeaderText && (overlayHeaderText === normDesc || overlayHeaderText.includes(normDesc) || normDesc.includes(overlayHeaderText))) {
+          score += 3000;
         }
 
         // Check text matching against ACTIVE viewport text overlay

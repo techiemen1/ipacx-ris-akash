@@ -224,11 +224,16 @@ try {
     var overlayEls = container ? container.querySelectorAll('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : [];
     for (var k = 0; k < overlayEls.length; k++) {
       var el = overlayEls[k];
-      var trText = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
-      if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/i.test(trText) && !/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(trText) && !/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(trText)) {
-        seriesDesc = trText;
-        break;
+      var rawTxt = (el.textContent || el.innerText || '');
+      var lines = rawTxt.split(/[\n\r]+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+      for (var l = 0; l < lines.length; l++) {
+        var trText = lines[l];
+        if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/i.test(trText) && !/^\d{1,2}[\s\.\/-]+[A-Za-z]{3}[\s\.\/-]+\d{2,4}$/i.test(trText) && !/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(trText)) {
+          seriesDesc = trText;
+          break;
+        }
       }
+      if (seriesDesc) break;
     }
 
     if (!seriesDesc) {
@@ -257,11 +262,28 @@ try {
       var vpgs = sm.services.viewportGridService;
       var dss = sm.services.displaySetService;
       if (!vpgs) return null;
-      var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
+
       var gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-      // Do NOT fall back to first viewport in grid if activeVp is null
+      var activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
+
+      var activeVp = null;
+      if (gridState && gridState.viewports) {
+        var vps = gridState.viewports;
+        if (typeof vps.get === 'function' && activeVpId) {
+          activeVp = vps.get(activeVpId);
+        } else if (Array.isArray(vps) && activeVpId) {
+          activeVp = vps.find(function(v) { return v.id === activeVpId || v.viewportId === activeVpId; });
+        } else if (typeof vps === 'object' && activeVpId) {
+          activeVp = vps[activeVpId];
+        }
+      }
+
+      if (!activeVp && typeof vpgs.getViewport === 'function' && activeVpId) {
+        try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
+      }
+
       if (activeVp) {
-        var dsUid = activeVp.displaySetInstanceUID;
+        var dsUid = activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null);
         var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
         if (ds) {
           return {
@@ -345,10 +367,11 @@ try {
       var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
-      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
-      var finalSeriesDesc = csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
-      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
+      var finalTotal = (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
+      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -357,6 +380,7 @@ try {
           sliceNumber: finalSlice,
           totalSlices: finalTotal,
           seriesInstanceUid: finalSeriesUid,
+          sopInstanceUid: finalSopUid,
           seriesDescription: finalSeriesDesc,
           seriesNumber: finalSeriesNum
         }
@@ -377,11 +401,11 @@ try {
       var ohifInfo = getOhifServicesInfo();
 
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
-      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
-      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
-      var finalSeriesDesc = csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
-      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
+      var finalTotal = (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || overlayInfo.totalSlices || null;
+      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
+      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',

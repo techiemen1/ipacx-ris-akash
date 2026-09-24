@@ -361,7 +361,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     const activeSeriesTarget = liveSeriesTarget || selectedSeriesId;
 
-    const seriesObj = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);
+    const seriesObj = 
+      (liveSeriesTarget ? findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) : null) ||
+      (selectedSeriesId ? findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices) : null) ||
+      findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
     }
