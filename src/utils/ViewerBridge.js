@@ -340,8 +340,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         }
 
         // If no match in activeTexts, check globalTexts (excluding sidebar thumbnail panel)
-        const isScoutSeries = /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
-        if (score === 0 && globalTexts.length > 0 && !isScoutSeries) {
+        if (score === 0 && globalTexts.length > 0) {
           const globalTextStr = normalize(globalTexts.join(' '));
           if (globalTextStr.includes(normDesc)) score += 100;
           const tokens = normDesc.split(' ').filter(t => t.length >= 3);
@@ -467,7 +466,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
     if (found) return found;
 
-    // 3. Parse Series Number (e.g. "S:4 - C_Spine", "Series 4", "S4", "4")
+    // 3. Parse Series Number (e.g. "S:15 - i_AASpine_Scout", "Series 15", "S15", "15")
     const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
     if (sNumMatch) {
       const sNum = parseInt(sNumMatch[1], 10);
@@ -483,10 +482,10 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (matchingCount.length > 0) {
       candidates = matchingCount;
     } else {
-      candidates = studySeriesList.filter(s => !isScout(s) && parseInt(s.total_slices, 10) > 1);
+      candidates = studySeriesList.filter(s => parseInt(s.total_slices, 10) > 1);
     }
   } else if (hintSliceNum && hintSliceNum > 1) {
-    candidates = studySeriesList.filter(s => !isScout(s) && parseInt(s.total_slices, 10) >= hintSliceNum);
+    candidates = studySeriesList.filter(s => parseInt(s.total_slices, 10) >= hintSliceNum);
   }
   if (candidates.length === 0) candidates = studySeriesList;
 
@@ -520,8 +519,8 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (bestMatch && maxTokens > 0) return bestMatch;
   }
 
-  // 6. If cleanTarget is a real descriptive text (not empty/scout), return synthetic series matching cleanTarget
-  if (cleanTarget && cleanTarget.length > 2 && !isScout({ series_description: cleanTarget })) {
+  // 6. If cleanTarget is a real descriptive text, return synthetic series with cleanTarget as description
+  if (cleanTarget && cleanTarget.length >= 2) {
     return {
       series_id: 'synthetic_desc',
       series_description: cleanTarget,
@@ -529,7 +528,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     };
   }
 
-  // 7. Fallback to non-scout series
+  // 7. Fallback to first candidate (or non-scout if no target specified)
   const nonScout = candidates.filter(s => !isScout(s));
   return nonScout.length > 0 ? nonScout[0] : candidates[0];
 }
