@@ -125,10 +125,28 @@ try {
   document.addEventListener('click', trackActiveViewport, true);
 
   function getActiveViewportContainer() {
+    try {
+      var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
+      if (sm && sm.services && sm.services.viewportGridService) {
+        var vpgs = sm.services.viewportGridService;
+        var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
+        var cs = window.cornerstone || window.cornerstoneCore;
+        if (activeVpId && cs && typeof cs.getRenderingEngines === 'function') {
+          var engines = cs.getRenderingEngines();
+          for (var i = 0; i < engines.length; i++) {
+            var vp = typeof engines[i].getViewport === 'function' ? engines[i].getViewport(activeVpId) : null;
+            if (vp && vp.element) {
+              return vp.element;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
     if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl)) {
       return lastActiveViewportEl;
     }
-    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, .border-primary');
+    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]');
     if (activeEl) return activeEl;
 
     var canvases = Array.from(document.querySelectorAll('canvas')).map(function(c) {

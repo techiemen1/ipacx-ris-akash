@@ -418,7 +418,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
 export function findSeriesInList(studySeriesList = [], target, hintSliceNum = null, hintTotalSlices = null) {
   if (!Array.isArray(studySeriesList) || studySeriesList.length === 0) {
-    return null;
+    return target ? { series_id: 'synthetic', series_description: String(target), total_slices: hintTotalSlices || 1 } : null;
   }
 
   const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || '');
@@ -447,14 +447,12 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
     if (found) return found;
 
-    // 3. Parse Series Number from explicit format ONLY (e.g. "S:4 - C_Spine", "Series 4", "S4")
-    if (!cleanTarget.includes('.')) {
-      const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
-      if (sNumMatch) {
-        const sNum = parseInt(sNumMatch[1], 10);
-        found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
-        if (found) return found;
-      }
+    // 3. Parse Series Number (e.g. "S:4 - C_Spine", "Series 4", "S4", "4")
+    const sNumMatch = cleanTarget.match(/(?:S:|Series\s*|S:?)\s*(\d+)/i) || (cleanTarget.length <= 4 && cleanTarget.match(/^(\d+)$/));
+    if (sNumMatch) {
+      const sNum = parseInt(sNumMatch[1], 10);
+      found = studySeriesList.find(s => parseInt(s.series_number, 10) === sNum || parseInt(s.series_id, 10) === sNum);
+      if (found) return found;
     }
   }
 
@@ -477,7 +475,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     return nonScout.length > 0 ? nonScout[0] : candidates[0];
   }
 
-  // 4. Substring match on normalized series_description (preferring candidate list)
+  // 4. Substring match on normalized series_description
   found = candidates.find(s => {
     if (!s.series_description) return false;
     const normDesc = normalize(s.series_description);
@@ -485,7 +483,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
   });
   if (found) return found;
 
-  // 4. Match by token overlap on non-scout series
+  // 5. Match by token overlap
   const targetTokens = normTarget.split(' ').filter(t => t.length >= 2 && !/^(s|\d+)$/.test(t));
   if (targetTokens.length > 0) {
     let bestMatch = null;
@@ -502,7 +500,16 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (bestMatch && maxTokens > 0) return bestMatch;
   }
 
-  // 5. Prefer first non-scout diagnostic series over scout/topogram
+  // 6. If cleanTarget is a real descriptive text (not empty/scout), return synthetic series matching cleanTarget
+  if (cleanTarget && cleanTarget.length > 2 && !isScout({ series_description: cleanTarget })) {
+    return {
+      series_id: 'synthetic_desc',
+      series_description: cleanTarget,
+      total_slices: hintTotalSlices || 1
+    };
+  }
+
+  // 7. Fallback to non-scout series
   const nonScout = candidates.filter(s => !isScout(s));
   return nonScout.length > 0 ? nonScout[0] : candidates[0];
 }
