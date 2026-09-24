@@ -275,13 +275,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
             });
           }
 
-          if (sUid && Array.isArray(studySeriesList)) {
-            const match = studySeriesList.find(s => 
-              String(s.series_id) === String(sUid) ||
-              String(s.series_instance_uid) === String(sUid) ||
-              String(s.orthanc_series_id) === String(sUid)
-            );
-            if (match) setSelectedSeriesId(match.series_id);
+          if ((sUid || sDesc) && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
+            const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices);
+            if (matchedSeries && matchedSeries.series_id) {
+              setSelectedSeriesId(String(matchedSeries.series_id));
+            }
           }
 
           if (fNum) {
