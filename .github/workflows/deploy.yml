@@ -21,4 +21,9 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Render chart
-        run: helm template ipacx-ris ./helm/ipacx-ris --namespace "${{ inputs.namespace }}"
+        run: |
+          if [ -d "./helm/ipacx-ris" ]; then
+            helm template ipacx-ris ./helm/ipacx-ris --namespace "${{ inputs.namespace }}"
+          else
+            echo "No helm chart directory found at ./helm/ipacx-ris, skipping rendering."
+          fi
