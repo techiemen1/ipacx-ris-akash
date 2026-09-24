@@ -148,9 +148,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     // A. Check for explicit active/selected CSS classes or data attributes in OHIF DOM
     const activeCandidates = Array.from(iframeDoc.querySelectorAll(
-      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, .active'
+      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"], .active'
     )).filter(el => {
-      // Must contain a canvas or image viewport
       return el.querySelector('canvas') || el.classList.contains('viewport-element') || el.classList.contains('viewport-wrapper');
     });
 
@@ -160,7 +159,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       // B. Check iframeDoc._lastActiveCanvas or any clicked canvas container
       const lastActive = iframeDoc._lastActiveCanvas;
       if (lastActive) {
-        activeContainer = lastActive.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || lastActive.parentElement;
+        activeContainer = lastActive.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || lastActive.parentElement;
       }
     }
 
@@ -170,14 +169,18 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         .map(c => ({
           c,
           area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0),
-          container: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || c.parentElement
+          container: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || c.parentElement
         }))
         .filter(({ area }) => area > 5000)
         .sort((a, b) => b.area - a.area);
 
       if (canvases.length > 0) {
-        activeContainer = canvases[0].container || canvases[0].c;
+        activeContainer = canvases[0].container || canvases[0].c.parentElement;
       }
+    }
+
+    if (activeContainer && activeContainer.tagName === 'CANVAS') {
+      activeContainer = activeContainer.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || activeContainer.parentElement;
     }
 
     // Collect text nodes specifically from activeContainer vs global document
@@ -286,7 +289,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const activeTextStr = normalize(rawActiveTextStr);
 
     // Check top-left and top-right overlay quadrants specifically for active series description
-    const overlayHeaderEl = activeContainer ? activeContainer.querySelector('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : null;
+    const overlayHeaderEl = activeContainer ? activeContainer.querySelector('.top-left, .top-right, [class*="top-left"], [class*="top-right"], [data-cy*="overlay"], [class*="ViewportOverlay"], [class*="viewport-overlay"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : null;
     const overlayHeaderText = overlayHeaderEl ? normalize(overlayHeaderEl.textContent || overlayHeaderEl.innerText || '') : '';
 
     if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
