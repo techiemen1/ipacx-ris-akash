@@ -30,38 +30,34 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     return `/mobile-viewer?study=${encodeURIComponent(studyUID.trim())}`;
   }
 
-  if (mode === "iframe" || mode === "embedded") {
-    return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
-  }
-
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
-  // Strip index.html from path if present, as Orthanc OHIF plugin returns 404 for /index.html
+  // Clean index.html from path if present
   if (customOhifUrl.endsWith("/index.html")) {
     customOhifUrl = customOhifUrl.slice(0, -11);
   } else if (customOhifUrl.endsWith("index.html")) {
     customOhifUrl = customOhifUrl.slice(0, -10);
   }
 
-  // Remove existing StudyInstanceUIDs query param if user pasted a full link
+  // Remove existing StudyInstanceUIDs query param if user pasted a full link with parameters
   if (customOhifUrl.includes("StudyInstanceUIDs=")) {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
 
-  // If customOhifUrl is empty, root, or contains Orthanc/8042, use same-origin relative proxy path /ohif/viewer
-  if (
-    !customOhifUrl ||
-    customOhifUrl === "/" ||
-    customOhifUrl === "#" ||
-    customOhifUrl.includes(":8042") ||
-    customOhifUrl.includes("/ohif") ||
-    customOhifUrl.toLowerCase().includes("orthanc")
-  ) {
+  // If customOhifUrl is empty, root, or "#", default to relative same-origin /ohif/viewer
+  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
     customOhifUrl = "/ohif/viewer";
+  } else {
+    // If user provided base URL like "http://172.16.1.12:3000" or "http://172.16.7.240:8042",
+    // ensure "/viewer" is present in path so OHIF opens patient images instead of Study List.
+    if (!customOhifUrl.includes("/viewer") && !customOhifUrl.includes("/ohif")) {
+      customOhifUrl = customOhifUrl.replace(/\/+$/, "") + "/viewer";
+    }
   }
 
-  const separator = customOhifUrl.includes("?") ? "&" : "?";
-  return `${customOhifUrl}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  const cleanBase = customOhifUrl.replace(/\/+$/, "");
+  const separator = cleanBase.includes("?") ? "&" : "?";
+  return `${cleanBase}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
 };
 
 export const openStudyViewer = (study, mode = "auto") => {
