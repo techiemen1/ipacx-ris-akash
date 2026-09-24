@@ -305,13 +305,16 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
         // Check text matching against ACTIVE viewport text overlay
         if (activeTextStr) {
-          if (activeTextStr.includes(normDesc)) score += 1000;
-          const tokens = normDesc.split(' ').filter(t => t.length >= 2);
+          if (activeTextStr.includes(normDesc) || normDesc.includes(activeTextStr)) score += 5000;
+          const tokens = normDesc.split(' ').filter(t => t.length >= 3 && !/^(mr|ct|us|cr|dx|pr|se|im|s|\d+)$/.test(t));
+          let tokenMatches = 0;
           for (const tok of tokens) {
-            if (activeTextStr.includes(tok)) score += tok.length >= 4 ? 200 : 50;
+            if (activeTextStr.includes(tok)) tokenMatches++;
           }
+          if (tokenMatches > 0) score += tokenMatches * 500;
+
           if (s.series_number && (rawActiveTextStr.includes(`s: ${s.series_number}`) || rawActiveTextStr.includes(`s:${s.series_number}`) || rawActiveTextStr.includes(`series ${s.series_number}`))) {
-            score += 800;
+            score += 1500;
           }
         }
 
@@ -319,10 +322,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
         const isScoutSeries = /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
         if (score === 0 && globalTexts.length > 0 && !isScoutSeries) {
           const globalTextStr = normalize(globalTexts.join(' '));
-          if (globalTextStr.includes(normDesc)) score += 50;
+          if (globalTextStr.includes(normDesc)) score += 100;
           const tokens = normDesc.split(' ').filter(t => t.length >= 3);
           for (const tok of tokens) {
-            if (globalTextStr.includes(tok)) score += 10;
+            if (globalTextStr.includes(tok)) score += 20;
           }
         }
 
@@ -388,7 +391,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       }
     } catch (e) { /* ignore CS3D */ }
 
-    // Fallback: match series by total slice count ONLY if exactly 1 series matches that slice count
+    // Fallback: match series by total slice count
     if (!matchedSeriesObj && sliceResult?.totalSlices && Array.isArray(studySeriesList)) {
       const countCandidates = studySeriesList.filter(s =>
         parseInt(s.total_slices, 10) === sliceResult.totalSlices ||
@@ -396,6 +399,11 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       );
       if (countCandidates.length === 1) {
         matchedSeriesObj = countCandidates[0];
+      } else if (countCandidates.length > 1) {
+        const nonScoutCandidates = countCandidates.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ''));
+        if (nonScoutCandidates.length > 0) {
+          matchedSeriesObj = nonScoutCandidates[0];
+        }
       }
     }
 

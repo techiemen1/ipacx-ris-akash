@@ -972,7 +972,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
     let displaySliceNum = detectedSlice || 1;
 
-    const activeSeriesTarget = 
+    const liveSeriesTarget = 
       snapResult?.matchedSeriesId || 
       snapResult?.seriesInstanceUid ||
       snapResult?.seriesDescription ||
@@ -980,14 +980,15 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       directDomSliceInfo?.seriesDescription ||
       activeViewportInfo?.seriesInstanceUid || 
       activeViewportInfo?.seriesDescription ||
-      overrideSeriesId ||
-      selectedSeriesId;
+      overrideSeriesId;
 
-    const seriesObj = findSeriesInList(studySeriesList, activeSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);
+    const activeSeriesTarget = liveSeriesTarget || selectedSeriesId;
+
+    const seriesObj = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices) || findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices);
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
     }
-    console.log('[RRS] activeSeriesTarget:', activeSeriesTarget, 'seriesObj:', seriesObj?.series_description);
+    console.log('[RRS] liveSeriesTarget:', liveSeriesTarget, 'seriesObj:', seriesObj?.series_description);
     console.log('[RRS] detectedSlice will be from:', {
       dom: directDomSliceInfo?.sliceNumber,
       snap: snapResult?.sliceNumber,
