@@ -354,10 +354,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const activeSeriesTarget = 
       snapResult?.matchedSeriesId || 
       snapResult?.seriesInstanceUid ||
-      directDomSliceInfo?.matchedSeriesId ||
-      activeViewportInfo?.seriesInstanceUid || 
-      directDomSliceInfo?.seriesDescription ||
       snapResult?.seriesDescription ||
+      directDomSliceInfo?.matchedSeriesId ||
+      directDomSliceInfo?.seriesDescription ||
+      activeViewportInfo?.seriesInstanceUid || 
       activeViewportInfo?.seriesDescription ||
       overrideSeriesId ||
       selectedSeriesId;

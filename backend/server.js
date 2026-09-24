@@ -265,9 +265,9 @@ try {
   }
 
   function getActiveCornerstoneInfo(container) {
-    var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null;
+    var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null, csSeriesDesc = null, csSeriesNum = null;
     try {
-      var cs = window.cornerstone;
+      var cs = window.cornerstone || window.cornerstoneCore;
       if (cs && typeof cs.getRenderingEngines === 'function') {
         var engines = cs.getRenderingEngines();
         for (var i = 0; i < engines.length; i++) {
@@ -292,16 +292,36 @@ try {
                 csSlice = idx + 1;
                 csTotal = ids.length;
                 var imgId = ids[idx] || '';
-                csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
-                if (csSeriesUid) break;
+
+                if (cs.metaData && typeof cs.metaData.get === 'function') {
+                  try {
+                    var seriesMod = cs.metaData.get('generalSeriesModule', imgId) || cs.metaData.get('seriesModule', imgId);
+                    if (seriesMod) {
+                      csSeriesUid = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid || csSeriesUid;
+                      csSeriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc || csSeriesDesc;
+                      csSeriesNum = seriesMod.seriesNumber || csSeriesNum;
+                    }
+                    var sopMod = cs.metaData.get('sopCommonModule', imgId) || cs.metaData.get('generalImageModule', imgId);
+                    if (sopMod) {
+                      csSopUid = sopMod.sopInstanceUID || sopMod.sopInstanceUid || csSopUid;
+                    }
+                  } catch(e) {}
+                }
+
+                if (!csSeriesUid) {
+                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                }
+                if (!csSopUid) {
+                  csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                }
+                if (csSeriesUid || csSeriesDesc) break;
               }
             }
           }
         }
       }
     } catch(e) {}
-    return { csSlice: csSlice, csTotal: csTotal, csSeriesUid: csSeriesUid, csSopUid: csSopUid };
+    return { csSlice: csSlice, csTotal: csTotal, csSeriesUid: csSeriesUid, csSopUid: csSopUid, csSeriesDesc: csSeriesDesc, csSeriesNum: csSeriesNum };
   }
 
   function sendViewportChange() {
@@ -314,7 +334,8 @@ try {
       var finalSlice = csInfo.csSlice || overlayInfo.sliceNumber || 1;
       var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -324,7 +345,7 @@ try {
           totalSlices: finalTotal,
           seriesInstanceUid: finalSeriesUid,
           seriesDescription: finalSeriesDesc,
-          seriesNumber: ohifInfo ? ohifInfo.seriesNumber : null
+          seriesNumber: finalSeriesNum
         }
       }, '*');
     } catch(err) {}
@@ -346,7 +367,8 @@ try {
       var finalTotal = csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || overlayInfo.totalSlices || null;
       var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
       var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || overlayInfo.seriesDescription || '';
+      var finalSeriesDesc = (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || overlayInfo.seriesDescription || '';
+      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',
@@ -358,7 +380,7 @@ try {
           seriesInstanceUid: finalSeriesUid,
           sopInstanceUid: finalSopUid,
           seriesDescription: finalSeriesDesc,
-          seriesNumber: ohifInfo ? ohifInfo.seriesNumber : null
+          seriesNumber: finalSeriesNum
         }
       }, '*');
     } catch(err) {

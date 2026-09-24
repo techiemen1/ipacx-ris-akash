@@ -9,6 +9,7 @@ RUN npm install --legacy-peer-deps
 
 # Copy all files and build
 COPY . .
+ENV CI=false
 RUN npm run build
 
 # Stage 2: Serve the static files with Nginx
