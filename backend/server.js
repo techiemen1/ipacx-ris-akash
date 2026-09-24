@@ -111,11 +111,20 @@ try {
 (function() {
   var lastActiveViewportEl = null;
 
+  function isSidebarOrThumbnail(el) {
+    if (!el) return false;
+    try {
+      return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
+    } catch(e) {
+      return false;
+    }
+  }
+
   function trackActiveViewport(e) {
     var target = e.target;
     if (!target) return;
-    var vp = target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item');
-    if (vp) {
+    var vp = target.closest && target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item, [data-cy="viewport-container"]');
+    if (vp && !isSidebarOrThumbnail(vp)) {
       lastActiveViewportEl = vp;
     }
   }
@@ -125,11 +134,16 @@ try {
   document.addEventListener('click', trackActiveViewport, true);
 
   function getActiveViewportContainer() {
-    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl)) {
+    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl) && !isSidebarOrThumbnail(lastActiveViewportEl)) {
       return lastActiveViewportEl;
     }
-    var activeEl = document.querySelector('.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]');
-    if (activeEl) return activeEl;
+    var activeCandidates = Array.from(document.querySelectorAll(
+      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
+    )).filter(function(el) {
+      return !isSidebarOrThumbnail(el);
+    });
+
+    if (activeCandidates.length > 0) return activeCandidates[0];
 
     try {
       var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
@@ -141,7 +155,7 @@ try {
           var engines = cs.getRenderingEngines();
           for (var i = 0; i < engines.length; i++) {
             var vp = typeof engines[i].getViewport === 'function' ? engines[i].getViewport(activeVpId) : null;
-            if (vp && vp.element) {
+            if (vp && vp.element && !isSidebarOrThumbnail(vp.element)) {
               return vp.element;
             }
           }
@@ -149,11 +163,15 @@ try {
       }
     } catch (e) {}
 
-    var canvases = Array.from(document.querySelectorAll('canvas')).map(function(c) {
-      return { c: c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0), parent: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container') || c.parentElement };
-    }).filter(function(item) { return item.area > 5000; }).sort(function(a, b) { return b.area - a.area; });
+    var canvases = Array.from(document.querySelectorAll('canvas'))
+      .filter(function(c) { return !isSidebarOrThumbnail(c); })
+      .map(function(c) {
+        return { c: c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0), parent: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]') || c.parentElement };
+      })
+      .filter(function(item) { return item.area > 5000 && !isSidebarOrThumbnail(item.parent); })
+      .sort(function(a, b) { return b.area - a.area; });
 
-    if (canvases.length > 0) return canvases[0].parent || canvases[0].c;
+    if (canvases.length > 0) return canvases[0].parent || canvases[0].c.parentElement;
     return document.body;
   }
 
@@ -165,8 +183,7 @@ try {
     var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
       acceptNode: function(node) {
         if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-        var p = node.parentElement.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="StudyBrowser"], [data-cy="study-browser"]');
-        if (p) return NodeFilter.FILTER_REJECT;
+        if (isSidebarOrThumbnail(node.parentElement)) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     }, false);
@@ -310,7 +327,7 @@ try {
           for (var j = 0; j < vps.length; j++) {
             var vp = vps[j];
             var el = vp.element;
-            if (!el) continue;
+            if (!el || isSidebarOrThumbnail(el)) continue;
             var isMatch = (
               el === container ||
               el.contains(container) ||

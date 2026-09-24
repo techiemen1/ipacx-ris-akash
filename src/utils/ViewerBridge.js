@@ -143,14 +143,23 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
 
     const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
 
+    const isSidebarOrThumbnail = (el) => {
+      if (!el) return false;
+      try {
+        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
+      } catch(e) {
+        return false;
+      }
+    };
+
     // 1. Identify active viewport container element
     let activeContainer = null;
 
     // A. Check for explicit active/selected CSS classes or data attributes in OHIF DOM
     const activeCandidates = Array.from(iframeDoc.querySelectorAll(
-      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"], .active'
+      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
     )).filter(el => {
-      return el.querySelector('canvas') || el.classList.contains('viewport-element') || el.classList.contains('viewport-wrapper');
+      return !isSidebarOrThumbnail(el) && (el.querySelector('canvas') || el.classList.contains('viewport-element') || el.classList.contains('viewport-wrapper'));
     });
 
     if (activeCandidates.length > 0) {
@@ -158,20 +167,21 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     } else {
       // B. Check iframeDoc._lastActiveCanvas or any clicked canvas container
       const lastActive = iframeDoc._lastActiveCanvas;
-      if (lastActive) {
+      if (lastActive && !isSidebarOrThumbnail(lastActive)) {
         activeContainer = lastActive.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || lastActive.parentElement;
       }
     }
 
     // C. Fallback to largest canvas container if no active container explicitly marked
-    if (!activeContainer) {
+    if (!activeContainer || isSidebarOrThumbnail(activeContainer)) {
       const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
+        .filter(c => !isSidebarOrThumbnail(c))
         .map(c => ({
           c,
           area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0),
           container: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || c.parentElement
         }))
-        .filter(({ area }) => area > 5000)
+        .filter(({ area, container }) => area > 5000 && !isSidebarOrThumbnail(container))
         .sort((a, b) => b.area - a.area);
 
       if (canvases.length > 0) {
@@ -190,7 +200,15 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
     const collectFromNode = (root, targetArray) => {
       if (!root) return;
       // 1. TreeWalker text nodes
-      const tw = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+      const tw = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => {
+          if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
+          if (root !== activeContainer && isSidebarOrThumbnail(node.parentElement)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }, false);
       let tn;
       while ((tn = tw.nextNode())) {
         const v = tn.nodeValue && tn.nodeValue.trim();
@@ -202,7 +220,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = []) 
       const elems = Array.from(root.querySelectorAll('*'));
       for (const el of elems) {
         // Exclude left sidebar / thumbnail panel text when collecting global text
-        if (root !== activeContainer && el.closest('.study-browser, .series-quick-switch, .thumbnail-list, .sidebar, .study-browser-container')) {
+        if (root !== activeContainer && isSidebarOrThumbnail(el)) {
           continue;
         }
         const txt = (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
