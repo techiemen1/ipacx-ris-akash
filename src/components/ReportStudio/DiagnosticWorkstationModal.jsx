@@ -394,11 +394,8 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const resolvedTotalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), resolvedTotalSlices);
 
-    const isScoutDesc = (s) => /topogram|localizer|scout|survey|plan/i.test(s || '');
-    const rawSnapDesc = snapResult?.seriesDescription;
-    const seriesDesc = (rawSnapDesc && !isScoutDesc(rawSnapDesc)) 
-      ? rawSnapDesc 
-      : (seriesObj?.series_description || rawSnapDesc || "Diagnostic Series");
+    const rawSnapDesc = snapResult?.seriesDescription || directDomSliceInfo?.seriesDescription || activeViewportInfo?.seriesDescription;
+    const seriesDesc = rawSnapDesc || seriesObj?.series_description || "Diagnostic Series";
     const fullCaption = resolvedTotalSlices > 1 
       ? `${seriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
       : `${seriesDesc} | ${displaySliceNum}`;
