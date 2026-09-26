@@ -520,6 +520,34 @@ try {
     return responseBuffer;
   });
 
+  const dcm4cheeHelper = require("./utils/dcm4cheeHelper");
+  const getDynamicDcm4cheeTarget = async () => {
+    try {
+      const node = await dcm4cheeHelper.getWorkingDcm4cheeNode();
+      if (node) return `http://${node.ip_address}:${node.port}`;
+    } catch (e) {}
+    return "http://dcm4chee-arc:8080";
+  };
+
+  app.use(
+    "/dcm4chee-arc",
+    createProxyMiddleware({
+      target: "http://dcm4chee-arc:8080",
+      router: getDynamicDcm4cheeTarget,
+      changeOrigin: true,
+      on: {
+        proxyReq: (proxyReq) => {
+          const dUser = process.env.DCM4CHEE_USER || "pacs";
+          const dPass = process.env.DCM4CHEE_PASS || "pacs";
+          if (dUser || dPass) {
+            const auth = "Basic " + Buffer.from(`${dUser}:${dPass}`).toString("base64");
+            proxyReq.setHeader("Authorization", auth);
+          }
+        }
+      }
+    })
+  );
+
   app.use(
     "/ohif-proxy",
     createProxyMiddleware({

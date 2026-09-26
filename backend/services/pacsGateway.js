@@ -95,78 +95,70 @@ class PacsGateway {
       // 1.5 Query DCM4CHEE / Multi-PACS active nodes if Orthanc didn't return data
       if (!orthancData) {
         try {
-          const PacsRepository = require("../repositories/PacsRepository");
-          const pacsRepo = new PacsRepository(pool);
-          const activePacs = await pacsRepo.findActive().catch(() => []);
-          const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
+          const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
+          const dcm4cheeNodes = await dcm4cheeHelper.getDcm4cheeNodes();
 
           for (const pacs of dcm4cheeNodes) {
-            const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
-            const uniquePorts = [...new Set(ports)];
+            const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
+            try {
+              const res = await axios.get(metadataUrl, {
+                auth: (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined,
+                headers: { Accept: "application/dicom+json" },
+                timeout: 5000
+              });
+              if (Array.isArray(res.data) && res.data.length > 0) {
+                const first = res.data[0];
+                const pName = first["00100010"]?.Value?.[0];
+                const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
 
-            for (const port of uniquePorts) {
-              const metadataUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
-              try {
-                const res = await axios.get(metadataUrl, {
-                  ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-                  headers: { Accept: "application/dicom+json" },
-                  timeout: 5000
-                });
-                if (Array.isArray(res.data) && res.data.length > 0) {
-                  const first = res.data[0];
-                  const pName = first["00100010"]?.Value?.[0];
-                  const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
+                orthancData = {
+                  PatientMainDicomTags: {
+                    PatientName: nameStr,
+                    PatientID: first["00100020"]?.Value?.[0] || "",
+                    PatientSex: first["00100040"]?.Value?.[0] || "O",
+                    PatientAge: first["00101010"]?.Value?.[0] || "",
+                    PatientBirthDate: first["00100030"]?.Value?.[0] || ""
+                  },
+                  MainDicomTags: {
+                    AccessionNumber: first["00080050"]?.Value?.[0] || "",
+                    StudyInstanceUID: first["0020000D"]?.Value?.[0] || studyUID,
+                    StudyDate: first["00080020"]?.Value?.[0] || "",
+                    StudyTime: first["00080030"]?.Value?.[0] || "",
+                    StudyDescription: first["00081030"]?.Value?.[0] || "",
+                    ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
+                    Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
+                    BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                    InstitutionName: first["00080080"]?.Value?.[0] || ""
+                  }
+                };
 
-                  orthancData = {
-                    PatientMainDicomTags: {
-                      PatientName: nameStr,
-                      PatientID: first["00100020"]?.Value?.[0] || "",
-                      PatientSex: first["00100040"]?.Value?.[0] || "O",
-                      PatientAge: first["00101010"]?.Value?.[0] || "",
-                      PatientBirthDate: first["00100030"]?.Value?.[0] || ""
-                    },
-                    MainDicomTags: {
-                      AccessionNumber: first["00080050"]?.Value?.[0] || "",
-                      StudyInstanceUID: first["0020000D"]?.Value?.[0] || studyUID,
-                      StudyDate: first["00080020"]?.Value?.[0] || "",
-                      StudyTime: first["00080030"]?.Value?.[0] || "",
-                      StudyDescription: first["00081030"]?.Value?.[0] || "",
-                      ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
-                      Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
-                      BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                      InstitutionName: first["00080080"]?.Value?.[0] || ""
-                    }
-                  };
+                seriesData = {
+                  MainDicomTags: {
+                    Modality: first["00080060"]?.Value?.[0] || "CR",
+                    BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                    Manufacturer: first["00080070"]?.Value?.[0] || "",
+                    ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
+                    SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
+                    SeriesNumber: first["00200011"]?.Value?.[0] || "1",
+                    SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
+                    InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
+                    StationName: first["00081010"]?.Value?.[0] || ""
+                  }
+                };
 
-                  seriesData = {
-                    MainDicomTags: {
-                      Modality: first["00080060"]?.Value?.[0] || "CR",
-                      BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                      Manufacturer: first["00080070"]?.Value?.[0] || "",
-                      ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
-                      SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
-                      SeriesNumber: first["00200011"]?.Value?.[0] || "1",
-                      SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
-                      InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
-                      StationName: first["00081010"]?.Value?.[0] || ""
-                    }
-                  };
-
-                  instanceData = {
-                    "0018,0050": first["00180050"]?.Value?.[0],
-                    "0018,0060": first["00180060"]?.Value?.[0],
-                    "0018,1152": first["00181152"]?.Value?.[0],
-                    "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
-                    "0028,1050": first["00281050"]?.Value?.[0],
-                    "0028,1051": first["00281051"]?.Value?.[0],
-                    "0028,0010": first["00280010"]?.Value?.[0],
-                    "0028,0011": first["00280011"]?.Value?.[0]
-                  };
-                  break;
-                }
-              } catch (e) {}
-            }
-            if (orthancData) break;
+                instanceData = {
+                  "0018,0050": first["00180050"]?.Value?.[0],
+                  "0018,0060": first["00180060"]?.Value?.[0],
+                  "0018,1152": first["00181152"]?.Value?.[0],
+                  "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
+                  "0028,1050": first["00281050"]?.Value?.[0],
+                  "0028,1051": first["00281051"]?.Value?.[0],
+                  "0028,0010": first["00280010"]?.Value?.[0],
+                  "0028,0011": first["00280011"]?.Value?.[0]
+                };
+                break;
+              }
+            } catch (e) {}
           }
         } catch (e) {
           console.warn("[PacsGateway] DCM4CHEE fallback failed:", e.message);

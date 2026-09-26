@@ -17,6 +17,7 @@ const cacheService = require("../services/cacheService");
 const pacsService = new PacsService(pool);
 
 const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId, clearOrthancAuthCache } = require("../utils/orthancHelper");
+const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
 
 async function findOrthancStudy(studyUID) {
   const orthancUrl = await getOrthancUrl();
@@ -395,7 +396,8 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
       });
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=86400");
-      return previewStream.data.pipe(res);
+      previewStream.data.pipe(res);
+      return true;
     } catch (err) {
       try {
         const previewPath = (frame !== null && frame !== "") 
@@ -408,86 +410,33 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
         });
         res.setHeader("Content-Type", "image/jpeg");
         res.setHeader("Cache-Control", "public, max-age=86400");
-        return fbStream.data.pipe(res);
+        fbStream.data.pipe(res);
+        return true;
       } catch (fbErr) {
-        return null;
+        return false;
       }
     }
   };
 
   const tryDcm4chee = async () => {
     try {
-      const PacsRepository = require("../repositories/PacsRepository");
-      const pacsRepo = new PacsRepository(pool);
-      const activePacs = await pacsRepo.findActive().catch(() => []);
-      const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
-
-      // Auto-lookup studyUID if missing
-      if (!studyUID) {
-        const dbMatch = await pool.query(
-          "SELECT study_uid FROM studies WHERE study_uid IS NOT NULL ORDER BY id DESC LIMIT 1"
-        ).catch(() => ({ rows: [] }));
-        if (dbMatch.rows?.length > 0) studyUID = dbMatch.rows[0].study_uid;
-      }
-
-      for (const pacs of dcm4cheeNodes) {
-        const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
-        const uniquePorts = [...new Set(ports)];
-
-        for (const port of uniquePorts) {
-          let targetStudyUID = studyUID;
-          let targetSeriesUID = seriesUID;
-
-          if (!targetStudyUID || !targetSeriesUID) {
-            try {
-              const searchUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/instances?SOPInstanceUID=${instanceId}`;
-              const sRes = await axios.get(searchUrl, {
-                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-                headers: { Accept: "application/dicom+json" },
-                timeout: 2500
-              });
-              if (Array.isArray(sRes.data) && sRes.data.length > 0) {
-                targetStudyUID = sRes.data[0]["0020000D"]?.Value?.[0];
-                targetSeriesUID = sRes.data[0]["0020000E"]?.Value?.[0];
-              }
-            } catch (e) {}
-          }
-
-          if (targetStudyUID && targetSeriesUID) {
-            const wadoUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/wado?requestType=WADO&studyUID=${targetStudyUID}&seriesUID=${targetSeriesUID}&objectUID=${instanceId}&contentType=image/jpeg`;
-            try {
-              const wRes = await axios.get(wadoUrl, {
-                responseType: "stream",
-                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-                timeout: 4000
-              });
-              res.setHeader("Content-Type", "image/jpeg");
-              res.setHeader("Cache-Control", "public, max-age=86400");
-              wRes.data.pipe(res);
-              return true;
-            } catch (e) {}
-          }
-
-          if (targetStudyUID && targetSeriesUID) {
-            const frameSegment = (frame !== null && frame !== "") ? `/frames/${parseInt(frame, 10) + 1}/rendered` : "/rendered";
-            const renderedUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${targetStudyUID}/series/${targetSeriesUID}/instances/${instanceId}${frameSegment}`;
-            try {
-              const rRes = await axios.get(renderedUrl, {
-                responseType: "stream",
-                headers: { Accept: "image/jpeg" },
-                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-                timeout: 4000
-              });
-              res.setHeader("Content-Type", "image/jpeg");
-              res.setHeader("Cache-Control", "public, max-age=86400");
-              rRes.data.pipe(res);
-              return true;
-            } catch (e) {}
-          }
+      if (!studyUID || !seriesUID) {
+        const lookup = await dcm4cheeHelper.lookupDcm4cheeSopInstance(instanceId);
+        if (lookup) {
+          if (!studyUID) studyUID = lookup.studyUID;
+          if (!seriesUID) seriesUID = lookup.seriesUID;
         }
       }
+
+      const buffer = await dcm4cheeHelper.fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, instanceId, frame);
+      if (buffer && buffer.length > 500) {
+        res.setHeader("Content-Type", "image/jpeg");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        res.send(buffer);
+        return true;
+      }
     } catch (e) {
-      console.error(`[PACS Proxy] Multi-PACS instance preview failed for ${instanceId}:`, e.message);
+      console.error(`[PACS Proxy] DCM4CHEE preview error for ${instanceId}:`, e.message);
     }
     return false;
   };
@@ -535,90 +484,14 @@ async function fetchStudySeriesAndInstancesAcrossPacs(studyUID) {
     }
   }
 
-  // Fallback: Query DCM4CHEE / active PACS nodes via QIDO-RS
+  // Fallback: Query DCM4CHEE / active PACS nodes via QIDO-RS using dcm4cheeHelper
   try {
-    const PacsRepository = require("../repositories/PacsRepository");
-    const pacsRepo = new PacsRepository(pool);
-    const activePacs = await pacsRepo.findActive().catch(() => []);
-    const dcm4cheeNodes = activePacs.filter(p => String(p.pacs_type).toUpperCase() === "DCM4CHEE");
-
-    for (const pacs of dcm4cheeNodes) {
-      const ports = [parseInt(pacs.port, 10), 8080, 8085].filter(Boolean);
-      const uniquePorts = [...new Set(ports)];
-
-      for (const port of uniquePorts) {
-        const seriesUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series`;
-        try {
-          const sRes = await axios.get(seriesUrl, {
-            ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-            headers: { Accept: "application/dicom+json" },
-            timeout: 5000
-          });
-
-          if (Array.isArray(sRes.data) && sRes.data.length > 0) {
-            const seriesList = [];
-            for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
-              const serObj = sRes.data[sIdx];
-              const seriesUid = serObj["0020000E"]?.Value?.[0];
-              const seriesDesc = serObj["0008103E"]?.Value?.[0] || serObj["00081030"]?.Value?.[0] || `Series ${sIdx + 1}`;
-              const seriesNum = parseInt(serObj["00200011"]?.Value?.[0] || (sIdx + 1), 10);
-              const sModality = serObj["00080060"]?.Value?.[0] || "";
-
-              if (!seriesUid) continue;
-
-              const instUrl = `http://${pacs.ip_address}:${port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/series/${seriesUid}/instances`;
-              const iRes = await axios.get(instUrl, {
-                ...orthancAuthConfig(pacs.username || process.env.DCM4CHEE_USER, pacs.password || process.env.DCM4CHEE_PASS),
-                headers: { Accept: "application/dicom+json" },
-                timeout: 5000
-              }).catch(() => ({ data: [] }));
-
-              let instances = [];
-              if (Array.isArray(iRes.data) && iRes.data.length > 0) {
-                iRes.data.sort((a, b) => {
-                  const numA = parseInt(a["00200013"]?.Value?.[0] || 0, 10);
-                  const numB = parseInt(b["00200013"]?.Value?.[0] || 0, 10);
-                  return numA - numB;
-                });
-                instances = iRes.data.map((inst, iIdx) => {
-                  const sopUid = inst["00080018"]?.Value?.[0];
-                  const sliceNum = parseInt(inst["00200013"]?.Value?.[0] || (iIdx + 1), 10);
-                  const pUrl = `/api/pacs/instance-preview/${sopUid}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUid)}&pacsId=${pacs.id}`;
-                  return {
-                    id: sopUid,
-                    instance_id: sopUid,
-                    slice_number: sliceNum,
-                    instanceNumber: sliceNum,
-                    slice_index: iIdx + 1,
-                    previewUrl: pUrl,
-                    preview_url: pUrl,
-                    caption: `${seriesDesc} | Slice ${iIdx + 1}/${iRes.data.length}`
-                  };
-                });
-              }
-
-              seriesList.push({
-                seriesId: seriesUid,
-                series_id: seriesUid,
-                series_instance_uid: seriesUid,
-                seriesDescription: seriesDesc,
-                series_description: seriesDesc,
-                seriesNumber: seriesNum,
-                series_number: seriesNum,
-                modality: sModality,
-                totalSlices: instances.length,
-                total_slices: instances.length,
-                instances
-              });
-            }
-
-            if (seriesList.length > 0) return seriesList;
-          }
-        } catch (e) {}
-      }
+    const dcmSeries = await dcm4cheeHelper.searchDcm4cheeSeriesAndInstances(studyUID);
+    if (Array.isArray(dcmSeries) && dcmSeries.length > 0) {
+      return dcmSeries;
     }
   } catch (e) {
-    console.warn("[PACS] Multi-PACS series search failed:", e.message);
+    console.warn("[PACS] DCM4CHEE series search notice:", e.message);
   }
 
   return [];
@@ -970,7 +843,14 @@ async function processKeyImageSave(payload, reqUser = {}) {
         if (pRes && pRes.data && pRes.data.byteLength > 1000) renderedBuffer = pRes.data;
       }
 
-      // Multi-PACS Fallback (DCM4CHEE, DICOMWeb, Generic PACS Nodes from Admin Settings)
+      // DCM4CHEE & Multi-PACS Rendered Slice Direct Extraction
+      if (!renderedBuffer) {
+        try {
+          renderedBuffer = await dcm4cheeHelper.fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
+        } catch (e) {}
+      }
+
+      // Self-Proxy Fallback
       if (!renderedBuffer) {
         try {
           const port = process.env.PORT || 5000;
