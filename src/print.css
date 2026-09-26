@@ -1,59 +1,122 @@
 @media print {
-  /* Hide non-print elements and UI chrome */
+  /* 1. Global Print Reset & White Background */
   html, body {
     background: #ffffff !important;
     color: #000000 !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
     height: auto !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Hide unwanted UI elements */
+  /* 2. Page Setup for A4 */
+  @page {
+    size: A4 portrait;
+    margin: 12mm 12mm 12mm 12mm;
+  }
+
+  /* 3. Hide all UI Chrome, Navbars, Workstation Containers, Editor Forms & Buttons */
   .no-print,
   .rs-header,
   .rs-viewmode-bar,
   .rs-header-actions,
   .rs-wysiwyg-toolbar,
   .rs-back-btn,
+  .rs-main-grid,
+  .rs-editor-canvas,
+  .rs-section-card,
+  .rs-split-layout,
+  .rs-viewer-pane,
+  .rs-studio-pane,
+  .rs-rich-editor,
+  .dws-header,
+  .dws-main,
+  .dws-left-viewer,
+  .dws-right-studio,
+  .create-report-layout,
+  .create-report-arrows,
+  #createViewerPanel,
   header,
   nav,
   aside,
-  button {
+  button,
+  iframe,
+  input,
+  select,
+  textarea {
     display: none !important;
   }
 
-  /* Page setup */
-  @page {
-    size: A4 portrait;
-    margin: 15mm 15mm 15mm 15mm;
+  /* 4. Target exact printable document and hide its siblings in the DOM tree */
+  body > *:not(#root):not(.rs-printable-document):not(#rs-printable-document) {
+    display: none !important;
   }
 
-  /* Target exact printable paper document */
-  #rs-printable-document,
-  .rs-printable-document,
-  #print-area {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+  /* 5. Unconstrain Modal Backdrop & Modal Card Containers */
+  div[style*="position: fixed"],
+  div[style*="position: absolute"],
+  div[style*="backdropFilter"],
+  div[style*="maxHeight"],
+  div[style*="zIndex: 1000"],
+  div[style*="zIndex: 10000"] {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    max-height: none !important;
+    height: auto !important;
     width: 100% !important;
     max-width: 100% !important;
+    overflow: visible !important;
+    padding: 0 !important;
     margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+  }
+
+  /* 6. Formatting for #rs-printable-document & #print-area */
+  #rs-printable-document,
+  .rs-printable-document,
+  #print-area,
+  .a4-page {
+    display: block !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
     overflow: visible !important;
     background: #ffffff !important;
+    color: #000000 !important;
+    visibility: visible !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
   }
 
-  /* Key Images scale & avoid cutting */
-  img {
-    max-width: 100% !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  #rs-printable-document *,
+  .rs-printable-document *,
+  #print-area * {
+    visibility: visible !important;
   }
 
-  /* Section breaks & signature protection */
+  /* 7. Header & Section Page Break Protections */
+  #rs-printable-document table,
+  .rs-printable-document table,
+  #print-area table,
+  .rs-print-header,
   .rs-print-key-images,
   .rs-print-signature-block,
   .page-break-inside-avoid {
@@ -63,6 +126,13 @@
 
   .page-break {
     page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  /* 8. Image Optimization for Print */
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
-

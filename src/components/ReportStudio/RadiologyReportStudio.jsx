@@ -1245,7 +1245,14 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   };
 
   const handlePrint = () => {
-    window.print();
+    if (!showPrintModal) {
+      setShowPrintModal(true);
+      setTimeout(() => {
+        window.print();
+      }, 250);
+    } else {
+      window.print();
+    }
   };
 
   if (loading) {
