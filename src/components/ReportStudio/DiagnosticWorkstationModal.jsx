@@ -522,7 +522,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const normMod = (mod || initialModality || "CR").toUpperCase().trim();
     const bPartNorm = (bodyPart || "").toUpperCase().trim();
     const sDescNorm = (studyDesc || "").toUpperCase().trim();
-    const fullText = `${normMod} ${bPartNorm} ${sDescNorm}`;
 
     let modKey = "XRAY";
 
@@ -532,12 +531,22 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       modKey = "USG";
     } else if (normMod === "CR" || normMod === "DX" || normMod === "XR" || normMod.includes("XRAY") || normMod.includes("X-RAY")) {
       modKey = "XRAY";
-    } else if (normMod === "CT" || normMod.includes("COMPUTED")) {
+    } else if (normMod === "CT" || normMod.includes("CAT") || normMod.includes("TOMOGRAPHY") || normMod.includes("COMPUTED")) {
       modKey = "CT";
-      if (fullText.includes("X-RAY") || fullText.includes("CHEST PA") || fullText.includes("CR")) modKey = "XRAY";
+    } else if (normMod === "EC" || normMod.includes("ECHO")) {
+      modKey = "ECHO";
+    } else if (normMod === "XA" || normMod.includes("ANGIO") || normMod.includes("DSA")) {
+      modKey = "XA";
+    } else if (normMod === "PT" || normMod === "PET") {
+      modKey = "PT";
+    } else if (normMod === "MG" || normMod.includes("MAMMO")) {
+      modKey = "MG";
+    } else {
+      const fullText = `${bPartNorm} ${sDescNorm}`;
+      if (fullText.includes("CT") || fullText.includes("TOMOGRAPHY")) modKey = "CT";
       else if (fullText.includes("MRI") || fullText.includes("SPINE")) modKey = "MRI";
       else if (fullText.includes("USG") || fullText.includes("ULTRASOUND")) modKey = "USG";
-      else modKey = "CT";
+      else modKey = "XRAY";
     }
 
     setSelectedModality(modKey);

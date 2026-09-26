@@ -158,6 +158,37 @@ class PacsGateway {
                   return (b?.Instances?.length || 0) - (a?.Instances?.length || 0);
                 });
                 seriesData = sorted[0];
+
+                if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
+                  const firstInstId = seriesData.Instances[0];
+                  const instRes = await axios.get(`${orthancUrl}instances/${firstInstId}/simplified-tags`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => null);
+                  if (instRes && instRes.data) {
+                    const st = instRes.data;
+                    instanceData = {
+                      "0018,0050": st.SliceThickness || st.SliceSpacing,
+                      "0018,0060": st.KVP,
+                      "0018,1152": st.Exposure || st.ExposureTime || st.XRayTubeCurrent,
+                      "0028,0030": Array.isArray(st.PixelSpacing) ? st.PixelSpacing.join("\\") : (st.PixelSpacing || st.ImagerPixelSpacing),
+                      "0028,1050": st.WindowCenter,
+                      "0028,1051": st.WindowWidth,
+                      "0028,0010": st.Rows,
+                      "0028,0011": st.Columns
+                    };
+
+                    if (!seriesData.MainDicomTags) seriesData.MainDicomTags = {};
+                    if (!seriesData.MainDicomTags.SeriesDescription || seriesData.MainDicomTags.SeriesDescription.trim() === "" || seriesData.MainDicomTags.SeriesDescription === "Diagnostic Series") {
+                      const altDesc = st.FilmAnnotationCharacterString1 || 
+                                     (Array.isArray(st.PerformedProtocolCodeSequence) && st.PerformedProtocolCodeSequence[0]?.CodeMeaning) || 
+                                     st.SeriesDescription || 
+                                     st.ProtocolName || 
+                                     st.AcquisitionDeviceProcessingDescription || 
+                                     st.BodyPartExamined;
+                      if (altDesc && String(altDesc).trim()) {
+                        seriesData.MainDicomTags.SeriesDescription = String(altDesc).trim();
+                      }
+                    }
+                  }
+                }
               }
             }
             return; // Successfully loaded from local Orthanc!
@@ -191,6 +222,8 @@ class PacsGateway {
           const authObj = (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined;
           const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${encodeURIComponent(realStudyUID)}/metadata`;
           const qidoStudyUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies?StudyInstanceUID=${encodeURIComponent(realStudyUID)}&includefield=all`;
+          const qidoAccUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies?AccessionNumber=${encodeURIComponent(realStudyUID)}&includefield=all`;
+          const qidoPidUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies?PatientID=${encodeURIComponent(realStudyUID)}&includefield=all`;
 
           let dcmJsonArray = null;
 
@@ -198,7 +231,7 @@ class PacsGateway {
             const res = await axios.get(metadataUrl, {
               auth: authObj,
               headers: { Accept: "application/dicom+json" },
-              timeout: 3000
+              timeout: 2000
             });
             if (Array.isArray(res.data) && res.data.length > 0) {
               dcmJsonArray = res.data;
@@ -210,10 +243,36 @@ class PacsGateway {
               const qRes = await axios.get(qidoStudyUrl, {
                 auth: authObj,
                 headers: { Accept: "application/dicom+json" },
-                timeout: 3000
+                timeout: 2000
               });
               if (Array.isArray(qRes.data) && qRes.data.length > 0) {
                 dcmJsonArray = qRes.data;
+              }
+            } catch (e) {}
+          }
+
+          if (!dcmJsonArray) {
+            try {
+              const qAccRes = await axios.get(qidoAccUrl, {
+                auth: authObj,
+                headers: { Accept: "application/dicom+json" },
+                timeout: 2000
+              });
+              if (Array.isArray(qAccRes.data) && qAccRes.data.length > 0) {
+                dcmJsonArray = qAccRes.data;
+              }
+            } catch (e) {}
+          }
+
+          if (!dcmJsonArray) {
+            try {
+              const qPidRes = await axios.get(qidoPidUrl, {
+                auth: authObj,
+                headers: { Accept: "application/dicom+json" },
+                timeout: 2000
+              });
+              if (Array.isArray(qPidRes.data) && qPidRes.data.length > 0) {
+                dcmJsonArray = qPidRes.data;
               }
             } catch (e) {}
           }

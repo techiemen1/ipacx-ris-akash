@@ -247,7 +247,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const normMod = (mod || "CR").toUpperCase().trim();
     const bPartNorm = (bodyPart || "").toUpperCase().trim();
     const sDescNorm = (studyDesc || "").toUpperCase().trim();
-    const fullText = `${normMod} ${bPartNorm} ${sDescNorm}`;
 
     let modKey = "CR";
 
@@ -257,7 +256,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       modKey = "USG";
     } else if (normMod === "CR" || normMod === "DX" || normMod === "XR" || normMod.includes("XRAY") || normMod.includes("X-RAY")) {
       modKey = "CR";
-    } else if (normMod === "CT" || normMod.includes("CAT") || normMod.includes("TOMOGRAPHY")) {
+    } else if (normMod === "CT" || normMod.includes("CAT") || normMod.includes("TOMOGRAPHY") || normMod.includes("COMPUTED")) {
       modKey = "CT";
     } else if (normMod === "EC" || normMod.includes("ECHO")) {
       modKey = "ECHO";
@@ -268,13 +267,14 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     } else if (normMod === "MG" || normMod.includes("MAMMO")) {
       modKey = "MG";
     } else {
-      if (fullText.includes("X-RAY") || fullText.includes("CHEST PA") || fullText.includes("CR") || fullText.includes("RADIOGRAPH")) modKey = "CR";
+      const fullText = `${bPartNorm} ${sDescNorm}`;
+      if (fullText.includes("CT") || fullText.includes("TOMOGRAPHY")) modKey = "CT";
       else if (fullText.includes("MRI") || fullText.includes("SPINE")) modKey = "MRI";
       else if (fullText.includes("USG") || fullText.includes("ULTRASOUND")) modKey = "USG";
       else if (fullText.includes("ANGIO") || fullText.includes("DSA")) modKey = "XA";
       else if (fullText.includes("PET") || fullText.includes("FDG")) modKey = "PT";
       else if (fullText.includes("MAMMO")) modKey = "MG";
-      else modKey = "CT";
+      else modKey = "CR";
     }
 
     setSelectedModality(modKey);

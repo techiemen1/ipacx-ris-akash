@@ -229,7 +229,26 @@ class HybridPacsGateway {
         .then(async (r) => {
           if (!r.data) return null;
           const sData = r.data;
-          const sDesc = sData.MainDicomTags?.SeriesDescription || `Series ${sIdx + 1}`;
+          let sDesc = sData.MainDicomTags?.SeriesDescription || sData.MainDicomTags?.ProtocolName || sData.MainDicomTags?.AcquisitionDeviceProcessingDescription || sData.MainDicomTags?.BodyPartExamined || "";
+          
+          if ((!sDesc || sDesc.trim() === "" || sDesc === "Diagnostic Series") && Array.isArray(sData.Instances) && sData.Instances.length > 0) {
+            try {
+              const firstInstId = extractCleanInstanceId(sData.Instances[0]);
+              const tagRes = await axios.get(`${orthancUrl}instances/${firstInstId}/simplified-tags`, { ...config, timeout: 1500 }).catch(() => null);
+              if (tagRes && tagRes.data) {
+                const st = tagRes.data;
+                const alt = st.FilmAnnotationCharacterString1 || 
+                            (Array.isArray(st.PerformedProtocolCodeSequence) && st.PerformedProtocolCodeSequence[0]?.CodeMeaning) || 
+                            st.SeriesDescription || 
+                            st.ProtocolName || 
+                            st.AcquisitionDeviceProcessingDescription || 
+                            st.BodyPartExamined;
+                if (alt && String(alt).trim()) sDesc = String(alt).trim();
+              }
+            } catch (e) {}
+          }
+          if (!sDesc || !sDesc.trim()) sDesc = `Series ${sIdx + 1}`;
+
           const sNum = parseInt(sData.MainDicomTags?.SeriesNumber || (sIdx + 1), 10);
           const sModality = sData.MainDicomTags?.Modality || "";
 

@@ -237,7 +237,7 @@ async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, 
           responseType: "arraybuffer",
           headers: cand.headers,
           ...authConfig,
-          timeout: 5000
+          timeout: 1200
         });
 
         if (res && res.data && res.data.byteLength > 500) {
