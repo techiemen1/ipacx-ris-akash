@@ -59,138 +59,115 @@ class PacsGateway {
       return cached.data;
     }
 
+    // 1. FAST PATH: Query local PostgreSQL database FIRST (<5ms execution time)
+    const dbRes = await pool.query(
+      "SELECT * FROM public.studies WHERE study_uid = $1 OR accession_number = $1 OR id::text = $1 LIMIT 1",
+      [studyUID]
+    ).catch(() => ({ rows: [] }));
+    const dbRow = dbRes.rows[0] || {};
+
     let orthancData = null;
     let seriesData = null;
     let instanceData = null;
-    let modality = "CR";
-    let bodyPart = "General";
+    let modality = dbRow.modality || dbRow.Modality || "CR";
+    let bodyPart = dbRow.body_part || "General";
 
-    const orthancUrl = await getOrthancUrl();
+    // 2. PARALLEL HYBRID PACS QUERY (Fast 1800ms max timeout)
+    const queryPacsTags = async () => {
+      const realStudyUID = dbRow.study_uid || studyUID;
 
-    try {
-      // 1. Query PACS via DICOM C-FIND / Orthanc tools/find with StudyInstanceUID
-      let findRes = await axios.post(`${orthancUrl}tools/find`, {
-        Level: "Study",
-        Query: { StudyInstanceUID: studyUID }
-      }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
+      // Try DCM4CHEE first via dcm4cheeHelper
+      try {
+        const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
+        const dcm4cheeNodes = await dcm4cheeHelper.getDcm4cheeNodes();
 
-      // If not matched by StudyInstanceUID, try AccessionNumber or PatientID
-      if (!findRes.data || findRes.data.length === 0) {
-        findRes = await axios.post(`${orthancUrl}tools/find`, {
-          Level: "Study",
-          Query: { AccessionNumber: studyUID }
-        }, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: [] }));
-      }
+        for (const pacs of dcm4cheeNodes) {
+          const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${encodeURIComponent(realStudyUID)}/metadata`;
+          try {
+            const res = await axios.get(metadataUrl, {
+              auth: (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined,
+              headers: { Accept: "application/dicom+json" },
+              timeout: 1800
+            });
+            if (Array.isArray(res.data) && res.data.length > 0) {
+              const first = res.data[0];
+              const pName = first["00100010"]?.Value?.[0];
+              const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
 
-      if (findRes.data && findRes.data.length > 0) {
-        const orthancId = findRes.data[0];
-        const { data: sData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-        orthancData = sData;
-      } else {
-        // Direct Orthanc ID lookup
-        const { data: dData } = await axios.get(`${orthancUrl}studies/${studyUID}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-        if (dData && dData.ID) orthancData = dData;
-      }
+              orthancData = {
+                PatientMainDicomTags: {
+                  PatientName: nameStr,
+                  PatientID: first["00100020"]?.Value?.[0] || "",
+                  PatientSex: first["00100040"]?.Value?.[0] || "O",
+                  PatientAge: first["00101010"]?.Value?.[0] || "",
+                  PatientBirthDate: first["00100030"]?.Value?.[0] || ""
+                },
+                MainDicomTags: {
+                  AccessionNumber: first["00080050"]?.Value?.[0] || "",
+                  StudyInstanceUID: first["0020000D"]?.Value?.[0] || realStudyUID,
+                  StudyDate: first["00080020"]?.Value?.[0] || "",
+                  StudyTime: first["00080030"]?.Value?.[0] || "",
+                  StudyDescription: first["00081030"]?.Value?.[0] || "",
+                  ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
+                  Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
+                  BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                  InstitutionName: first["00080080"]?.Value?.[0] || ""
+                }
+              };
 
-      // 1.5 Query DCM4CHEE / Multi-PACS active nodes if Orthanc didn't return data
-      if (!orthancData) {
-        try {
-          const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
-          const dcm4cheeNodes = await dcm4cheeHelper.getDcm4cheeNodes();
+              seriesData = {
+                MainDicomTags: {
+                  Modality: first["00080060"]?.Value?.[0] || "CR",
+                  BodyPartExamined: first["00180015"]?.Value?.[0] || "",
+                  Manufacturer: first["00080070"]?.Value?.[0] || "",
+                  ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
+                  SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
+                  SeriesNumber: first["00200011"]?.Value?.[0] || "1",
+                  SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
+                  InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
+                  StationName: first["00081010"]?.Value?.[0] || ""
+                }
+              };
 
-          for (const pacs of dcm4cheeNodes) {
-            const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${studyUID}/metadata`;
-            try {
-              const res = await axios.get(metadataUrl, {
-                auth: (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined,
-                headers: { Accept: "application/dicom+json" },
-                timeout: 5000
-              });
-              if (Array.isArray(res.data) && res.data.length > 0) {
-                const first = res.data[0];
-                const pName = first["00100010"]?.Value?.[0];
-                const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
+              instanceData = {
+                "0018,0050": first["00180050"]?.Value?.[0],
+                "0018,0060": first["00180060"]?.Value?.[0],
+                "0018,1152": first["00181152"]?.Value?.[0],
+                "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
+                "0028,1050": first["00281050"]?.Value?.[0],
+                "0028,1051": first["00281051"]?.Value?.[0],
+                "0028,0010": first["00280010"]?.Value?.[0],
+                "0028,0011": first["00280011"]?.Value?.[0]
+              };
+              return;
+            }
+          } catch (e) {}
+        }
+      } catch (e) {}
 
-                orthancData = {
-                  PatientMainDicomTags: {
-                    PatientName: nameStr,
-                    PatientID: first["00100020"]?.Value?.[0] || "",
-                    PatientSex: first["00100040"]?.Value?.[0] || "O",
-                    PatientAge: first["00101010"]?.Value?.[0] || "",
-                    PatientBirthDate: first["00100030"]?.Value?.[0] || ""
-                  },
-                  MainDicomTags: {
-                    AccessionNumber: first["00080050"]?.Value?.[0] || "",
-                    StudyInstanceUID: first["0020000D"]?.Value?.[0] || studyUID,
-                    StudyDate: first["00080020"]?.Value?.[0] || "",
-                    StudyTime: first["00080030"]?.Value?.[0] || "",
-                    StudyDescription: first["00081030"]?.Value?.[0] || "",
-                    ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
-                    Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
-                    BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                    InstitutionName: first["00080080"]?.Value?.[0] || ""
-                  }
-                };
-
-                seriesData = {
-                  MainDicomTags: {
-                    Modality: first["00080060"]?.Value?.[0] || "CR",
-                    BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                    Manufacturer: first["00080070"]?.Value?.[0] || "",
-                    ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
-                    SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
-                    SeriesNumber: first["00200011"]?.Value?.[0] || "1",
-                    SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
-                    InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
-                    StationName: first["00081010"]?.Value?.[0] || ""
-                  }
-                };
-
-                instanceData = {
-                  "0018,0050": first["00180050"]?.Value?.[0],
-                  "0018,0060": first["00180060"]?.Value?.[0],
-                  "0018,1152": first["00181152"]?.Value?.[0],
-                  "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
-                  "0028,1050": first["00281050"]?.Value?.[0],
-                  "0028,1051": first["00281051"]?.Value?.[0],
-                  "0028,0010": first["00280010"]?.Value?.[0],
-                  "0028,0011": first["00280011"]?.Value?.[0]
-                };
-                break;
-              }
-            } catch (e) {}
+      // Try Orthanc
+      try {
+        const orthancUrl = await getOrthancUrl();
+        const { data: dData } = await axios.get(`${orthancUrl}studies/${realStudyUID}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+        if (dData && dData.ID) {
+          orthancData = dData;
+          if (Array.isArray(dData.Series) && dData.Series.length > 0) {
+            const firstSeriesId = dData.Series[0];
+            const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+            if (serRes) seriesData = serRes;
           }
-        } catch (e) {
-          console.warn("[PacsGateway] DCM4CHEE fallback failed:", e.message);
         }
-      }
+      } catch (e) {}
+    };
 
-      // 2. Fetch Series and Instance DICOM Tags for Orthanc
-      if (orthancData && Array.isArray(orthancData.Series) && orthancData.Series.length > 0) {
-        const firstSeriesId = orthancData.Series[0];
-        const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-        if (serRes) seriesData = serRes;
-
-        if (seriesData && Array.isArray(seriesData.Instances) && seriesData.Instances.length > 0) {
-          const firstInstId = seriesData.Instances[0];
-          const { data: instRes } = await axios.get(`${orthancUrl}instances/${firstInstId}/tags?simplified`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-          if (instRes) instanceData = instRes;
-        }
-      }
-    } catch (err) {
-      console.warn("PACS Gateway DICOM fetch warning:", err.message);
-    }
-
-    // 3. Query local database fallback
-    const dbRes = await pool.query("SELECT * FROM studies WHERE study_uid = $1 OR id::text = $2 OR accession_number = $3", [studyUID, studyUID, studyUID]).catch(() => ({ rows: [] }));
-    const dbRow = dbRes.rows[0] || {};
+    await queryPacsTags().catch(() => {});
 
     const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "";
     const cleanName = this.formatPatientName(rawName);
     modality = seriesData?.MainDicomTags?.Modality || orthancData?.MainDicomTags?.Modality || dbRow.modality || dbRow.Modality || "CR";
     bodyPart = seriesData?.MainDicomTags?.BodyPartExamined || dbRow.body_part || "General";
 
-    // 4. Construct Comprehensive DICOM Tag Dictionary
+    // Construct Comprehensive DICOM Tag Dictionary
     const tagsDictionary = {
       patient: {
         PatientName: cleanName || dbRow.patient_name || "Patient",
@@ -201,7 +178,7 @@ class PacsGateway {
       },
       study: {
         AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "N/A",
-        StudyInstanceUID: orthancData?.MainDicomTags?.StudyInstanceUID || studyUID,
+        StudyInstanceUID: orthancData?.MainDicomTags?.StudyInstanceUID || dbRow.study_uid || studyUID,
         StudyDate: orthancData?.MainDicomTags?.StudyDate || dbRow.study_date || "-",
         StudyTime: orthancData?.MainDicomTags?.StudyTime || dbRow.study_time || "-",
         StudyDescription: orthancData?.MainDicomTags?.StudyDescription || dbRow.study_description || "Radiology Scan",

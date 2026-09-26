@@ -969,26 +969,42 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           null
         );
 
-    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
-    let displaySliceNum = detectedSlice || 1;
+    const isScoutSeries = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || s?.seriesDescription || '');
 
     const liveSeriesTarget = 
       snapResult?.seriesInstanceUid ||
       snapResult?.matchedSeriesId || 
-      snapResult?.seriesDescription ||
+      (snapResult?.seriesDescription && !/diagnostic series/i.test(snapResult.seriesDescription) ? snapResult.seriesDescription : null) ||
       directDomSliceInfo?.seriesInstanceUid ||
       directDomSliceInfo?.matchedSeriesId ||
-      directDomSliceInfo?.seriesDescription ||
+      (directDomSliceInfo?.seriesDescription && !/diagnostic series/i.test(directDomSliceInfo.seriesDescription) ? directDomSliceInfo.seriesDescription : null) ||
       activeViewportInfo?.seriesInstanceUid || 
-      activeViewportInfo?.seriesDescription ||
+      (activeViewportInfo?.seriesDescription && !/diagnostic series/i.test(activeViewportInfo.seriesDescription) ? activeViewportInfo.seriesDescription : null) ||
       overrideSeriesId;
 
-    const activeSeriesTarget = liveSeriesTarget || selectedSeriesId;
+    let seriesObj = null;
 
-    const seriesObj = 
-      (liveSeriesTarget ? findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) : null) ||
-      (selectedSeriesId ? findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices) : null) ||
-      findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
+    // Priority 1: Check user explicitly selected series in UI dropdown
+    if (selectedSeriesId) {
+      const userSelected = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId));
+      if (userSelected && (!isScoutSeries(userSelected) || !liveSeriesTarget)) {
+        seriesObj = userSelected;
+      }
+    }
+
+    // Priority 2: Live target from viewer if it matches a non-scout series
+    if (!seriesObj && liveSeriesTarget) {
+      const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices);
+      if (liveMatched && (!isScoutSeries(liveMatched) || studySeriesList.length === 1)) {
+        seriesObj = liveMatched;
+      }
+    }
+
+    // Priority 3: Fallback diagnostic series with total_slices > 1
+    if (!seriesObj) {
+      seriesObj = findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
+    }
+
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
     }
