@@ -18,6 +18,7 @@ const pacsService = new PacsService(pool);
 
 const { getOrthancUrl, orthancAuthConfig, extractCleanInstanceId, clearOrthancAuthCache } = require("../utils/orthancHelper");
 const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
+const hybridPacsGateway = require("../utils/hybridPacsGateway");
 
 async function findOrthancStudy(studyUID) {
   const orthancUrl = await getOrthancUrl();
@@ -380,77 +381,24 @@ router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   const frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
   let studyUID = req.query.studyUID || req.query.study;
   let seriesUID = req.query.seriesUID || req.query.series;
-  const orthancUrl = await getOrthancUrl();
 
-  const isDicomSopUid = instanceId.includes('.');
+  try {
+    if (!studyUID || !seriesUID) {
+      const lookup = await hybridPacsGateway.lookupHybridSopInstance(instanceId);
+      if (lookup) {
+        if (!studyUID) studyUID = lookup.studyUID;
+        if (!seriesUID) seriesUID = lookup.seriesUID;
+      }
+    }
 
-  const tryOrthanc = async () => {
-    try {
-      const renderPath = (frame !== null && frame !== "") 
-        ? `instances/${instanceId}/frames/${frame}/rendered` 
-        : `instances/${instanceId}/rendered`;
-      const previewStream = await axios.get(`${orthancUrl}${renderPath}`, {
-        responseType: "stream",
-        ...orthancAuthConfig(),
-        timeout: 2500
-      });
-      res.setHeader("Content-Type", "image/png");
+    const buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, instanceId, frame);
+    if (buffer && buffer.length > 500) {
+      res.setHeader("Content-Type", "image/jpeg");
       res.setHeader("Cache-Control", "public, max-age=86400");
-      previewStream.data.pipe(res);
-      return true;
-    } catch (err) {
-      try {
-        const previewPath = (frame !== null && frame !== "") 
-          ? `instances/${instanceId}/frames/${frame}/preview` 
-          : `instances/${instanceId}/preview`;
-        const fbStream = await axios.get(`${orthancUrl}${previewPath}`, {
-          responseType: "stream",
-          ...orthancAuthConfig(),
-          timeout: 2500
-        });
-        res.setHeader("Content-Type", "image/jpeg");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-        fbStream.data.pipe(res);
-        return true;
-      } catch (fbErr) {
-        return false;
-      }
+      return res.send(buffer);
     }
-  };
-
-  const tryDcm4chee = async () => {
-    try {
-      if (!studyUID || !seriesUID) {
-        const lookup = await dcm4cheeHelper.lookupDcm4cheeSopInstance(instanceId);
-        if (lookup) {
-          if (!studyUID) studyUID = lookup.studyUID;
-          if (!seriesUID) seriesUID = lookup.seriesUID;
-        }
-      }
-
-      const buffer = await dcm4cheeHelper.fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, instanceId, frame);
-      if (buffer && buffer.length > 500) {
-        res.setHeader("Content-Type", "image/jpeg");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-        res.send(buffer);
-        return true;
-      }
-    } catch (e) {
-      console.error(`[PACS Proxy] DCM4CHEE preview error for ${instanceId}:`, e.message);
-    }
-    return false;
-  };
-
-  if (isDicomSopUid) {
-    const success = await tryDcm4chee();
-    if (success) return;
-    const orthResult = await tryOrthanc();
-    if (orthResult) return;
-  } else {
-    const orthResult = await tryOrthanc();
-    if (orthResult) return;
-    const success = await tryDcm4chee();
-    if (success) return;
+  } catch (e) {
+    console.error(`[PACS Proxy] Hybrid instance preview error for ${instanceId}:`, e.message);
   }
 
   res.status(404).send("Preview unavailable");
@@ -473,27 +421,14 @@ router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
  * Fetches series & instances from Orthanc OR active DCM4CHEE nodes
  */
 async function fetchStudySeriesAndInstancesAcrossPacs(studyUID) {
-  const orthancUrl = await getOrthancUrl();
-  const orthancId = await findOrthancStudy(studyUID);
-
-  if (orthancId) {
-    const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
-    if (studyData && Array.isArray(studyData.Series) && studyData.Series.length > 0) {
-      const orthancSeries = await fetchStudySeriesAndInstances(orthancUrl, studyData);
-      if (orthancSeries && orthancSeries.length > 0) return orthancSeries;
-    }
-  }
-
-  // Fallback: Query DCM4CHEE / active PACS nodes via QIDO-RS using dcm4cheeHelper
   try {
-    const dcmSeries = await dcm4cheeHelper.searchDcm4cheeSeriesAndInstances(studyUID);
-    if (Array.isArray(dcmSeries) && dcmSeries.length > 0) {
-      return dcmSeries;
+    const seriesList = await hybridPacsGateway.fetchHybridSeriesAndInstances(studyUID);
+    if (Array.isArray(seriesList) && seriesList.length > 0) {
+      return seriesList;
     }
   } catch (e) {
-    console.warn("[PACS] DCM4CHEE series search notice:", e.message);
+    console.warn("[PACS] Hybrid series search notice:", e.message);
   }
-
   return [];
 }
 
@@ -825,42 +760,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
   // Priority 2: High-resolution PACS rendered DICOM slice if no live canvas dataUrl provided
   if (!finalUrl && targetInstId) {
     try {
-      const orthancUrl = await getOrthancUrl();
-      let renderedBuffer = null;
-      try {
-        const rRes = await axios.get(`${orthancUrl}instances/${targetInstId}/rendered`, {
-          responseType: "arraybuffer",
-          ...orthancAuthConfig(),
-          timeout: 3000
-        });
-        if (rRes && rRes.data && rRes.data.byteLength > 1000) renderedBuffer = rRes.data;
-      } catch (rErr) {
-        const pRes = await axios.get(`${orthancUrl}instances/${targetInstId}/preview`, {
-          responseType: "arraybuffer",
-          ...orthancAuthConfig(),
-          timeout: 3000
-        }).catch(() => null);
-        if (pRes && pRes.data && pRes.data.byteLength > 1000) renderedBuffer = pRes.data;
-      }
-
-      // DCM4CHEE & Multi-PACS Rendered Slice Direct Extraction
-      if (!renderedBuffer) {
-        try {
-          renderedBuffer = await dcm4cheeHelper.fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
-        } catch (e) {}
-      }
-
-      // Self-Proxy Fallback
-      if (!renderedBuffer) {
-        try {
-          const port = process.env.PORT || 5000;
-          const proxyUrl = `http://127.0.0.1:${port}/api/pacs/instance-preview/${encodeURIComponent(targetInstId)}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID || '')}`;
-          const proxyRes = await axios.get(proxyUrl, { responseType: "arraybuffer", timeout: 4000 }).catch(() => null);
-          if (proxyRes && proxyRes.data && proxyRes.data.byteLength > 1000) {
-            renderedBuffer = proxyRes.data;
-          }
-        } catch (e) {}
-      }
+      let renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
 
       if (renderedBuffer) {
         fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
