@@ -969,6 +969,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           null
         );
 
+    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
+    let displaySliceNum = detectedSlice || 1;
+
     const isScoutSeries = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || s?.seriesDescription || '');
 
     const liveSeriesTarget = 
@@ -1004,6 +1007,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     if (!seriesObj) {
       seriesObj = findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
     }
+
+    const activeSeriesTarget = seriesObj?.series_id || liveSeriesTarget || selectedSeriesId;
 
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
