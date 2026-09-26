@@ -108,6 +108,14 @@ class PacsGateway {
           }
         }
 
+        const parseDcmStr = (val) => {
+          if (!val) return "";
+          if (typeof val === "string") return val.trim();
+          if (Array.isArray(val)) return val.length > 0 ? parseDcmStr(val[0]) : "";
+          if (typeof val === "object") return val.Alphabetic || val.phonetic || (val.Value ? parseDcmStr(val.Value[0]) : "");
+          return String(val).trim();
+        };
+
         for (const pacs of dcm4cheeNodes) {
           const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${encodeURIComponent(realStudyUID)}/metadata`;
           try {
@@ -118,55 +126,53 @@ class PacsGateway {
             });
             if (Array.isArray(res.data) && res.data.length > 0) {
               const first = res.data[0];
-              const pName = first["00100010"]?.Value?.[0];
-              const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
-              const refDoc = first["00080090"]?.Value?.[0];
-              const refDocStr = typeof refDoc === "object" ? (refDoc.Alphabetic || refDoc.phonetic || "") : (refDoc || "");
+              const nameStr = parseDcmStr(first["00100010"]);
+              const refDocStr = parseDcmStr(first["00080090"]);
 
               orthancData = {
                 PatientMainDicomTags: {
                   PatientName: nameStr,
-                  PatientID: first["00100020"]?.Value?.[0] || "",
-                  PatientSex: first["00100040"]?.Value?.[0] || "O",
-                  PatientAge: first["00101010"]?.Value?.[0] || "",
-                  PatientBirthDate: first["00100030"]?.Value?.[0] || ""
+                  PatientID: parseDcmStr(first["00100020"]),
+                  PatientSex: parseDcmStr(first["00100040"]) || "O",
+                  PatientAge: parseDcmStr(first["00101010"]),
+                  PatientBirthDate: parseDcmStr(first["00100030"])
                 },
                 MainDicomTags: {
-                  AccessionNumber: first["00080050"]?.Value?.[0] || "",
-                  StudyInstanceUID: first["0020000D"]?.Value?.[0] || realStudyUID,
-                  StudyDate: first["00080020"]?.Value?.[0] || "",
-                  StudyTime: first["00080030"]?.Value?.[0] || "",
-                  StudyDescription: first["00081030"]?.Value?.[0] || "",
+                  AccessionNumber: parseDcmStr(first["00080050"]),
+                  StudyInstanceUID: parseDcmStr(first["0020000D"]) || realStudyUID,
+                  StudyDate: parseDcmStr(first["00080020"]),
+                  StudyTime: parseDcmStr(first["00080030"]),
+                  StudyDescription: parseDcmStr(first["00081030"]),
                   ReferringPhysicianName: refDocStr,
-                  Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
-                  BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                  InstitutionName: first["00080080"]?.Value?.[0] || ""
+                  Modality: parseDcmStr(first["00080060"]) || parseDcmStr(first["00080061"]) || "CR",
+                  BodyPartExamined: parseDcmStr(first["00180015"]),
+                  InstitutionName: parseDcmStr(first["00080080"])
                 }
               };
 
               seriesData = {
                 MainDicomTags: {
-                  Modality: first["00080060"]?.Value?.[0] || "CR",
-                  BodyPartExamined: first["00180015"]?.Value?.[0] || "",
-                  Manufacturer: first["00080070"]?.Value?.[0] || "",
-                  ManufacturerModelName: first["00081090"]?.Value?.[0] || "",
-                  SeriesInstanceUID: first["0020000E"]?.Value?.[0] || "",
-                  SeriesNumber: first["00200011"]?.Value?.[0] || "1",
-                  SeriesDescription: first["0008103E"]?.Value?.[0] || first["00081030"]?.Value?.[0] || "Diagnostic Series",
-                  InstitutionalDepartmentName: first["00081040"]?.Value?.[0] || "",
-                  StationName: first["00081010"]?.Value?.[0] || ""
+                  Modality: parseDcmStr(first["00080060"]) || "CR",
+                  BodyPartExamined: parseDcmStr(first["00180015"]),
+                  Manufacturer: parseDcmStr(first["00080070"]),
+                  ManufacturerModelName: parseDcmStr(first["00081090"]),
+                  SeriesInstanceUID: parseDcmStr(first["0020000E"]),
+                  SeriesNumber: parseDcmStr(first["00200011"]) || "1",
+                  SeriesDescription: parseDcmStr(first["0008103E"]) || parseDcmStr(first["00081030"]) || "Diagnostic Series",
+                  InstitutionalDepartmentName: parseDcmStr(first["00081040"]),
+                  StationName: parseDcmStr(first["00081010"])
                 }
               };
 
               instanceData = {
-                "0018,0050": first["00180050"]?.Value?.[0],
-                "0018,0060": first["00180060"]?.Value?.[0],
-                "0018,1152": first["00181152"]?.Value?.[0],
+                "0018,0050": parseDcmStr(first["00180050"]),
+                "0018,0060": parseDcmStr(first["00180060"]),
+                "0018,1152": parseDcmStr(first["00181152"]),
                 "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
-                "0028,1050": first["00281050"]?.Value?.[0],
-                "0028,1051": first["00281051"]?.Value?.[0],
-                "0028,0010": first["00280010"]?.Value?.[0],
-                "0028,0011": first["00280011"]?.Value?.[0]
+                "0028,1050": parseDcmStr(first["00281050"]),
+                "0028,1051": parseDcmStr(first["00281051"]),
+                "0028,0010": parseDcmStr(first["00280010"]),
+                "0028,0011": parseDcmStr(first["00280011"])
               };
               return;
             }
@@ -174,10 +180,24 @@ class PacsGateway {
         }
       } catch (e) {}
 
-      // Try Orthanc
+      // Try Orthanc via tools/find to resolve internal UUID
       try {
         const orthancUrl = await getOrthancUrl();
-        const { data: dData } = await axios.get(`${orthancUrl}studies/${realStudyUID}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+        let orthancId = null;
+
+        try {
+          const findRes = await axios.post(`${orthancUrl}tools/find`, {
+            Level: "Study",
+            Query: { StudyInstanceUID: realStudyUID }
+          }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
+          if (Array.isArray(findRes.data) && findRes.data.length > 0) {
+            orthancId = findRes.data[0];
+          }
+        } catch (e) {}
+
+        if (!orthancId) orthancId = realStudyUID;
+
+        const { data: dData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
         if (dData && dData.ID) {
           orthancData = dData;
           if (Array.isArray(dData.Series) && dData.Series.length > 0) {

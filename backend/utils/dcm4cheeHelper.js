@@ -272,18 +272,26 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
         timeout: 4500
       });
 
+      const parseDcmStr = (val, fallback = "") => {
+        if (!val) return fallback;
+        if (typeof val === "string") return val.trim();
+        if (Array.isArray(val)) return val.length > 0 ? parseDcmStr(val[0], fallback) : fallback;
+        if (typeof val === "object") return val.Alphabetic || val.phonetic || (val.Value ? parseDcmStr(val.Value[0], fallback) : fallback);
+        return String(val).trim() || fallback;
+      };
+
       if (Array.isArray(sRes.data) && sRes.data.length > 0) {
         const seriesList = [];
         for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
           const serObj = sRes.data[sIdx];
-          const seriesUid = serObj["0020000E"]?.Value?.[0];
-          const seriesDesc = serObj["0008103E"]?.Value?.[0] || serObj["00081030"]?.Value?.[0] || `Series ${sIdx + 1}`;
-          const seriesNum = parseInt(serObj["00200011"]?.Value?.[0] || (sIdx + 1), 10);
-          const sModality = serObj["00080060"]?.Value?.[0] || "";
+          const seriesUid = parseDcmStr(serObj["0020000E"]);
+          const seriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || `Series ${sIdx + 1}`;
+          const seriesNum = parseInt(parseDcmStr(serObj["00200011"]) || (sIdx + 1), 10);
+          const sModality = parseDcmStr(serObj["00080060"]);
 
           if (!seriesUid) continue;
 
-          const instUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUid}/instances`;
+          const instUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUid}/instances?includefield=all`;
           const iRes = await axios.get(instUrl, {
             ...authConfig,
             headers: { Accept: "application/dicom+json" },
@@ -293,14 +301,14 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
           let instances = [];
           if (Array.isArray(iRes.data) && iRes.data.length > 0) {
             iRes.data.sort((a, b) => {
-              const numA = parseInt(a["00200013"]?.Value?.[0] || 0, 10);
-              const numB = parseInt(b["00200013"]?.Value?.[0] || 0, 10);
+              const numA = parseInt(parseDcmStr(a["00200013"]) || 0, 10);
+              const numB = parseInt(parseDcmStr(b["00200013"]) || 0, 10);
               return numA - numB;
             });
 
             instances = iRes.data.map((inst, iIdx) => {
-              const sopUid = inst["00080018"]?.Value?.[0];
-              const sliceNum = parseInt(inst["00200013"]?.Value?.[0] || (iIdx + 1), 10);
+              const sopUid = parseDcmStr(inst["00080018"]);
+              const sliceNum = parseInt(parseDcmStr(inst["00200013"]) || (iIdx + 1), 10);
               const pUrl = `/api/pacs/instance-preview/${sopUid}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUid)}&pacsId=${node.id}`;
               return {
                 id: sopUid,

@@ -524,7 +524,12 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (bestMatch && maxTokens > 0) return bestMatch;
   }
 
-  // 6. If cleanTarget is a real descriptive text, return synthetic series with cleanTarget as description
+  // 6. Fallback to first non-scout candidate in real studySeriesList
+  const nonScout = candidates.filter(s => !isScout(s));
+  if (nonScout.length > 0) return nonScout[0];
+  if (candidates.length > 0) return candidates[0];
+
+  // 7. Synthetic series ONLY if studySeriesList is completely empty
   if (cleanTarget && cleanTarget.length >= 2) {
     return {
       series_id: 'synthetic_desc',
@@ -533,9 +538,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     };
   }
 
-  // 7. Fallback to first candidate (or non-scout if no target specified)
-  const nonScout = candidates.filter(s => !isScout(s));
-  return nonScout.length > 0 ? nonScout[0] : candidates[0];
+  return null;
 }
 
 /**

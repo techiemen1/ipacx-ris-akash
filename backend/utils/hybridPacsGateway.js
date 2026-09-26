@@ -261,8 +261,8 @@ class HybridPacsGateway {
 
           const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID || seriesId;
           return {
-            seriesId: sData.ID || seriesId,
-            series_id: sData.ID || seriesId,
+            seriesId: dicomSeriesUid,
+            series_id: dicomSeriesUid,
             orthanc_series_id: sData.ID || seriesId,
             series_instance_uid: dicomSeriesUid,
             seriesDescription: sDesc,
