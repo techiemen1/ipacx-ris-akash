@@ -773,7 +773,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
 
   // Priority 3: Fallback preview URL
   if (!finalUrl) {
-    finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}` : `/api/pacs/snapshots/${studyUID}`;
+    finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID || '')}` : `/api/pacs/snapshots/${studyUID}`;
   }
 
   const sDesc = seriesDescription || "Diagnostic Series";

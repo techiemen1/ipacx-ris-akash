@@ -43,9 +43,25 @@ class PacsGateway {
   /**
    * Normalize Patient Name (removes ^ DICOM caret separators)
    */
+  extractSex(rawSex, rawName) {
+    if (rawSex && String(rawSex).trim() !== "" && rawSex !== "O" && rawSex !== "N/A" && rawSex !== "-") {
+      return String(rawSex).trim().toUpperCase();
+    }
+    if (!rawName) return "O";
+    const str = String(rawName);
+    const match = str.match(/\/\s*([MFO])/i) || str.match(/\s+([MFO])$/i);
+    if (match) return match[1].toUpperCase();
+    return "O";
+  }
+
+  /**
+   * Normalize Patient Name (removes ^ DICOM caret separators and trailing age/sex tags)
+   */
   formatPatientName(name) {
     if (!name) return "";
-    return String(name).replace(/\^/g, " ").replace(/\s+/g, " ").trim();
+    let clean = String(name).replace(/\^/g, " ").replace(/\s+/g, " ").trim();
+    clean = clean.replace(/\s+\d{1,3}[YMDY]\s*\/\s*[MFO]/i, "").trim();
+    return clean;
   }
 
   /**
@@ -59,9 +75,13 @@ class PacsGateway {
       return cached.data;
     }
 
-    // 1. FAST PATH: Query local PostgreSQL database FIRST (<5ms execution time)
+    // 1. FAST PATH: Query local PostgreSQL database FIRST with Joined Patient table (<5ms execution time)
     const dbRes = await pool.query(
-      "SELECT * FROM public.studies WHERE study_uid = $1 OR accession_number = $1 OR id::text = $1 LIMIT 1",
+      `SELECT s.*, p.full_name as p_full_name, p.gender as p_gender, p.age as p_age, p.dob as p_dob, p.mrn as p_mrn
+       FROM public.studies s 
+       LEFT JOIN public.patients p ON (s.patient_id = p.patient_id OR s.patient_id = p.uhid OR s.accession_number = p.mrn)
+       WHERE s.study_uid = $1 OR s.accession_number = $1 OR s.id::text = $1 
+       LIMIT 1`,
       [studyUID]
     ).catch(() => ({ rows: [] }));
     const dbRow = dbRes.rows[0] || {};
@@ -72,14 +92,21 @@ class PacsGateway {
     let modality = dbRow.modality || dbRow.Modality || "CR";
     let bodyPart = dbRow.body_part || "General";
 
-    // 2. PARALLEL HYBRID PACS QUERY (Fast 1800ms max timeout)
+    // 2. PARALLEL HYBRID PACS QUERY (Fast workingNode probe)
     const queryPacsTags = async () => {
       const realStudyUID = dbRow.study_uid || studyUID;
 
-      // Try DCM4CHEE first via dcm4cheeHelper
+      // Try DCM4CHEE first via dcm4cheeHelper working node
       try {
         const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
-        const dcm4cheeNodes = await dcm4cheeHelper.getDcm4cheeNodes();
+        const workingNode = await dcm4cheeHelper.getWorkingDcm4cheeNode();
+        const allNodes = await dcm4cheeHelper.getDcm4cheeNodes();
+        const dcm4cheeNodes = [workingNode];
+        for (const n of allNodes) {
+          if (n.ip_address !== workingNode.ip_address || n.port !== workingNode.port || n.ae_title !== workingNode.ae_title) {
+            dcm4cheeNodes.push(n);
+          }
+        }
 
         for (const pacs of dcm4cheeNodes) {
           const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${encodeURIComponent(realStudyUID)}/metadata`;
@@ -93,6 +120,8 @@ class PacsGateway {
               const first = res.data[0];
               const pName = first["00100010"]?.Value?.[0];
               const nameStr = typeof pName === "object" ? (pName.Alphabetic || pName.phonetic || "") : (pName || "");
+              const refDoc = first["00080090"]?.Value?.[0];
+              const refDocStr = typeof refDoc === "object" ? (refDoc.Alphabetic || refDoc.phonetic || "") : (refDoc || "");
 
               orthancData = {
                 PatientMainDicomTags: {
@@ -108,7 +137,7 @@ class PacsGateway {
                   StudyDate: first["00080020"]?.Value?.[0] || "",
                   StudyTime: first["00080030"]?.Value?.[0] || "",
                   StudyDescription: first["00081030"]?.Value?.[0] || "",
-                  ReferringPhysicianName: first["00080090"]?.Value?.[0] || "",
+                  ReferringPhysicianName: refDocStr,
                   Modality: first["00080060"]?.Value?.[0] || first["00080061"]?.Value?.[0] || "CR",
                   BodyPartExamined: first["00180015"]?.Value?.[0] || "",
                   InstitutionName: first["00080080"]?.Value?.[0] || ""
@@ -162,7 +191,7 @@ class PacsGateway {
 
     await queryPacsTags().catch(() => {});
 
-    const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || "";
+    const rawName = orthancData?.PatientMainDicomTags?.PatientName || dbRow.patient_name || dbRow.p_full_name || "";
     const cleanName = this.formatPatientName(rawName);
     modality = seriesData?.MainDicomTags?.Modality || orthancData?.MainDicomTags?.Modality || dbRow.modality || dbRow.Modality || "CR";
     bodyPart = seriesData?.MainDicomTags?.BodyPartExamined || dbRow.body_part || "General";
@@ -170,11 +199,11 @@ class PacsGateway {
     // Construct Comprehensive DICOM Tag Dictionary
     const tagsDictionary = {
       patient: {
-        PatientName: cleanName || dbRow.patient_name || "Patient",
+        PatientName: cleanName || dbRow.p_full_name || dbRow.patient_name || "Patient",
         PatientID: orthancData?.PatientMainDicomTags?.PatientID || dbRow.patient_id || dbRow.id || "N/A",
-        PatientBirthDate: orthancData?.PatientMainDicomTags?.PatientBirthDate || dbRow.patient_dob || "-",
-        PatientSex: orthancData?.PatientMainDicomTags?.PatientSex || dbRow.patient_sex || "O",
-        PatientAge: this.extractAge(rawName, orthancData?.PatientMainDicomTags?.PatientAge || dbRow.patient_age)
+        PatientBirthDate: orthancData?.PatientMainDicomTags?.PatientBirthDate || dbRow.p_dob || dbRow.patient_dob || "-",
+        PatientSex: this.extractSex(orthancData?.PatientMainDicomTags?.PatientSex || dbRow.p_gender || dbRow.patient_sex, rawName),
+        PatientAge: this.extractAge(rawName, orthancData?.PatientMainDicomTags?.PatientAge || dbRow.p_age || dbRow.patient_age)
       },
       study: {
         AccessionNumber: orthancData?.MainDicomTags?.AccessionNumber || dbRow.accession_number || "N/A",
@@ -183,7 +212,7 @@ class PacsGateway {
         StudyTime: orthancData?.MainDicomTags?.StudyTime || dbRow.study_time || "-",
         StudyDescription: orthancData?.MainDicomTags?.StudyDescription || dbRow.study_description || "Radiology Scan",
         StudyID: orthancData?.MainDicomTags?.StudyID || dbRow.study_id || "-",
-        ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || "-",
+        ReferringPhysicianName: orthancData?.MainDicomTags?.ReferringPhysicianName || dbRow.referring_physician || dbRow.referring_doctor || "Self / Desk",
         Modality: String(modality).toUpperCase().trim(),
         BodyPartExamined: bodyPart
       },

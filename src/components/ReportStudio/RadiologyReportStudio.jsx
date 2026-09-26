@@ -388,25 +388,25 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
             (s.StudyInstanceUID && s.StudyInstanceUID === studyUID) ||
             (s.study_uid && s.study_uid === studyUID) ||
             (s.id && String(s.id) === String(studyUID))
-          ) || pacsStudiesList[0];
+          );
         }
 
-        const rawName = String(studyInfo?.PatientName || studyInfo?.patient_name || listMatch?.PatientName || listMatch?.patient_name || "Patient").replace(/\^/g, " ").replace(/\s+/g, " ").trim();
-        const pId = studyInfo?.PatientID || studyInfo?.patient_id || listMatch?.PatientID || listMatch?.patient_id || "ID-1001";
-        const pAge = studyInfo?.PatientAge || studyInfo?.patient_age || listMatch?.PatientAge || listMatch?.patient_age || "24Y";
-        const pSex = studyInfo?.PatientSex || studyInfo?.patient_sex || listMatch?.PatientSex || listMatch?.patient_sex || "M";
-        const accNo = studyInfo?.AccessionNumber || studyInfo?.accession_number || listMatch?.AccessionNumber || listMatch?.accession_number || "ACC-1001";
+        const rawName = String(studyInfo?.PatientName || studyInfo?.patient_name || listMatch?.PatientName || listMatch?.patient_name || "").replace(/\^/g, " ").replace(/\s+/g, " ").trim();
+        const pId = studyInfo?.PatientID || studyInfo?.patient_id || listMatch?.PatientID || listMatch?.patient_id || "";
+        const pAge = studyInfo?.PatientAge || studyInfo?.patient_age || listMatch?.PatientAge || listMatch?.patient_age || "";
+        const pSex = studyInfo?.PatientSex || studyInfo?.patient_sex || listMatch?.PatientSex || listMatch?.patient_sex || "";
+        const accNo = studyInfo?.AccessionNumber || studyInfo?.accession_number || listMatch?.AccessionNumber || listMatch?.accession_number || "";
         const mod = (studyInfo?.Modality || studyInfo?.modality || listMatch?.Modality || listMatch?.modality || "CR").toUpperCase().trim();
         const bPart = studyInfo?.BodyPartExamined || studyInfo?.body_part || listMatch?.BodyPartExamined || listMatch?.body_part || "General";
         const sDesc = studyInfo?.StudyDescription || studyInfo?.study_description || listMatch?.StudyDescription || listMatch?.study_description || "";
         const refDoc = studyInfo?.ReferringPhysicianName || studyInfo?.referring_doctor || listMatch?.ReferringPhysicianName || listMatch?.referring_doctor || "Self / Desk";
 
         setStudy({
-          PatientName: (rawName === "N/A" || !rawName) ? (listMatch?.PatientName || "Patient") : rawName,
-          PatientID: (pId === "N/A" || !pId) ? "ID-1001" : pId,
-          PatientAge: (pAge === "N/A" || !pAge) ? "24Y" : pAge,
-          PatientSex: (pSex === "N/A" || !pSex) ? "M" : pSex,
-          AccessionNumber: (accNo === "N/A" || !accNo) ? "ACC-1001" : accNo,
+          PatientName: (rawName === "N/A" || !rawName) ? "-" : rawName,
+          PatientID: (pId === "N/A" || !pId) ? "-" : pId,
+          PatientAge: (pAge === "N/A" || !pAge) ? "-" : pAge,
+          PatientSex: (pSex === "N/A" || !pSex) ? "-" : pSex,
+          AccessionNumber: (accNo === "N/A" || !accNo) ? "-" : accNo,
           Modality: mod,
           BodyPartExamined: bPart,
           StudyDescription: sDesc,
