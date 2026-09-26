@@ -573,10 +573,14 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
-          const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
-          const diagSeries = res.data.series.filter(s => !isScout(s));
-          const mainSeries = (diagSeries.length > 0 ? (diagSeries.find(s => s.total_slices > 1) || diagSeries[0]) : res.data.series[0]);
-          setSelectedSeriesId(mainSeries.series_id);
+          const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s.series_description || s.seriesDescription || '');
+          const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
+          
+          const sortedAll = [...res.data.series].sort((a, b) => getSliceCount(b) - getSliceCount(a));
+          const diagSeries = sortedAll.filter(s => !isScout(s));
+          const mainSeries = diagSeries.length > 0 ? diagSeries[0] : sortedAll[0];
+          
+          setSelectedSeriesId(String(mainSeries.series_id || mainSeries.series_instance_uid || ''));
           setPickerSliceNum(1);
           setTargetSliceNumber("1");
         }
@@ -972,7 +976,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
     let displaySliceNum = detectedSlice || 1;
 
-    const isScoutSeries = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || s?.seriesDescription || '');
+    const isScoutSeries = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s?.series_description || s?.seriesDescription || '');
+    const hasNonScoutSeries = studySeriesList.some(s => !isScoutSeries(s));
 
     const liveSeriesTarget = 
       snapResult?.seriesInstanceUid ||
@@ -987,10 +992,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     let seriesObj = null;
 
-    // Priority 1: Check user explicitly selected series in UI dropdown
+    // Priority 1: Check user selected series in UI dropdown (must not be scout if non-scout exists)
     if (selectedSeriesId) {
       const userSelected = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId));
-      if (userSelected && (!isScoutSeries(userSelected) || !liveSeriesTarget)) {
+      if (userSelected && (!isScoutSeries(userSelected) || !hasNonScoutSeries)) {
         seriesObj = userSelected;
       }
     }
@@ -998,7 +1003,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     // Priority 2: Live target from viewer if it matches a non-scout series
     if (!seriesObj && liveSeriesTarget) {
       const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices);
-      if (liveMatched && (!isScoutSeries(liveMatched) || studySeriesList.length === 1)) {
+      if (liveMatched && (!isScoutSeries(liveMatched) || !hasNonScoutSeries)) {
         seriesObj = liveMatched;
       }
     }

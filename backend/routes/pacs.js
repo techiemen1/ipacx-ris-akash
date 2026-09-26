@@ -761,6 +761,9 @@ async function processKeyImageSave(payload, reqUser = {}) {
   if (!finalUrl && targetInstId) {
     try {
       let renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
+      if (!renderedBuffer) {
+        renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, null);
+      }
 
       if (renderedBuffer) {
         fs.writeFileSync(filePath, Buffer.from(renderedBuffer));

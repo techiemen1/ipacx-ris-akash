@@ -445,11 +445,13 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     return target ? { series_id: 'synthetic', series_description: String(target), total_slices: hintTotalSlices || 1 } : null;
   }
 
-  const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.series_description || '');
+  const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s?.series_description || s?.seriesDescription || '');
 
   const cleanTarget = String(target || '').trim();
   const normalize = (str) => String(str || '').toLowerCase().replace(/[\s_\-/\\,.:;]+/g, ' ').trim();
   const normTarget = normalize(cleanTarget);
+
+  const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
 
   let found = null;
 
@@ -468,7 +470,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (found) return found;
 
     // 2. Exact Series Description Equality across full studySeriesList
-    found = studySeriesList.find(s => s.series_description && normalize(s.series_description) === normTarget);
+    found = studySeriesList.find(s => (s.series_description || s.seriesDescription) && normalize(s.series_description || s.seriesDescription) === normTarget);
     if (found) return found;
 
     // 3. Parse Series Number (e.g. "S:15 - i_AASpine_Scout", "Series 15", "S15", "15")
@@ -481,18 +483,21 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
   }
 
   // Filter candidates by slice count hints for fuzzy token matching
-  let candidates = studySeriesList;
+  let candidates = [...studySeriesList];
   if (hintTotalSlices && hintTotalSlices > 1) {
-    const matchingCount = studySeriesList.filter(s => parseInt(s.total_slices, 10) === parseInt(hintTotalSlices, 10));
+    const matchingCount = studySeriesList.filter(s => getSliceCount(s) === parseInt(hintTotalSlices, 10));
     if (matchingCount.length > 0) {
       candidates = matchingCount;
     } else {
-      candidates = studySeriesList.filter(s => parseInt(s.total_slices, 10) > 1);
+      candidates = studySeriesList.filter(s => getSliceCount(s) > 1);
     }
   } else if (hintSliceNum && hintSliceNum > 1) {
-    candidates = studySeriesList.filter(s => parseInt(s.total_slices, 10) >= hintSliceNum);
+    candidates = studySeriesList.filter(s => getSliceCount(s) >= hintSliceNum);
   }
-  if (candidates.length === 0) candidates = studySeriesList;
+  if (candidates.length === 0) candidates = [...studySeriesList];
+
+  // Sort candidates by slice count descending (diagnostic main series first)
+  candidates.sort((a, b) => getSliceCount(b) - getSliceCount(a));
 
   if (!cleanTarget) {
     const nonScout = candidates.filter(s => !isScout(s));
@@ -501,8 +506,9 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
 
   // 4. Substring match on normalized series_description
   found = candidates.find(s => {
-    if (!s.series_description) return false;
-    const normDesc = normalize(s.series_description);
+    const desc = s.series_description || s.seriesDescription;
+    if (!desc) return false;
+    const normDesc = normalize(desc);
     return normTarget.includes(normDesc) || normDesc.includes(normTarget);
   });
   if (found) return found;
@@ -513,8 +519,9 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     let bestMatch = null;
     let maxTokens = 0;
     for (const s of candidates) {
-      if (!s.series_description) continue;
-      const sDescNorm = normalize(s.series_description);
+      const desc = s.series_description || s.seriesDescription;
+      if (!desc) continue;
+      const sDescNorm = normalize(desc);
       const matches = targetTokens.filter(t => sDescNorm.includes(t)).length;
       if (matches > maxTokens) {
         maxTokens = matches;
@@ -524,7 +531,7 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
     if (bestMatch && maxTokens > 0) return bestMatch;
   }
 
-  // 6. Fallback to first non-scout candidate in real studySeriesList
+  // 6. Fallback to first non-scout candidate in real studySeriesList (sorted by slice count desc)
   const nonScout = candidates.filter(s => !isScout(s));
   if (nonScout.length > 0) return nonScout[0];
   if (candidates.length > 0) return candidates[0];

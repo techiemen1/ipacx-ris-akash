@@ -192,14 +192,19 @@ async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, 
     // Build URL variants for DCM4CHEE-ARC 5.x WADO-RS / WADO-URI
     const urlCandidates = [];
 
-    const frameSegment = (frameNumber !== null && frameNumber !== "" && !isNaN(parseInt(frameNumber, 10))) 
-      ? `/frames/${parseInt(frameNumber, 10)}/rendered` 
-      : "/rendered";
+    const frameNumInt = (frameNumber !== null && frameNumber !== "" && !isNaN(parseInt(frameNumber, 10))) ? parseInt(frameNumber, 10) : null;
+    const acceptHeader = "image/jpeg, image/png, image/*, */*";
 
     if (studyUID && seriesUID) {
+      if (frameNumInt && frameNumInt > 1) {
+        urlCandidates.push({
+          url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUID}/instances/${sopInstanceUid}/frames/${frameNumInt}/rendered`,
+          headers: { Accept: acceptHeader }
+        });
+      }
       urlCandidates.push({
-        url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUID}/instances/${sopInstanceUid}${frameSegment}`,
-        headers: { Accept: "image/jpeg" }
+        url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUID}/instances/${sopInstanceUid}/rendered`,
+        headers: { Accept: acceptHeader }
       });
       urlCandidates.push({
         url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/wado?requestType=WADO&studyUID=${studyUID}&seriesUID=${seriesUID}&objectUID=${sopInstanceUid}&contentType=image/jpeg`,
@@ -208,9 +213,15 @@ async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, 
     }
 
     if (studyUID) {
+      if (frameNumInt && frameNumInt > 1) {
+        urlCandidates.push({
+          url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/instances/${sopInstanceUid}/frames/${frameNumInt}/rendered`,
+          headers: { Accept: acceptHeader }
+        });
+      }
       urlCandidates.push({
-        url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/instances/${sopInstanceUid}${frameSegment}`,
-        headers: { Accept: "image/jpeg" }
+        url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/instances/${sopInstanceUid}/rendered`,
+        headers: { Accept: acceptHeader }
       });
       urlCandidates.push({
         url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/wado?requestType=WADO&studyUID=${studyUID}&objectUID=${sopInstanceUid}&contentType=image/jpeg`,
@@ -218,6 +229,10 @@ async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, 
       });
     }
 
+    urlCandidates.push({
+      url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/instances/${sopInstanceUid}/rendered`,
+      headers: { Accept: acceptHeader }
+    });
     urlCandidates.push({
       url: `http://${host}:${port}/dcm4chee-arc/aets/${aet}/wado?requestType=WADO&objectUID=${sopInstanceUid}&contentType=image/jpeg`,
       headers: {}
@@ -229,7 +244,7 @@ async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, 
           responseType: "arraybuffer",
           headers: cand.headers,
           ...authConfig,
-          timeout: 3500
+          timeout: 5000
         });
 
         if (res && res.data && res.data.byteLength > 500) {
@@ -264,12 +279,12 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
     const port = node.port;
     const aet = node.ae_title;
 
-    const seriesUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series`;
+    const seriesUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series?includefield=all`;
     try {
       const sRes = await axios.get(seriesUrl, {
         ...authConfig,
         headers: { Accept: "application/dicom+json" },
-        timeout: 4500
+        timeout: 5000
       });
 
       const parseDcmStr = (val, fallback = "") => {
@@ -285,9 +300,10 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
         for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
           const serObj = sRes.data[sIdx];
           const seriesUid = parseDcmStr(serObj["0020000E"]);
-          const seriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || `Series ${sIdx + 1}`;
+          const seriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || parseDcmStr(serObj["00080060"]) || `Series ${sIdx + 1}`;
           const seriesNum = parseInt(parseDcmStr(serObj["00200011"]) || (sIdx + 1), 10);
           const sModality = parseDcmStr(serObj["00080060"]);
+          const totSlicesCount = parseInt(parseDcmStr(serObj["00201209"]) || 0, 10);
 
           if (!seriesUid) continue;
 
@@ -295,7 +311,7 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
           const iRes = await axios.get(instUrl, {
             ...authConfig,
             headers: { Accept: "application/dicom+json" },
-            timeout: 4500
+            timeout: 5000
           }).catch(() => ({ data: [] }));
 
           let instances = [];
@@ -306,6 +322,7 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
               return numA - numB;
             });
 
+            const totalCount = iRes.data.length;
             instances = iRes.data.map((inst, iIdx) => {
               const sopUid = parseDcmStr(inst["00080018"]);
               const sliceNum = parseInt(parseDcmStr(inst["00200013"]) || (iIdx + 1), 10);
@@ -320,10 +337,12 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
                 slice_index: iIdx + 1,
                 previewUrl: pUrl,
                 preview_url: pUrl,
-                caption: `${seriesDesc} | Slice ${sliceNum}/${iRes.data.length}`
+                caption: `${seriesDesc} | Slice ${sliceNum}/${totalCount}`
               };
             });
           }
+
+          const sliceCount = instances.length > 0 ? instances.length : (totSlicesCount > 0 ? totSlicesCount : 1);
 
           seriesList.push({
             seriesId: seriesUid,
@@ -334,8 +353,8 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
             seriesNumber: seriesNum,
             series_number: seriesNum,
             modality: sModality,
-            totalSlices: instances.length,
-            total_slices: instances.length,
+            totalSlices: sliceCount,
+            total_slices: sliceCount,
             instances
           });
         }

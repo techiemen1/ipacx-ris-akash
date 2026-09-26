@@ -117,66 +117,88 @@ class PacsGateway {
         };
 
         for (const pacs of dcm4cheeNodes) {
+          const authObj = (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined;
           const metadataUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies/${encodeURIComponent(realStudyUID)}/metadata`;
+          const qidoStudyUrl = `http://${pacs.ip_address}:${pacs.port}/dcm4chee-arc/aets/${pacs.ae_title}/rs/studies?StudyInstanceUID=${encodeURIComponent(realStudyUID)}&includefield=all`;
+
+          let dcmJsonArray = null;
+
           try {
             const res = await axios.get(metadataUrl, {
-              auth: (pacs.username || pacs.password) ? { username: pacs.username, password: pacs.password } : undefined,
+              auth: authObj,
               headers: { Accept: "application/dicom+json" },
-              timeout: 1800
+              timeout: 4500
             });
             if (Array.isArray(res.data) && res.data.length > 0) {
-              const first = res.data[0];
-              const nameStr = parseDcmStr(first["00100010"]);
-              const refDocStr = parseDcmStr(first["00080090"]);
-
-              orthancData = {
-                PatientMainDicomTags: {
-                  PatientName: nameStr,
-                  PatientID: parseDcmStr(first["00100020"]),
-                  PatientSex: parseDcmStr(first["00100040"]) || "O",
-                  PatientAge: parseDcmStr(first["00101010"]),
-                  PatientBirthDate: parseDcmStr(first["00100030"])
-                },
-                MainDicomTags: {
-                  AccessionNumber: parseDcmStr(first["00080050"]),
-                  StudyInstanceUID: parseDcmStr(first["0020000D"]) || realStudyUID,
-                  StudyDate: parseDcmStr(first["00080020"]),
-                  StudyTime: parseDcmStr(first["00080030"]),
-                  StudyDescription: parseDcmStr(first["00081030"]),
-                  ReferringPhysicianName: refDocStr,
-                  Modality: parseDcmStr(first["00080060"]) || parseDcmStr(first["00080061"]) || "CR",
-                  BodyPartExamined: parseDcmStr(first["00180015"]),
-                  InstitutionName: parseDcmStr(first["00080080"])
-                }
-              };
-
-              seriesData = {
-                MainDicomTags: {
-                  Modality: parseDcmStr(first["00080060"]) || "CR",
-                  BodyPartExamined: parseDcmStr(first["00180015"]),
-                  Manufacturer: parseDcmStr(first["00080070"]),
-                  ManufacturerModelName: parseDcmStr(first["00081090"]),
-                  SeriesInstanceUID: parseDcmStr(first["0020000E"]),
-                  SeriesNumber: parseDcmStr(first["00200011"]) || "1",
-                  SeriesDescription: parseDcmStr(first["0008103E"]) || parseDcmStr(first["00081030"]) || "Diagnostic Series",
-                  InstitutionalDepartmentName: parseDcmStr(first["00081040"]),
-                  StationName: parseDcmStr(first["00081010"])
-                }
-              };
-
-              instanceData = {
-                "0018,0050": parseDcmStr(first["00180050"]),
-                "0018,0060": parseDcmStr(first["00180060"]),
-                "0018,1152": parseDcmStr(first["00181152"]),
-                "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
-                "0028,1050": parseDcmStr(first["00281050"]),
-                "0028,1051": parseDcmStr(first["00281051"]),
-                "0028,0010": parseDcmStr(first["00280010"]),
-                "0028,0011": parseDcmStr(first["00280011"])
-              };
-              return;
+              dcmJsonArray = res.data;
             }
           } catch (e) {}
+
+          if (!dcmJsonArray) {
+            try {
+              const qRes = await axios.get(qidoStudyUrl, {
+                auth: authObj,
+                headers: { Accept: "application/dicom+json" },
+                timeout: 4500
+              });
+              if (Array.isArray(qRes.data) && qRes.data.length > 0) {
+                dcmJsonArray = qRes.data;
+              }
+            } catch (e) {}
+          }
+
+          if (Array.isArray(dcmJsonArray) && dcmJsonArray.length > 0) {
+            const first = dcmJsonArray[0];
+            const nameStr = parseDcmStr(first["00100010"]);
+            const refDocStr = parseDcmStr(first["00080090"]);
+
+            orthancData = {
+              PatientMainDicomTags: {
+                PatientName: nameStr,
+                PatientID: parseDcmStr(first["00100020"]),
+                PatientSex: parseDcmStr(first["00100040"]) || "O",
+                PatientAge: parseDcmStr(first["00101010"]),
+                PatientBirthDate: parseDcmStr(first["00100030"])
+              },
+              MainDicomTags: {
+                AccessionNumber: parseDcmStr(first["00080050"]),
+                StudyInstanceUID: parseDcmStr(first["0020000D"]) || realStudyUID,
+                StudyDate: parseDcmStr(first["00080020"]),
+                StudyTime: parseDcmStr(first["00080030"]),
+                StudyDescription: parseDcmStr(first["00081030"]),
+                ReferringPhysicianName: refDocStr,
+                Modality: parseDcmStr(first["00080060"]) || parseDcmStr(first["00080061"]) || "CR",
+                BodyPartExamined: parseDcmStr(first["00180015"]),
+                InstitutionName: parseDcmStr(first["00080080"])
+              }
+            };
+
+            seriesData = {
+              MainDicomTags: {
+                Modality: parseDcmStr(first["00080060"]) || "CR",
+                BodyPartExamined: parseDcmStr(first["00180015"]),
+                Manufacturer: parseDcmStr(first["00080070"]),
+                ManufacturerModelName: parseDcmStr(first["00081090"]),
+                SeriesInstanceUID: parseDcmStr(first["0020000E"]),
+                SeriesNumber: parseDcmStr(first["00200011"]) || "1",
+                SeriesDescription: parseDcmStr(first["0008103E"]) || parseDcmStr(first["00081030"]) || "Diagnostic Series",
+                InstitutionalDepartmentName: parseDcmStr(first["00081040"]),
+                StationName: parseDcmStr(first["00081010"])
+              }
+            };
+
+            instanceData = {
+              "0018,0050": parseDcmStr(first["00180050"]),
+              "0018,0060": parseDcmStr(first["00180060"]),
+              "0018,1152": parseDcmStr(first["00181152"]),
+              "0028,0030": first["00280030"]?.Value ? first["00280030"].Value.join("\\") : undefined,
+              "0028,1050": parseDcmStr(first["00281050"]),
+              "0028,1051": parseDcmStr(first["00281051"]),
+              "0028,0010": parseDcmStr(first["00280010"]),
+              "0028,0011": parseDcmStr(first["00280011"])
+            };
+            return;
+          }
         }
       } catch (e) {}
 
