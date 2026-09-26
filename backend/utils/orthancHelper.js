@@ -73,15 +73,20 @@ function getOrthancAuthHeader() {
 
 async function getOrthancUrl() {
   await getActivePacsCredentials();
-  if (cachedWorkingOrthancUrl) return cachedWorkingOrthancUrl;
+  const now = Date.now();
+  if (cachedWorkingOrthancUrl && (now - lastAuthCacheTime < 30000)) {
+    return cachedWorkingOrthancUrl;
+  }
 
   const dbCandidates = [];
   try {
     const pacsRes = await pool.query(
-      "SELECT ip_address, port FROM public.pacs WHERE is_active = true ORDER BY id ASC"
+      "SELECT ip_address, port, pacs_type FROM public.pacs WHERE is_active = true ORDER BY id ASC"
     ).catch(() => ({ rows: [] }));
     
     for (const r of (pacsRes.rows || [])) {
+      const pType = String(r.pacs_type || "").toUpperCase();
+      if (pType.includes("DCM4CHEE") || pType.includes("DICOMWEB")) continue;
       if (r.ip_address && r.port) {
         let host = String(r.ip_address).trim();
         let port = String(r.port).trim();
@@ -107,25 +112,39 @@ async function getOrthancUrl() {
   } catch (e) {}
 
   const candidates = [
-    ...dbCandidates,
     process.env.ORTHANC_URL,
+    ...dbCandidates,
     "http://Orthanc:8042/",
     "http://host.docker.internal:8042/",
     "http://172.17.0.1:8042/",
     "http://172.21.0.1:8042/",
+    "http://127.0.0.1:8042/",
     "http://localhost:8042/"
   ].filter(Boolean);
 
-  for (const rawUrl of candidates) {
-    const url = rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
+  const uniqueCandidates = Array.from(new Set(candidates.map(u => u.endsWith('/') ? u : `${u}/`)));
+
+  // Fast parallel probe across candidates with 500ms timeout
+  const probePromises = uniqueCandidates.map(async (url) => {
     try {
-      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 1500 });
-      cachedWorkingOrthancUrl = url;
-      console.log(`[Orthanc Discovery] Selected working Orthanc URL: ${cachedWorkingOrthancUrl}`);
+      await axios.get(`${url}system`, { ...orthancAuthConfig(), timeout: 500 });
       return url;
-    } catch (e) {}
-  }
+    } catch (e) {
+      throw e;
+    }
+  });
+
+  try {
+    const workingUrl = await Promise.any(probePromises);
+    if (workingUrl) {
+      cachedWorkingOrthancUrl = workingUrl;
+      console.log(`[Orthanc Discovery] Fast parallel probe selected: ${workingUrl}`);
+      return workingUrl;
+    }
+  } catch (e) {}
+
   const fallback = (process.env.ORTHANC_URL || "http://Orthanc:8042/").replace(/\/?$/, "/");
+  cachedWorkingOrthancUrl = fallback;
   console.log(`[Orthanc Discovery] Fallback to default Orthanc URL: ${fallback}`);
   return fallback;
 }

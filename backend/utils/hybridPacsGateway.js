@@ -328,20 +328,32 @@ class HybridPacsGateway {
         } catch (e) {}
       }
 
-      const renderPath = (frameNumber !== null && frameNumber !== "") 
-        ? `instances/${orthancInstId}/frames/${frameNumber}/rendered` 
-        : `instances/${orthancInstId}/rendered`;
-
-      const res = await axios.get(`${orthancUrl}${renderPath}`, {
+      // Priority 1A: Direct /rendered on instance (works for 99% single-frame DICOM instances in <5ms)
+      const directRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/rendered`, {
         responseType: "arraybuffer",
         ...orthancAuthConfig(),
         timeout: 2500
       }).catch(() => null);
 
-      if (res && res.data && res.data.byteLength > 500) {
-        return Buffer.from(res.data);
+      if (directRes && directRes.data && directRes.data.byteLength > 500) {
+        return Buffer.from(directRes.data);
       }
 
+      // Priority 1B: Multi-frame DICOM instance frame rendering (0-indexed for Orthanc)
+      if (frameNumber !== null && frameNumber !== undefined && frameNumber !== "") {
+        const frameIdx = parseInt(frameNumber, 10);
+        const orthancFrame = (!isNaN(frameIdx) && frameIdx > 0) ? (frameIdx - 1) : 0;
+        const frameRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/frames/${orthancFrame}/rendered`, {
+          responseType: "arraybuffer",
+          ...orthancAuthConfig(),
+          timeout: 2500
+        }).catch(() => null);
+        if (frameRes && frameRes.data && frameRes.data.byteLength > 500) {
+          return Buffer.from(frameRes.data);
+        }
+      }
+
+      // Priority 1C: /preview fallback
       const fbRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/preview`, {
         responseType: "arraybuffer",
         ...orthancAuthConfig(),
@@ -361,7 +373,7 @@ class HybridPacsGateway {
       }
     } catch (e) {}
 
-    // 3. Try Generic PACS / DICOMweb / VNA nodes
+    // 3. Try Generic PACS / DICOMweb / VNA nodes with fast 500ms timeout
     try {
       const nodes = await this.getAllActivePacsNodes();
       for (const node of nodes) {
@@ -385,7 +397,7 @@ class HybridPacsGateway {
             const res = await axios.get(u, {
               responseType: "arraybuffer",
               ...auth,
-              timeout: 3500
+              timeout: 500
             });
             if (res && res.data && res.data.byteLength > 500) {
               return Buffer.from(res.data);

@@ -108,6 +108,8 @@ function getDcm4cheeAuthConfig(node) {
   return { auth: { username: String(user).trim(), password: String(pass) } };
 }
 
+let isDcm4cheeAvailable = true;
+
 /**
  * Resolves working DCM4CHEE node with fast parallel probing & 30s cache
  */
@@ -116,29 +118,25 @@ async function getWorkingDcm4cheeNode() {
   if (cachedWorkingDcm4cheeNode && (now - lastCacheTime < 30000)) {
     return cachedWorkingDcm4cheeNode;
   }
+  if (!isDcm4cheeAvailable && (now - lastCacheTime < 30000)) {
+    return null;
+  }
 
   const nodes = await getDcm4cheeNodes();
   if (!nodes || nodes.length === 0) {
-    return {
-      id: "default_fallback",
-      pacs_name: "DCM4CHEE_FALLBACK",
-      pacs_type: "DCM4CHEE",
-      ae_title: process.env.DCM4CHEE_AET || "DCM4CHEE",
-      ip_address: process.env.DCM4CHEE_HOST || "dcm4chee-arc",
-      port: 8080,
-      username: process.env.DCM4CHEE_USER || "pacs",
-      password: process.env.DCM4CHEE_PASS || "pacs"
-    };
+    isDcm4cheeAvailable = false;
+    lastCacheTime = now;
+    return null;
   }
 
-  // Fast parallel probe across all candidate nodes with 800ms timeout
-  const probePromises = nodes.map(async (node) => {
+  // Probe candidates in parallel with 500ms timeout
+  const probePromises = nodes.slice(0, 8).map(async (node) => {
     const checkUrl = `http://${node.ip_address}:${node.port}/dcm4chee-arc/aets/${node.ae_title}/rs/studies`;
     try {
       await axios.get(`${checkUrl}?limit=1`, {
         ...getDcm4cheeAuthConfig(node),
         headers: { Accept: "application/dicom+json" },
-        timeout: 800
+        timeout: 500
       });
       return node;
     } catch (e) {
@@ -153,6 +151,7 @@ async function getWorkingDcm4cheeNode() {
     const workingNode = await Promise.any(probePromises);
     if (workingNode) {
       cachedWorkingDcm4cheeNode = workingNode;
+      isDcm4cheeAvailable = true;
       lastCacheTime = now;
       console.log(`[DCM4CHEE Discovery] Fast probe selected working node: ${workingNode.ip_address}:${workingNode.port} (${workingNode.ae_title})`);
       return workingNode;
@@ -161,10 +160,10 @@ async function getWorkingDcm4cheeNode() {
     // Parallel probe failed or all rejected
   }
 
-  const fallback = nodes[0];
-  cachedWorkingDcm4cheeNode = fallback;
+  isDcm4cheeAvailable = false;
   lastCacheTime = now;
-  return fallback;
+  cachedWorkingDcm4cheeNode = null;
+  return null;
 }
 
 /**
@@ -173,15 +172,9 @@ async function getWorkingDcm4cheeNode() {
 async function fetchDcm4cheeInstanceBuffer(studyUID, seriesUID, sopInstanceUid, frameNumber = null) {
   if (!sopInstanceUid) return null;
   const workingNode = await getWorkingDcm4cheeNode();
-  const allNodes = await getDcm4cheeNodes();
+  if (!workingNode) return null;
   
-  // Prioritize working node first, followed by unique remaining nodes
   const nodes = [workingNode];
-  for (const n of allNodes) {
-    if (n.ip_address !== workingNode.ip_address || n.port !== workingNode.port || n.ae_title !== workingNode.ae_title) {
-      nodes.push(n);
-    }
-  }
 
   for (const node of nodes) {
     const authConfig = getDcm4cheeAuthConfig(node);

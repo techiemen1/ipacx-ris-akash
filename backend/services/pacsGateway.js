@@ -112,6 +112,18 @@ class PacsGateway {
         } catch (e) {}
 
         if (!orthancId) {
+          try {
+            const findAccRes = await axios.post(`${orthancUrl}tools/find`, {
+              Level: "Study",
+              Query: { AccessionNumber: realStudyUID }
+            }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
+            if (Array.isArray(findAccRes.data) && findAccRes.data.length > 0) {
+              orthancId = findAccRes.data[0];
+            }
+          } catch (e) {}
+        }
+
+        if (!orthancId) {
           const dRes = await axios.get(`${orthancUrl}studies/${realStudyUID}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
           if (dRes?.data?.ID) orthancId = dRes.data.ID;
         }
@@ -121,9 +133,20 @@ class PacsGateway {
           if (dData && dData.ID) {
             orthancData = dData;
             if (Array.isArray(dData.Series) && dData.Series.length > 0) {
-              const firstSeriesId = dData.Series[0];
-              const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
-              if (serRes) seriesData = serRes;
+              const seriesPromises = dData.Series.map(sId => 
+                axios.get(`${orthancUrl}series/${sId}`, { ...orthancAuthConfig(), timeout: 1500 }).then(r => r.data).catch(() => null)
+              );
+              const fetchedSeries = (await Promise.all(seriesPromises)).filter(Boolean);
+              if (fetchedSeries.length > 0) {
+                const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s?.MainDicomTags?.SeriesDescription || '');
+                const sorted = [...fetchedSeries].sort((a, b) => {
+                  const aScout = isScout(a) ? 1 : 0;
+                  const bScout = isScout(b) ? 1 : 0;
+                  if (aScout !== bScout) return aScout - bScout;
+                  return (b?.Instances?.length || 0) - (a?.Instances?.length || 0);
+                });
+                seriesData = sorted[0];
+              }
             }
             return; // Successfully loaded from local Orthanc!
           }
@@ -134,10 +157,12 @@ class PacsGateway {
       try {
         const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
         const workingNode = await dcm4cheeHelper.getWorkingDcm4cheeNode();
+        if (!workingNode) return; // DCM4CHEE offline, exit immediately
+
         const allNodes = await dcm4cheeHelper.getDcm4cheeNodes();
         const dcm4cheeNodes = [workingNode];
         for (const n of allNodes) {
-          if (n.ip_address !== workingNode.ip_address || n.port !== workingNode.port || n.ae_title !== workingNode.ae_title) {
+          if (n && (n.ip_address !== workingNode.ip_address || n.port !== workingNode.port || n.ae_title !== workingNode.ae_title)) {
             dcm4cheeNodes.push(n);
           }
         }

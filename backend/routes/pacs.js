@@ -760,12 +760,8 @@ async function processKeyImageSave(payload, reqUser = {}) {
   // Priority 2: High-resolution PACS rendered DICOM slice if no live canvas dataUrl provided
   if (!finalUrl && targetInstId) {
     try {
-      let renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
-      if (!renderedBuffer) {
-        renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, null);
-      }
-
-      if (renderedBuffer) {
+      const renderedBuffer = await hybridPacsGateway.fetchHybridInstanceBuffer(studyUID, seriesUID, targetInstId, frameNumber || targetSlice);
+      if (renderedBuffer && renderedBuffer.length > 500) {
         fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
         finalUrl = `/uploads/report_images/${filename}`;
       }
