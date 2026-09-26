@@ -340,48 +340,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
-    const detectedSlice = overrideSliceNum !== null 
-      ? parseInt(overrideSliceNum, 10) 
-      : (
-          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
-          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
-          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
-          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
-          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
-          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
-          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
-          null
-        );
-
-    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
-    let displaySliceNum = detectedSlice || 1;
-
-    const liveSeriesTarget = 
-      snapResult?.matchedSeriesId || 
-      snapResult?.seriesInstanceUid ||
-      snapResult?.seriesDescription ||
-      directDomSliceInfo?.matchedSeriesId ||
-      directDomSliceInfo?.seriesDescription ||
-      activeViewportInfo?.seriesInstanceUid || 
-      activeViewportInfo?.seriesDescription ||
-      overrideSeriesId;
-
-    const activeSeriesTarget = liveSeriesTarget || selectedSeriesId;
-
-    const seriesObj = 
-      (liveSeriesTarget ? findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) : null) ||
-      (selectedSeriesId ? findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices) : null) ||
-      findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
-    if (seriesObj && seriesObj.series_id) {
-      setSelectedSeriesId(String(seriesObj.series_id));
-    }
-
-    // Resolve detected slice candidate with strict priority:
-    // 1. Explicit parameter override (e.g. from picker modal)
-    // 2. Direct DOM slice inspection (directDomSliceInfo?.sliceNumber)
-    // 3. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
-    // 4. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
-    // 5. Direct DOM instance number / snapResult instance number
     // Check viewer_state localStorage fallback if iframe detection is cross-origin
     let savedViewerStateSlice = null;
     if (studyUID) {
@@ -398,14 +356,56 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       }
     }
 
+    const detectedSlice = overrideSliceNum !== null 
+      ? parseInt(overrideSliceNum, 10) 
+      : (
+          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
+          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
+          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
+          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
+          (savedViewerStateSlice && parseInt(savedViewerStateSlice, 10) > 0 ? parseInt(savedViewerStateSlice, 10) : null) ||
+          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
+          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
+          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
+          null
+        );
+
+    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
+    let displaySliceNum = detectedSlice || 1;
+
+    const liveSeriesTarget = 
+      snapResult?.matchedSeriesId || 
+      snapResult?.seriesInstanceUid ||
+      (snapResult?.seriesDescription && !/diagnostic series/i.test(snapResult.seriesDescription) ? snapResult.seriesDescription : null) ||
+      directDomSliceInfo?.matchedSeriesId ||
+      (directDomSliceInfo?.seriesDescription && !/diagnostic series/i.test(directDomSliceInfo.seriesDescription) ? directDomSliceInfo.seriesDescription : null) ||
+      activeViewportInfo?.seriesInstanceUid || 
+      (activeViewportInfo?.seriesDescription && !/diagnostic series/i.test(activeViewportInfo.seriesDescription) ? activeViewportInfo.seriesDescription : null) ||
+      overrideSeriesId;
+
+    const activeSeriesTarget = liveSeriesTarget || selectedSeriesId;
+
+    const seriesObj = 
+      (liveSeriesTarget ? findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices) : null) ||
+      (selectedSeriesId ? findSeriesInList(studySeriesList, selectedSeriesId, displaySliceNum, totalSlices) : null) ||
+      findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
+    if (seriesObj && seriesObj.series_id) {
+      setSelectedSeriesId(String(seriesObj.series_id));
+    }
+
     const resolvedTotalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), resolvedTotalSlices);
 
     const rawSnapDesc = snapResult?.seriesDescription || directDomSliceInfo?.seriesDescription || activeViewportInfo?.seriesDescription;
-    const seriesDesc = rawSnapDesc || seriesObj?.series_description || "Diagnostic Series";
+    const isGenericDesc = (str) => !str || /diagnostic series|diagnostic viewport|viewport|series \d+/i.test(String(str).trim());
+    const realSeriesDesc = !isGenericDesc(seriesObj?.series_description) 
+      ? seriesObj.series_description 
+      : (!isGenericDesc(rawSnapDesc) ? rawSnapDesc : (seriesObj?.series_description || rawSnapDesc || "Diagnostic Series"));
+    const seriesDesc = realSeriesDesc;
+
     const fullCaption = resolvedTotalSlices > 1 
-      ? `${seriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
-      : `${seriesDesc} | ${displaySliceNum}`;
+      ? `${realSeriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
+      : `${realSeriesDesc} | ${displaySliceNum}`;
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {

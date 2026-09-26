@@ -225,7 +225,7 @@ class HybridPacsGateway {
   async fetchOrthancSeries(orthancUrl, studyData) {
     const config = orthancAuthConfig();
     const seriesPromises = studyData.Series.map((seriesId, sIdx) =>
-      axios.get(`${orthancUrl}series/${seriesId}`, { ...config, timeout: 5000 })
+      axios.get(`${orthancUrl}series/${seriesId}`, { ...config, timeout: 2500 })
         .then(async (r) => {
           if (!r.data) return null;
           const sData = r.data;
@@ -234,49 +234,58 @@ class HybridPacsGateway {
           const sModality = sData.MainDicomTags?.Modality || "";
 
           let orderedInstances = [];
-          try {
-            const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 5000 });
-            if (Array.isArray(expInstances) && expInstances.length > 0) {
-              expInstances.sort((a, b) => {
-                const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
-                const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
-                return numA - numB;
-              });
-              const tot = expInstances.length;
-              orderedInstances = expInstances.map((inst, iIdx) => {
-                const instId = extractCleanInstanceId(inst.ID || inst);
-                const instNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
-                const sopUid = inst.MainDicomTags?.SOPInstanceUID || instId;
-                return {
-                  id: instId,
-                  instance_id: instId,
-                  sop_instance_uid: sopUid,
-                  slice_number: instNum,
-                  instanceNumber: instNum,
-                  instance_number: instNum,
-                  slice_index: iIdx + 1,
-                  previewUrl: `/api/pacs/instance-preview/${instId}`,
-                  preview_url: `/api/pacs/instance-preview/${instId}`,
-                  caption: `${sDesc} | Slice ${instNum}/${tot}`
-                };
-              });
-            }
-          } catch (e) {}
-
-          if (orderedInstances.length === 0 && Array.isArray(sData.Instances)) {
+          
+          // Fast path: use sData.Instances directly (0ms execution time, 0 extra HTTP requests)
+          if (Array.isArray(sData.Instances) && sData.Instances.length > 0) {
+            const tot = sData.Instances.length;
             orderedInstances = sData.Instances.map((instItem, iIdx) => {
               const instId = extractCleanInstanceId(instItem);
+              const sliceNum = iIdx + 1;
               return {
                 id: instId,
                 instance_id: instId,
-                slice_number: iIdx + 1,
-                instanceNumber: iIdx + 1,
-                slice_index: iIdx + 1,
+                sop_instance_uid: instId,
+                slice_number: sliceNum,
+                instanceNumber: sliceNum,
+                instance_number: sliceNum,
+                slice_index: sliceNum,
                 previewUrl: `/api/pacs/instance-preview/${instId}`,
                 preview_url: `/api/pacs/instance-preview/${instId}`,
-                caption: `${sDesc} | Slice ${iIdx + 1}/${sData.Instances.length}`
+                caption: `${sDesc} | Slice ${sliceNum}/${tot}`
               };
             });
+          }
+
+          // Optional expand for small series only (<30 instances) if instance numbers are needed
+          if (orderedInstances.length > 0 && orderedInstances.length <= 30) {
+            try {
+              const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 1500 });
+              if (Array.isArray(expInstances) && expInstances.length > 0) {
+                expInstances.sort((a, b) => {
+                  const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+                  const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+                  return numA - numB;
+                });
+                const tot = expInstances.length;
+                orderedInstances = expInstances.map((inst, iIdx) => {
+                  const instId = extractCleanInstanceId(inst.ID || inst);
+                  const instNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+                  const sopUid = inst.MainDicomTags?.SOPInstanceUID || instId;
+                  return {
+                    id: instId,
+                    instance_id: instId,
+                    sop_instance_uid: sopUid,
+                    slice_number: instNum,
+                    instanceNumber: instNum,
+                    instance_number: instNum,
+                    slice_index: iIdx + 1,
+                    previewUrl: `/api/pacs/instance-preview/${instId}`,
+                    preview_url: `/api/pacs/instance-preview/${instId}`,
+                    caption: `${sDesc} | Slice ${instNum}/${tot}`
+                  };
+                });
+              }
+            } catch (e) {}
           }
 
           const dicomSeriesUid = sData.MainDicomTags?.SeriesInstanceUID || sData.ID || seriesId;

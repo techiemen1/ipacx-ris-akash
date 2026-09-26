@@ -124,6 +124,18 @@ class PacsGateway {
         }
 
         if (!orthancId) {
+          try {
+            const findPidRes = await axios.post(`${orthancUrl}tools/find`, {
+              Level: "Study",
+              Query: { PatientID: realStudyUID }
+            }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
+            if (Array.isArray(findPidRes.data) && findPidRes.data.length > 0) {
+              orthancId = findPidRes.data[0];
+            }
+          } catch (e) {}
+        }
+
+        if (!orthancId) {
           const dRes = await axios.get(`${orthancUrl}studies/${realStudyUID}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
           if (dRes?.data?.ID) orthancId = dRes.data.ID;
         }
@@ -310,7 +322,8 @@ class PacsGateway {
       }
     };
 
-    if (tagsDictionary && (tagsDictionary.patient?.PatientName || tagsDictionary.study?.AccessionNumber)) {
+    const isRealTags = orthancData !== null || (tagsDictionary.patient?.PatientName && tagsDictionary.patient.PatientName !== "Patient");
+    if (tagsDictionary && isRealTags) {
       if (this.tagsCache.size >= this.MAX_TAGS_CACHE && !this.tagsCache.has(String(studyUID))) {
         const oldestKey = this.tagsCache.keys().next().value;
         if (oldestKey) this.tagsCache.delete(oldestKey);

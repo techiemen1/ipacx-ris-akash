@@ -960,6 +960,22 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
+    // Check viewer_state localStorage fallback if iframe detection is cross-origin
+    let savedViewerStateSlice = null;
+    if (studyUID) {
+      try {
+        const savedStateStr = sessionStorage.getItem(`viewer_state_${studyUID}`) || localStorage.getItem(`viewer_state_${studyUID}`);
+        if (savedStateStr) {
+          const parsedState = JSON.parse(savedStateStr);
+          if (parsedState && parsedState.sliceIndex !== undefined && parsedState.sliceIndex !== null) {
+            savedViewerStateSlice = parseInt(parsedState.sliceIndex, 10) + 1;
+          }
+        }
+      } catch (e) {
+        /* ignore localStorage parsing error */
+      }
+    }
+
     const detectedSlice = overrideSliceNum !== null 
       ? parseInt(overrideSliceNum, 10) 
       : (
@@ -967,6 +983,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
           (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
           (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
+          (savedViewerStateSlice && parseInt(savedViewerStateSlice, 10) > 0 ? parseInt(savedViewerStateSlice, 10) : null) ||
           (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
           (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
           (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
@@ -1018,43 +1035,20 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     if (seriesObj && seriesObj.series_id) {
       setSelectedSeriesId(String(seriesObj.series_id));
     }
-    console.log('[RRS] liveSeriesTarget:', liveSeriesTarget, 'seriesObj:', seriesObj?.series_description);
-    console.log('[RRS] detectedSlice will be from:', {
-      dom: directDomSliceInfo?.sliceNumber,
-      snap: snapResult?.sliceNumber,
-      activeVp: activeViewportInfo?.frameNumber
-    });
-
-    // Resolve detected slice candidate with strict priority:
-    // 1. Explicit parameter override (e.g. from picker modal)
-    // 2. Direct DOM slice inspection (directDomSliceInfo?.sliceNumber)
-    // 3. Verified slice number from live iframe snapshot (snapResult?.sliceNumber)
-    // 4. Active viewport info frame number from live listener (activeViewportInfo?.frameNumber)
-    // 5. Direct DOM instance number / snapResult instance number
-    // Check viewer_state localStorage fallback if iframe detection is cross-origin
-    let savedViewerStateSlice = null;
-    if (studyUID) {
-      try {
-        const savedStateStr = sessionStorage.getItem(`viewer_state_${studyUID}`) || localStorage.getItem(`viewer_state_${studyUID}`);
-        if (savedStateStr) {
-          const parsedState = JSON.parse(savedStateStr);
-          if (parsedState && parsedState.sliceIndex !== undefined && parsedState.sliceIndex !== null) {
-            savedViewerStateSlice = parseInt(parsedState.sliceIndex, 10) + 1;
-          }
-        }
-      } catch (e) {
-        /* ignore localStorage parsing error */
-      }
-    }
 
     const resolvedTotalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
     displaySliceNum = Math.min(Math.max(1, displaySliceNum), resolvedTotalSlices);
 
     const rawSnapDesc = snapResult?.seriesDescription || directDomSliceInfo?.seriesDescription || activeViewportInfo?.seriesDescription;
-    const seriesDesc = rawSnapDesc || seriesObj?.series_description || "Diagnostic Series";
+    const isGenericDesc = (str) => !str || /diagnostic series|diagnostic viewport|viewport|series \d+/i.test(String(str).trim());
+    const realSeriesDesc = !isGenericDesc(seriesObj?.series_description) 
+      ? seriesObj.series_description 
+      : (!isGenericDesc(rawSnapDesc) ? rawSnapDesc : (seriesObj?.series_description || rawSnapDesc || "Diagnostic Series"));
+    const seriesDesc = realSeriesDesc;
+
     const fullCaption = resolvedTotalSlices > 1 
-      ? `${seriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
-      : `${seriesDesc} | ${displaySliceNum}`;
+      ? `${realSeriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
+      : `${realSeriesDesc} | ${displaySliceNum}`;
 
     let targetInst = null;
     if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
