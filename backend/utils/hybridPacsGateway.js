@@ -57,6 +57,26 @@ class HybridPacsGateway {
   }
 
   /**
+  /**
+   * Sorts series list so non-scout diagnostic series are prioritized first,
+   * sorted descending by total slice count. Topogram/Scout series are placed at the end.
+   */
+  sortSeriesList(seriesList) {
+    if (!Array.isArray(seriesList)) return [];
+    const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s?.series_description || s?.seriesDescription || '');
+    const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
+
+    const sorted = [...seriesList];
+    sorted.sort((a, b) => {
+      const aScout = isScout(a) ? 1 : 0;
+      const bScout = isScout(b) ? 1 : 0;
+      if (aScout !== bScout) return aScout - bScout;
+      return getSliceCount(b) - getSliceCount(a);
+    });
+    return sorted;
+  }
+
+  /**
    * Fetches study series & instances from ALL connected PACS/VNA sources in parallel/hybrid fallback order.
    * Priority 1: Orthanc
    * Priority 2: DCM4CHEE / DCM4CHEE-ARC
@@ -87,7 +107,7 @@ class HybridPacsGateway {
         const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
         if (studyData && Array.isArray(studyData.Series) && studyData.Series.length > 0) {
           const orthSeries = await this.fetchOrthancSeries(orthancUrl, studyData);
-          if (orthSeries && orthSeries.length > 0) return orthSeries;
+          if (orthSeries && orthSeries.length > 0) return this.sortSeriesList(orthSeries);
         }
       }
     } catch (e) {
@@ -98,7 +118,7 @@ class HybridPacsGateway {
     try {
       const dcmSeries = await dcm4cheeHelper.searchDcm4cheeSeriesAndInstances(studyUID);
       if (Array.isArray(dcmSeries) && dcmSeries.length > 0) {
-        return dcmSeries;
+        return this.sortSeriesList(dcmSeries);
       }
     } catch (e) {
       console.warn("[Hybrid PACS] DCM4CHEE series search notice:", e.message);
@@ -293,9 +313,25 @@ class HybridPacsGateway {
     // 1. Try Orthanc PACS first
     try {
       const orthancUrl = await getOrthancUrl();
+      let orthancInstId = sopInstanceUid;
+
+      // If sopInstanceUid is a DICOM SOPInstanceUID (contains dots), resolve internal Orthanc UUID
+      if (String(sopInstanceUid).includes('.')) {
+        try {
+          const findRes = await axios.post(`${orthancUrl}tools/find`, {
+            Level: "Instance",
+            Query: { SOPInstanceUID: sopInstanceUid }
+          }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
+          if (Array.isArray(findRes.data) && findRes.data.length > 0) {
+            orthancInstId = findRes.data[0];
+          }
+        } catch (e) {}
+      }
+
       const renderPath = (frameNumber !== null && frameNumber !== "") 
-        ? `instances/${sopInstanceUid}/frames/${frameNumber}/rendered` 
-        : `instances/${sopInstanceUid}/rendered`;
+        ? `instances/${orthancInstId}/frames/${frameNumber}/rendered` 
+        : `instances/${orthancInstId}/rendered`;
+
       const res = await axios.get(`${orthancUrl}${renderPath}`, {
         responseType: "arraybuffer",
         ...orthancAuthConfig(),
@@ -306,7 +342,7 @@ class HybridPacsGateway {
         return Buffer.from(res.data);
       }
 
-      const fbRes = await axios.get(`${orthancUrl}instances/${sopInstanceUid}/preview`, {
+      const fbRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/preview`, {
         responseType: "arraybuffer",
         ...orthancAuthConfig(),
         timeout: 2500

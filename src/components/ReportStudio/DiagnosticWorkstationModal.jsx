@@ -228,10 +228,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
-          const isScout = (s) => /topogram|localizer|scout|survey|plan/i.test(s.series_description || '');
-          const diagSeries = res.data.series.filter(s => !isScout(s));
-          const mainSeries = (diagSeries.length > 0 ? (diagSeries.find(s => s.total_slices > 1) || diagSeries[0]) : res.data.series[0]);
-          setSelectedSeriesId(mainSeries.series_id);
+          const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s.series_description || s.seriesDescription || '');
+          const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
+          
+          const sortedAll = [...res.data.series].sort((a, b) => {
+            const aScout = isScout(a) ? 1 : 0;
+            const bScout = isScout(b) ? 1 : 0;
+            if (aScout !== bScout) return aScout - bScout;
+            return getSliceCount(b) - getSliceCount(a);
+          });
+          const mainSeries = sortedAll[0];
+          setSelectedSeriesId(String(mainSeries.series_id || mainSeries.series_instance_uid || ''));
           setPickerSliceNum(1);
           setTargetSliceNumber("1");
         }

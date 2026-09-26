@@ -92,11 +92,45 @@ class PacsGateway {
     let modality = dbRow.modality || dbRow.Modality || "CR";
     let bodyPart = dbRow.body_part || "General";
 
-    // 2. PARALLEL HYBRID PACS QUERY (Fast workingNode probe)
+    // 2. HYBRID PACS DICOM TAG QUERY (Orthanc first for 5ms local execution, DCM4CHEE as fallback)
     const queryPacsTags = async () => {
       const realStudyUID = dbRow.study_uid || studyUID;
 
-      // Try DCM4CHEE first via dcm4cheeHelper working node
+      // Priority 1: Try Orthanc PACS first (<5ms on local system)
+      try {
+        const orthancUrl = await getOrthancUrl();
+        let orthancId = null;
+
+        try {
+          const findRes = await axios.post(`${orthancUrl}tools/find`, {
+            Level: "Study",
+            Query: { StudyInstanceUID: realStudyUID }
+          }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
+          if (Array.isArray(findRes.data) && findRes.data.length > 0) {
+            orthancId = findRes.data[0];
+          }
+        } catch (e) {}
+
+        if (!orthancId) {
+          const dRes = await axios.get(`${orthancUrl}studies/${realStudyUID}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+          if (dRes?.data?.ID) orthancId = dRes.data.ID;
+        }
+
+        if (orthancId) {
+          const { data: dData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+          if (dData && dData.ID) {
+            orthancData = dData;
+            if (Array.isArray(dData.Series) && dData.Series.length > 0) {
+              const firstSeriesId = dData.Series[0];
+              const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
+              if (serRes) seriesData = serRes;
+            }
+            return; // Successfully loaded from local Orthanc!
+          }
+        }
+      } catch (e) {}
+
+      // Priority 2: Try DCM4CHEE PACS via dcm4cheeHelper working node
       try {
         const dcm4cheeHelper = require("../utils/dcm4cheeHelper");
         const workingNode = await dcm4cheeHelper.getWorkingDcm4cheeNode();
@@ -127,7 +161,7 @@ class PacsGateway {
             const res = await axios.get(metadataUrl, {
               auth: authObj,
               headers: { Accept: "application/dicom+json" },
-              timeout: 4500
+              timeout: 3000
             });
             if (Array.isArray(res.data) && res.data.length > 0) {
               dcmJsonArray = res.data;
@@ -139,7 +173,7 @@ class PacsGateway {
               const qRes = await axios.get(qidoStudyUrl, {
                 auth: authObj,
                 headers: { Accept: "application/dicom+json" },
-                timeout: 4500
+                timeout: 3000
               });
               if (Array.isArray(qRes.data) && qRes.data.length > 0) {
                 dcmJsonArray = qRes.data;
@@ -198,34 +232,6 @@ class PacsGateway {
               "0028,0011": parseDcmStr(first["00280011"])
             };
             return;
-          }
-        }
-      } catch (e) {}
-
-      // Try Orthanc via tools/find to resolve internal UUID
-      try {
-        const orthancUrl = await getOrthancUrl();
-        let orthancId = null;
-
-        try {
-          const findRes = await axios.post(`${orthancUrl}tools/find`, {
-            Level: "Study",
-            Query: { StudyInstanceUID: realStudyUID }
-          }, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: [] }));
-          if (Array.isArray(findRes.data) && findRes.data.length > 0) {
-            orthancId = findRes.data[0];
-          }
-        } catch (e) {}
-
-        if (!orthancId) orthancId = realStudyUID;
-
-        const { data: dData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
-        if (dData && dData.ID) {
-          orthancData = dData;
-          if (Array.isArray(dData.Series) && dData.Series.length > 0) {
-            const firstSeriesId = dData.Series[0];
-            const { data: serRes } = await axios.get(`${orthancUrl}series/${firstSeriesId}`, { ...orthancAuthConfig(), timeout: 1500 }).catch(() => ({ data: null }));
-            if (serRes) seriesData = serRes;
           }
         }
       } catch (e) {}
