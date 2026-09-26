@@ -44,12 +44,11 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
 
-  // If customOhifUrl is empty, root, or "#", default to relative same-origin /ohif/viewer
+  // If customOhifUrl is empty, root, or "#", default to relative same-origin /viewer
   if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
-    customOhifUrl = "/ohif/viewer";
+    customOhifUrl = "/viewer";
   } else {
-    // If user provided base URL like "http://172.16.1.12:3000" or "http://172.16.7.240:8042",
-    // ensure "/viewer" is present in path so OHIF opens patient images instead of Study List.
+    // If user provided base URL like "http://172.16.1.12:3000", ensure "/viewer" path is present
     if (!customOhifUrl.includes("/viewer") && !customOhifUrl.includes("/ohif")) {
       customOhifUrl = customOhifUrl.replace(/\/+$/, "") + "/viewer";
     }

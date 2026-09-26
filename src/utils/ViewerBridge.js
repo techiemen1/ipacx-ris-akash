@@ -22,6 +22,11 @@ export function validateOrigin(event, allowedOrigins = []) {
   if (event.origin === currentOrigin) return true;
   if (event.origin === 'null' || event.origin === 'file://') return true;
   if (Array.isArray(allowedOrigins) && allowedOrigins.includes(event.origin)) return true;
+
+  // Allow internal LAN origins (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  const isLanOrigin = /^http:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(event.origin);
+  if (isLanOrigin) return true;
+
   return false;
 }
 

@@ -914,7 +914,7 @@ export default function CreateReport() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setPreviewHtml(reportSheetRef.current?.innerHTML || "");
-    }, 200);
+    }, 350);
     return () => clearTimeout(timer);
   }, [
     study,

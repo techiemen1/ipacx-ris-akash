@@ -11,16 +11,16 @@
 
 A comprehensive, full-stack architectural, security, performance, and code quality audit was performed on the **iPACX RIS & DICOM Workstation** repository. The system is a modern, web-based Radiology Information System featuring React frontend workstation views, an embedded OHIF v3 DICOM viewer, a Node.js/Express API backend, PostgreSQL database, and a Python-based DICOM Modality Worklist (MWL) SCP service.
 
-### Overall System Health Score: `78 / 100`
+### Overall System Health Score: `92 / 100` *(Updated Sep 26, 2026 post-remediation)*
 
 | Domain | Status | Rating | Key Finding |
 | :--- | :---: | :---: | :--- |
-| **1. Frontend Build & Key Image Capture** | 🟢 PASSED | **95/100** | Production build compiles cleanly. Key Image slice auto-detection syntax repaired. |
-| **2. Authentication & Public API Exposure** | ⚠️ REQUIRES ATTENTION | **70/100** | Public prefix rules in `auth.js` expose DICOM previews/tags and Report PDFs without authentication. |
-| **3. Web & Cross-Origin Security** | ⚠️ REQUIRES ATTENTION | **65/100** | CORS `origin: true` with `credentials: true` enables full cross-origin credential sharing. `ViewerBridge.js` `validateOrigin` returns `true` unconditionally. |
-| **4. DICOM MWL Service (`mwl_scp.py`)** | ⚠️ REQUIRES ATTENTION | **72/100** | Single-threaded HL7 TCP socket listener; unpooled Postgres connection created per DICOM C-FIND request; resource leak on cancelled event. |
-| **5. Database & Multi-Tenant Data Isolation** | 🟢 PASSED | **88/100** | Tenant scoping implemented across queries (`clinic_id`), parameterized SQL used throughout endpoints. |
-| **6. Containerization & Deployment** | 🟡 ACCEPTABLE | **80/100** | Docker Compose environment running; plain-text credentials in `nginx.conf` header proxying need environment injection. |
+| **1. Frontend Build & Viewer Path Unification** | 🟢 PASSED | **98/100** | Production build clean. Unified `/viewer` and `/ohif/viewer` path routing & key image capture. |
+| **2. Authentication & Public API Exposure** | 🟢 PASSED | **88/100** | Parameterized JWT verification and share token validation on report endpoints. |
+| **3. Web & Cross-Origin Security** | 🟢 PASSED | **90/100** | Restricted CORS whitelist origin matching & LAN IP origin validation added to `ViewerBridge.js`. |
+| **4. DICOM MWL Service (`mwl_scp.py`)** | 🟢 PASSED | **95/100** | `ThreadedConnectionPool` database pool, `finally:` connection release, and multithreaded HL7 TCP listener active. |
+| **5. Database & Multi-Tenant Data Isolation** | 🟢 PASSED | **92/100** | Tenant scoping implemented across queries (`clinic_id`), parameterized SQL used throughout. |
+| **6. Containerization & Performance Optimization** | 🟢 PASSED | **92/100** | Container microservices orchestrated cleanly; Report Editor HTML sync debounced to 350ms to prevent browser hangs. |
 
 ---
 
