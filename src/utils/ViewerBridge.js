@@ -631,7 +631,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
         if (!cleanDesc) continue;
         const matchesActive = activeTexts.some(txt => {
           const tNorm = String(txt).trim().toLowerCase();
-          return tNorm === cleanDesc || tNorm.includes(cleanDesc) || cleanDesc.includes(tNorm);
+          return tNorm === cleanDesc || (cleanDesc.length >= 4 && tNorm.includes(cleanDesc));
         });
         if (matchesActive) {
           matchedSeriesObj = s;
