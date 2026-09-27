@@ -49,5 +49,57 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
+    <script>
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'OHIF_GET_ACTIVE_VIEWPORT') {
+          try {
+            const servicesManager = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
+            if (!servicesManager) {
+              window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: 'Services not ready' }, '*');
+              return;
+            }
+
+            const vgs = servicesManager.services.viewportGridService;
+            const dss = servicesManager.services.displaySetService;
+            const cvs = servicesManager.services.cornerstoneViewportService;
+
+            const activeViewportId = vgs ? vgs.getActiveViewportId() : null;
+            const viewport = (vgs && activeViewportId) ? vgs.getViewport(activeViewportId) : null;
+            const displaySetInstanceUID = viewport ? (viewport.displaySetInstanceUID || (Array.isArray(viewport.displaySetInstanceUIDs) ? viewport.displaySetInstanceUIDs[0] : null)) : null;
+            const displaySet = (dss && displaySetInstanceUID) ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
+            const cornerstoneViewport = (cvs && activeViewportId) ? cvs.getCornerstoneViewport(activeViewportId) : null;
+
+            let sliceNumber = 1;
+            let totalSlices = 1;
+            let sopInstanceUid = null;
+
+            if (cornerstoneViewport) {
+              sliceNumber = (cornerstoneViewport.getCurrentImageIdIndex ? cornerstoneViewport.getCurrentImageIdIndex() : 0) + 1;
+              const imageIds = cornerstoneViewport.getImageIds ? cornerstoneViewport.getImageIds() : [];
+              totalSlices = imageIds.length || 1;
+            }
+
+            if (displaySet && displaySet.images && displaySet.images[sliceNumber - 1]) {
+              sopInstanceUid = displaySet.images[sliceNumber - 1].SOPInstanceUID || displaySet.images[sliceNumber - 1].sopInstanceUid;
+            } else if (displaySet && displaySet.images && displaySet.images[0]) {
+              sopInstanceUid = displaySet.images[0].SOPInstanceUID || displaySet.images[0].sopInstanceUid;
+            }
+
+            window.parent.postMessage({
+              type: 'OHIF_VIEWPORT_STATE',
+              success: true,
+              seriesInstanceUID: displaySet ? (displaySet.SeriesInstanceUID || displaySet.seriesInstanceUid) : null,
+              seriesDescription: displaySet ? (displaySet.SeriesDescription || displaySet.seriesDescription) : null,
+              modality: displaySet ? (displaySet.Modality || displaySet.modality) : 'CT',
+              sopInstanceUid: sopInstanceUid,
+              sliceNumber: sliceNumber,
+              totalSlices: totalSlices
+            }, '*');
+          } catch (err) {
+            window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: err.message }, '*');
+          }
+        }
+      });
+    </script>
   </body>
 </html>

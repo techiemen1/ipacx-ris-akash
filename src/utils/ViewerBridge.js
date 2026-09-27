@@ -685,159 +685,68 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
 
 /**
  * Trigger active viewer viewport capture from parent window to iframe.
- * Tries postMessage listener RPC, same-origin canvas extraction, and DOM overlay slice index detection.
+ * Uses OHIF PostMessage State Bridge to query active viewport directly.
  */
-export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeriesList = [], hintSeriesId = null) {
-  console.log("🚨 [ViewerBridge] STATE: Requesting viewer snapshot...");
-  const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
-  if (!iframeEl) {
-    console.warn("🚨 [ViewerBridge] No iframe element found.");
-    return { status: "failed", reason: "no iframe element" };
-  }
+export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeriesList = []) {
+  console.log("🚨 [ViewerBridge] STATE: Requesting viewer snapshot via PostMessage bridge...");
+  return new Promise((resolve) => {
+    const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
+    if (!iframeEl || !iframeEl.contentWindow) {
+      console.warn("🚨 [ViewerBridge] No iframe element found.");
+      return resolve({ status: "failed", reason: "No iframe found" });
+    }
 
-  // FAST PATH: Check same-origin iframe directly
-  try {
-    const iframeWin = iframeEl.contentWindow;
-    const iframeDoc = iframeEl.contentDocument || (iframeWin && iframeWin.document);
-    if (iframeDoc) {
-      const sliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList, hintSeriesId);
-
-      let dataUrl = null;
-      let activeCanvas = sliceInfo?.activeCanvas;
-      if (!activeCanvas) {
-        const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
-          .map(c => ({ c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0) }))
-          .filter(({ area }) => area > 5000)
-          .sort((a, b) => b.area - a.area)
-          .map(({ c }) => c);
-
-        const lastActive = iframeDoc._lastActiveCanvas;
-        const lastActiveArea = lastActive ? ((lastActive.clientWidth || lastActive.width || 0) * (lastActive.clientHeight || lastActive.height || 0)) : 0;
-        const bigThreshold = canvases.length > 0 ? ((canvases[0].clientWidth || canvases[0].width || 0) * (canvases[0].clientHeight || canvases[0].height || 0)) * 0.20 : 0;
-        activeCanvas = (lastActive && lastActiveArea >= bigThreshold) ? lastActive : (canvases[0] || null);
-      }
-
-      if (activeCanvas && (activeCanvas.width > 0 || activeCanvas.clientWidth > 0)) {
-        try {
-          if (iframeWin && iframeWin.cornerstone3D && typeof iframeWin.cornerstone3D.getRenderingEngines === 'function') {
-            try {
-              const engines = iframeWin.cornerstone3D.getRenderingEngines();
-              for (const eng of engines) {
-                if (typeof eng.render === 'function') eng.render();
-              }
-            } catch (e) {
-              /* ignore render error */
-            }
-          }
-
-          const tempCv = iframeDoc.createElement('canvas');
-          const w = activeCanvas.width || activeCanvas.clientWidth || 512;
-          const h = activeCanvas.height || activeCanvas.clientHeight || 512;
-          tempCv.width = w;
-          tempCv.height = h;
-          const ctx = tempCv.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(activeCanvas, 0, 0);
-            const testUrl = tempCv.toDataURL('image/jpeg', 0.95);
-            if (testUrl && testUrl.length > 1000 && !testUrl.includes('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB')) {
-              dataUrl = testUrl;
-            }
-          }
-          if (!dataUrl) {
-            const directUrl = activeCanvas.toDataURL('image/jpeg', 0.95);
-            if (directUrl && directUrl.length > 1000) dataUrl = directUrl;
-          }
-        } catch (e) {
-          dataUrl = null;
+    const listener = (event) => {
+      if (event.data && event.data.type === 'OHIF_VIEWPORT_STATE') {
+        window.removeEventListener('message', listener);
+        
+        if (event.data.error) {
+          console.warn("🚨 [ViewerBridge] OHIF returned state error:", event.data.error);
+          return resolve({ status: "failed", reason: event.data.error });
         }
-      }
 
-      if (sliceInfo && sliceInfo.sliceNumber && parseInt(sliceInfo.sliceNumber, 10) > 0 && sliceInfo.matchedSeriesId) {
-        console.log("🚨 [ViewerBridge] FAST PATH SUCCESS:", sliceInfo);
-        return {
+        const ohifData = event.data;
+        console.log("🚨 [ViewerBridge] OHIF_VIEWPORT_STATE received:", ohifData);
+
+        let matchedSeriesObj = (studySeriesList || []).find(s => 
+          String(s.series_instance_uid) === String(ohifData.seriesInstanceUID) ||
+          String(s.series_id) === String(ohifData.seriesInstanceUID) ||
+          String(s.orthanc_series_id) === String(ohifData.seriesInstanceUID)
+        );
+
+        if (!matchedSeriesObj && ohifData.seriesDescription && Array.isArray(studySeriesList)) {
+          matchedSeriesObj = studySeriesList.find(s => 
+            s.series_description && String(s.series_description).trim().toLowerCase() === String(ohifData.seriesDescription).trim().toLowerCase()
+          );
+        }
+
+        const result = {
           status: "success",
-          dataUrl: (dataUrl && dataUrl.length > 1000) ? dataUrl : null,
-          instanceNumber: sliceInfo.instanceNumber || sliceInfo.sliceNumber,
-          sliceNumber: parseInt(sliceInfo.sliceNumber, 10),
-          totalSlices: sliceInfo.totalSlices ? parseInt(sliceInfo.totalSlices, 10) : null,
-          seriesInstanceUid: sliceInfo.seriesInstanceUid || sliceInfo.matchedSeriesId,
-          matchedSeriesId: sliceInfo.matchedSeriesId,
-          seriesDescription: sliceInfo.seriesDescription || "Diagnostic Series",
-          sopInstanceUid: sliceInfo.sopInstanceUid || null,
-          modality: sliceInfo.modality || "CT",
-          windowCenter: sliceInfo.windowCenter || null,
-          windowWidth: sliceInfo.windowWidth || null
+          matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : ohifData.seriesInstanceUID,
+          seriesInstanceUid: ohifData.seriesInstanceUID || (matchedSeriesObj ? matchedSeriesObj.series_instance_uid : null),
+          seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : ohifData.seriesDescription,
+          sliceNumber: ohifData.sliceNumber || 1,
+          totalSlices: ohifData.totalSlices || 1,
+          sopInstanceUid: ohifData.sopInstanceUid || null,
+          modality: ohifData.modality || "CT"
         };
-      }
-    }
-  } catch (e) {
-    console.warn("🚨 [ViewerBridge] Cross-origin or DOM access exception:", e.message);
-  }
-
-  // FALLBACK PATH: Cross-origin postMessage RPC
-  try {
-    if (iframeEl && iframeEl.contentWindow) {
-      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.REQUEST_SNAPSHOT, action: 'CAPTURE' }, '*');
-      iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT, action: 'CAPTURE' }, '*');
-    }
-  } catch (e) {
-    console.warn("🚨 [ViewerBridge] postMessage emission failed:", e.message);
-  }
-
-  const waitPostMessage = new Promise((resolve) => {
-    const handler = (event) => {
-      let data = event.data;
-      if (typeof data === 'string') {
-        try { data = JSON.parse(data); } catch (e) { return; }
-      }
-      if (!data || typeof data !== 'object') return;
-
-      if (
-        data.type === MESSAGE_TYPES.SNAPSHOT_CAPTURED ||
-        data.type === MESSAGE_TYPES.OHIF_SNAPSHOT ||
-        data.type === MESSAGE_TYPES.ADD_KEY_IMAGE ||
-        data.eventName === 'SNAPSHOT_CAPTURED'
-      ) {
-        const payload = data.payload || data;
-        const dUrl = payload.dataUrl || payload.imageUrl || payload.url;
-        const fNum = payload.frameNumber || payload.sliceNumber || (payload.sliceIndex !== undefined ? payload.sliceIndex + 1 : null) || payload.instanceNumber;
-        const tSlices = payload.totalSlices || payload.total_slices;
-        const sDesc = payload.seriesDescription || payload.seriesDesc;
-        const sUid = payload.seriesInstanceUid || payload.seriesInstanceUID;
-        const iNum = payload.instanceNumber || payload.sopInstanceUid;
-
-        window.removeEventListener('message', handler);
-        if (sUid && fNum) {
-          resolve({
-            status: "success",
-            dataUrl: dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500) ? dUrl : null,
-            instanceNumber: iNum || null,
-            sliceNumber: fNum ? parseInt(fNum, 10) : null,
-            totalSlices: tSlices ? parseInt(tSlices, 10) : null,
-            matchedSeriesId: sUid,
-            seriesInstanceUid: sUid,
-            seriesDescription: sDesc || "Diagnostic Series",
-            seriesNumber: payload.seriesNumber || null
-          });
-        } else {
-          resolve({ status: "failed", reason: "incomplete postMessage payload" });
-        }
+        console.log("🚨 [ViewerBridge] Resolved snapshot result:", result);
+        resolve(result);
       }
     };
 
-    window.addEventListener('message', handler);
+    window.addEventListener('message', listener);
+    
+    try {
+      iframeEl.contentWindow.postMessage({ type: 'OHIF_GET_ACTIVE_VIEWPORT' }, '*');
+    } catch (e) {
+      console.warn("🚨 [ViewerBridge] postMessage failed:", e);
+    }
+
     setTimeout(() => {
-      window.removeEventListener('message', handler);
-      resolve({ status: "failed", reason: "postMessage timeout (cross-origin or OHIF silent)" });
-    }, 400);
+      window.removeEventListener('message', listener);
+      console.warn("🚨 [ViewerBridge] OHIF postMessage timeout after 2000ms");
+      resolve({ status: "failed", reason: "OHIF timeout" });
+    }, 2000);
   });
-
-  const postMsgRes = await waitPostMessage;
-  if (postMsgRes && postMsgRes.status === "success") {
-    console.log("🚨 [ViewerBridge] POSTMESSAGE PATH SUCCESS:", postMsgRes);
-    return postMsgRes;
-  }
-
-  console.warn("🚨 [ViewerBridge] Snapshot failed: cross-origin or no metadata found.");
-  return { status: "failed", reason: "cross-origin or no metadata" };
 }

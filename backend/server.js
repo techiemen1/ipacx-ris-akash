@@ -110,6 +110,57 @@ try {
   const ohifBridgeScript = `
 <script id="ohif-ris-bridge-script">
 (function() {
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'OHIF_GET_ACTIVE_VIEWPORT') {
+      try {
+        var servicesManager = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
+        if (!servicesManager) {
+          window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: 'Services not ready' }, '*');
+          return;
+        }
+
+        var vgs = servicesManager.services.viewportGridService;
+        var dss = servicesManager.services.displaySetService;
+        var cvs = servicesManager.services.cornerstoneViewportService;
+
+        var activeViewportId = vgs ? vgs.getActiveViewportId() : null;
+        var viewport = (vgs && activeViewportId) ? vgs.getViewport(activeViewportId) : null;
+        var displaySetInstanceUID = viewport ? (viewport.displaySetInstanceUID || (Array.isArray(viewport.displaySetInstanceUIDs) ? viewport.displaySetInstanceUIDs[0] : null)) : null;
+        var displaySet = (dss && displaySetInstanceUID) ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
+        var cornerstoneViewport = (cvs && activeViewportId) ? cvs.getCornerstoneViewport(activeViewportId) : null;
+
+        var sliceNumber = 1;
+        var totalSlices = 1;
+        var sopInstanceUid = null;
+
+        if (cornerstoneViewport) {
+          sliceNumber = (cornerstoneViewport.getCurrentImageIdIndex ? cornerstoneViewport.getCurrentImageIdIndex() : 0) + 1;
+          var imageIds = cornerstoneViewport.getImageIds ? cornerstoneViewport.getImageIds() : [];
+          totalSlices = imageIds.length || 1;
+        }
+
+        if (displaySet && displaySet.images && displaySet.images[sliceNumber - 1]) {
+          sopInstanceUid = displaySet.images[sliceNumber - 1].SOPInstanceUID || displaySet.images[sliceNumber - 1].sopInstanceUid;
+        } else if (displaySet && displaySet.images && displaySet.images[0]) {
+          sopInstanceUid = displaySet.images[0].SOPInstanceUID || displaySet.images[0].sopInstanceUid;
+        }
+
+        window.parent.postMessage({
+          type: 'OHIF_VIEWPORT_STATE',
+          success: true,
+          seriesInstanceUID: displaySet ? (displaySet.SeriesInstanceUID || displaySet.seriesInstanceUid) : null,
+          seriesDescription: displaySet ? (displaySet.SeriesDescription || displaySet.seriesDescription) : null,
+          modality: displaySet ? (displaySet.Modality || displaySet.modality) : 'CT',
+          sopInstanceUid: sopInstanceUid,
+          sliceNumber: sliceNumber,
+          totalSlices: totalSlices
+        }, '*');
+      } catch (err) {
+        window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: err.message }, '*');
+      }
+    }
+  });
+
   var lastActiveViewportEl = null;
   var lastActiveTimestamp = 0;
 
