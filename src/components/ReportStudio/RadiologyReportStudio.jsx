@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
 import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList } from "../../utils/ViewerBridge";
+import { keyImageService } from "../../services/KeyImageService";
+import { toast } from "react-hot-toast";
 import "./ReportStudio.css";
 
 export default function RadiologyReportStudio({ studyUIDOverride }) {
@@ -904,246 +906,32 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
     const reportId = study?.report_id || study?.reportId || null;
-    let directDomSliceInfo = null;
     const iframeEl = findDicomViewerIframe();
 
-    // === DOM/JS DIAGNOSTIC + DETECTION - Always runs ===
-    const diagData = {
-      iframeFound: !!iframeEl,
-      iframeUrl: iframeEl ? (iframeEl.src || iframeEl.getAttribute('src') || 'no-src') : null,
-      hasDoc: false, hasCanvas: false, canvases: [], textSample: [], hasCS3D: false, hasCT: false, cs3dViewports: [], domError: null
-    };
     try {
-      if (iframeEl && iframeEl.contentWindow) {
-        const iframeDoc = iframeEl.contentDocument || iframeEl.contentWindow.document;
-        diagData.hasDoc = !!iframeDoc;
-        if (iframeDoc) {
-          const allCanvases = Array.from(iframeDoc.querySelectorAll('canvas'));
-          diagData.hasCanvas = allCanvases.length > 0;
-          diagData.canvases = allCanvases.map(c => ({ w: c.clientWidth || c.width || 0, h: c.clientHeight || c.height || 0 }));
-
-          const iframeWin = iframeDoc.defaultView || iframeDoc.parentWindow;
-          diagData.hasCS3D = !!(iframeWin && iframeWin.cornerstone && typeof iframeWin.cornerstone.getRenderingEngines === 'function');
-          diagData.hasCT = !!(iframeWin && iframeWin.cornerstoneTools);
-
-          // Collect all text nodes from iframe body
-          if (iframeDoc.body) {
-            const tw = iframeDoc.createTreeWalker(iframeDoc.body, NodeFilter.SHOW_TEXT, null, false);
-            let tn;
-            while ((tn = tw.nextNode()) && diagData.textSample.length < 80) {
-              const v = tn.nodeValue && tn.nodeValue.trim();
-              if (v && v.length > 0 && v.length <= 100) diagData.textSample.push(v);
-            }
-          }
-
-          // Directly invoke enhanced detectViewportSliceInfoFromDOM
-          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList, null);
-        }
-      }
-    } catch (e) {
-      diagData.domError = e.message;
-    }
-
-    // ALWAYS send diagnostic to backend (fire and forget)
-    api.post('/api/pacs/debug-dom-dump', diagData).catch(() => {});
-    console.log('[RRS] DOM diagnostic:', JSON.stringify(diagData).substring(0, 500));
-    console.log('[RRS] directDomSliceInfo:', directDomSliceInfo);
-
-    try {
-      if (iframeEl && iframeEl.contentWindow) {
-        iframeEl.contentWindow.postMessage({ type: 'OHIF_CAPTURE_VIEWPORT', action: 'CAPTURE' }, '*');
-        iframeEl.contentWindow.postMessage({ type: 'REQUEST_SNAPSHOT', action: 'CAPTURE' }, '*');
-      }
-    } catch (e) {
-      // Ignore postMessage error
-    }
-
-    const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList, null);
-    const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
-
-    // Check viewer_state localStorage fallback if iframe detection is cross-origin
-    let savedViewerStateSlice = null;
-    if (studyUID) {
-      try {
-        const savedStateStr = sessionStorage.getItem(`viewer_state_${studyUID}`) || localStorage.getItem(`viewer_state_${studyUID}`);
-        if (savedStateStr) {
-          const parsedState = JSON.parse(savedStateStr);
-          if (parsedState && parsedState.sliceIndex !== undefined && parsedState.sliceIndex !== null) {
-            savedViewerStateSlice = parseInt(parsedState.sliceIndex, 10) + 1;
-          }
-        }
-      } catch (e) {
-        /* ignore localStorage parsing error */
-      }
-    }
-
-    const detectedSlice = overrideSliceNum !== null 
-      ? parseInt(overrideSliceNum, 10) 
-      : (
-          (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
-          (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
-          (savedViewerStateSlice && parseInt(savedViewerStateSlice, 10) > 0 ? parseInt(savedViewerStateSlice, 10) : null) ||
-          (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
-          (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
-          null
-        );
-
-    const totalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || (activeViewportInfo?.totalSlices) || 1;
-    let displaySliceNum = detectedSlice || 1;
-
-    const isScoutSeries = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s?.series_description || s?.seriesDescription || '');
-    const hasNonScoutSeries = studySeriesList.some(s => !isScoutSeries(s));
-
-    const liveSeriesTarget = 
-      snapResult?.seriesInstanceUid ||
-      snapResult?.matchedSeriesId || 
-      (snapResult?.seriesDescription && !/diagnostic series/i.test(snapResult.seriesDescription) ? snapResult.seriesDescription : null) ||
-      directDomSliceInfo?.seriesInstanceUid ||
-      directDomSliceInfo?.matchedSeriesId ||
-      (directDomSliceInfo?.seriesDescription && !/diagnostic series/i.test(directDomSliceInfo.seriesDescription) ? directDomSliceInfo.seriesDescription : null) ||
-      activeViewportInfo?.seriesInstanceUid || 
-      (activeViewportInfo?.seriesDescription && !/diagnostic series/i.test(activeViewportInfo.seriesDescription) ? activeViewportInfo.seriesDescription : null) ||
-      overrideSeriesId;
-
-    let seriesObj = null;
-
-    // Priority 1: Live target from active viewer viewport (updates dropdown to match active series)
-    if (liveSeriesTarget) {
-      const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices, null);
-      if (liveMatched) {
-        seriesObj = liveMatched;
-      }
-    }
-
-    // Priority 2: Check user selected series in UI dropdown if no live target found
-    if (!seriesObj && selectedSeriesId) {
-      const userSelected = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId));
-      if (userSelected && (!isScoutSeries(userSelected) || !hasNonScoutSeries)) {
-        seriesObj = userSelected;
-      }
-    }
-
-    // Priority 3: Fallback diagnostic series with total_slices > 1
-    if (!seriesObj) {
-      seriesObj = findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices, selectedSeriesId);
-    }
-
-    const activeSeriesTarget = seriesObj?.series_id || liveSeriesTarget || selectedSeriesId;
-
-    if (seriesObj && seriesObj.series_id) {
-      setSelectedSeriesId(String(seriesObj.series_id));
-    }
-
-    const resolvedTotalSlices = snapResult?.totalSlices || directDomSliceInfo?.totalSlices || seriesObj?.total_slices || (activeViewportInfo?.totalSlices) || 1;
-    displaySliceNum = Math.min(Math.max(1, displaySliceNum), resolvedTotalSlices);
-
-    const rawSnapDesc = snapResult?.seriesDescription || directDomSliceInfo?.seriesDescription || activeViewportInfo?.seriesDescription;
-    const isGenericDesc = (str) => !str || /diagnostic series|diagnostic viewport|viewport|series \d+/i.test(String(str).trim());
-    const realSeriesDesc = !isGenericDesc(seriesObj?.series_description) 
-      ? seriesObj.series_description 
-      : (!isGenericDesc(rawSnapDesc) ? rawSnapDesc : (seriesObj?.series_description || rawSnapDesc || "Diagnostic Series"));
-    const seriesDesc = realSeriesDesc;
-
-    const fullCaption = resolvedTotalSlices > 1 
-      ? `${realSeriesDesc} | ${displaySliceNum}/${resolvedTotalSlices}` 
-      : `${realSeriesDesc} | ${displaySliceNum}`;
-
-    let targetInst = null;
-    if (seriesObj && seriesObj.instances && seriesObj.instances.length > 0) {
-      targetInst = seriesObj.instances.find(inst => 
-        parseInt(inst.slice_index, 10) === displaySliceNum || 
-        parseInt(inst.slice_number, 10) === displaySliceNum ||
-        parseInt(inst.instanceNumber, 10) === displaySliceNum ||
-        parseInt(inst.instance_number, 10) === displaySliceNum
+      const activeSeries = overrideSeriesId || selectedSeriesId || null;
+      const capturedPayload = await keyImageService.captureActiveViewport(
+        iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe",
+        studySeriesList,
+        activeSeries,
+        overrideSliceNum || 1
       );
 
-      if (!targetInst && snapResult?.instanceNumber) {
-        targetInst = seriesObj.instances.find(inst => 
-          parseInt(inst.slice_number, 10) === snapResult.instanceNumber || 
-          parseInt(inst.instance_number, 10) === snapResult.instanceNumber ||
-          parseInt(inst.instanceNumber, 10) === snapResult.instanceNumber ||
-          parseInt(inst.slice_index, 10) === snapResult.instanceNumber
-        );
-      }
+      const savedKeyImg = await keyImageService.addKeyImage(reportId, capturedPayload);
+      const finalObj = savedKeyImg || capturedPayload;
 
-      if (!targetInst) {
-        const boundedIndex = Math.min(Math.max(0, displaySliceNum - 1), seriesObj.instances.length - 1);
-        targetInst = seriesObj.instances[boundedIndex];
-      }
-    }
-
-    const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
-    
-    let snapObj = null;
-    const capturePayload = {
-      reportId: reportId || null,
-      studyUID: studyUID,
-      seriesUID: seriesObj?.series_instance_uid || seriesObj?.series_id || liveSeriesTarget || activeSeriesTarget,
-      sopInstanceUid: snapResult?.sopInstanceUid || directDomSliceInfo?.sopInstanceUid || activeViewportInfo?.sopInstanceUid || targetInst?.sop_instance_uid || targetInst?.instance_id,
-      instanceId: targetInst?.instance_id || targetInst?.id || snapResult?.instanceId || activeViewportInfo?.instance_id,
-      sliceNumber: displaySliceNum,
-      totalSlices: resolvedTotalSlices,
-      seriesNumber: seriesObj?.series_number || snapResult?.seriesNumber || 1,
-      instanceNumber: targetInst?.instance_number || targetInst?.instanceNumber || displaySliceNum,
-      seriesDescription: seriesDesc,
-      modality: seriesObj?.modality || snapResult?.modality || "CT",
-      windowCenter: snapResult?.windowCenter || directDomSliceInfo?.windowCenter || null,
-      windowWidth: snapResult?.windowWidth || directDomSliceInfo?.windowWidth || null,
-      zoom: snapResult?.zoom || 1.0,
-      panX: snapResult?.panX || 0.0,
-      panY: snapResult?.panY || 0.0,
-      rotation: snapResult?.rotation || 0,
-      flipHorizontal: snapResult?.flipHorizontal || false,
-      flipVertical: snapResult?.flipVertical || false,
-      dataUrl: validDataUrl,
-      caption: fullCaption
-    };
-
-    // 1. Send debug analysis payload
-    api.post('/api/pacs/debug-key-image-payload', capturePayload).catch(() => {});
-
-    // 2. Send key image save request to backend API
-    const saveUrl = reportId ? `/api/pacs/v1/reports/${reportId}/key-images` : `/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images`;
-    try {
-      const res = await api.post(saveUrl, capturePayload);
-      if (res.data && res.data.success && res.data.data) {
-        snapObj = res.data.data;
-      }
-    } catch (err) {
-      console.warn("Key image save REST API notice:", err.message);
-      try {
-        const resFb = await api.post('/api/pacs/capture-key-image', capturePayload);
-        if (resFb.data && resFb.data.success && resFb.data.data) {
-          snapObj = resFb.data.data;
+      setAttachedSnapshots(prev => {
+        const idToCheck = finalObj.id || finalObj.instanceId || finalObj.sopInstanceUid;
+        if (idToCheck && prev.some(s => String(s.id || s.instance_id || s.sopInstanceUid) === String(idToCheck))) {
+          return prev;
         }
-      } catch (err2) {
-        console.warn("capture-key-image fallback notice:", err2.message);
-      }
+        return [...prev, finalObj];
+      });
+
+      toast.success(`⭐ Key Image (${finalObj.caption || 'Captured'}) attached to report!`);
+    } catch (err) {
+      console.error("[RadiologyReportStudio] Key image capture failed:", err);
     }
-
-    if (!snapObj) {
-      const fallbackUrl = targetInst?.preview_url || targetInst?.previewUrl || (targetInst?.instance_id ? `/api/pacs/instance-preview/${targetInst.instance_id}?studyUID=${encodeURIComponent(studyUID || '')}&seriesUID=${encodeURIComponent(seriesObj?.series_id || '')}` : null);
-      const previewUrl = validDataUrl || fallbackUrl;
-
-      if (!previewUrl) {
-        console.warn("Could not resolve valid preview image URL for key image capture.");
-        return;
-      }
-
-      snapObj = {
-        id: `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        instance_id: targetInst?.instance_id || `inst_${Date.now()}`,
-        dataUrl: validDataUrl,
-        preview_url: previewUrl,
-        fallback_preview_url: fallbackUrl,
-        caption: fullCaption,
-        sliceNumber: displaySliceNum,
-        seriesDesc: seriesDesc,
-        studyUID: studyUID
-      };
-    }
-
-    setAttachedSnapshots(prev => [...prev, snapObj]);
   };
 
   // AI Impression Generator Assistant
