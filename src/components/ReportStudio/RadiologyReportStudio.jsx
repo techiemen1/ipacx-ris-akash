@@ -201,6 +201,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const [loading, setLoading] = useState(true);
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [isSyncingSR, setIsSyncingSR] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   // ContentEditable Refs for WYSIWYG
   const findingsRef = useRef(null);
@@ -560,6 +561,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   // Key Images / Snapshots Series State
   const [studySeriesList, setStudySeriesList] = useState([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
+  const [activeSeriesId, setActiveSeriesId] = useState(null);
   const [targetSliceNumber, setTargetSliceNumber] = useState("1");
   const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
   const [pickerSliceNum, setPickerSliceNum] = useState(1);
@@ -569,6 +571,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     if (!studyUID) return;
     setStudySeriesList([]);
     setSelectedSeriesId("");
+    setActiveSeriesId(null);
     setTargetSliceNumber("1");
 
     api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`)
@@ -582,7 +585,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           const diagSeries = sortedAll.filter(s => !isScout(s));
           const mainSeries = diagSeries.length > 0 ? diagSeries[0] : sortedAll[0];
           
-          setSelectedSeriesId(String(mainSeries.series_id || mainSeries.series_instance_uid || ''));
+          const mainId = String(mainSeries.series_id || mainSeries.series_instance_uid || '');
+          setSelectedSeriesId(mainId);
+          setActiveSeriesId(mainId);
           setPickerSliceNum(1);
           setTargetSliceNumber("1");
         }
@@ -903,43 +908,83 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     return document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
   };
 
-  // 1-CLICK HYBRID AUTO-CAPTURE (FEELS 100% INSTANT & SEAMLESS)
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
-    console.log("🚨 [KEY IMAGE] Button clicked - Opening modal with auto-select & auto-capture");
-    const iframeEl = findDicomViewerIframe();
-
-    let preSelectSeriesId = overrideSeriesId || null;
-    let preSelectSeriesDesc = null;
-    let preSelectSliceNum = overrideSliceNum || null;
-
-    try {
-      const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe", studySeriesList, null);
-      console.log("🚨 [KEY IMAGE] requestViewerSnapshot result:", snapResult);
-
-      if (snapResult?.matchedSeriesId) {
-        preSelectSeriesId = snapResult.matchedSeriesId;
-      }
-      if (snapResult?.seriesDescription) {
-        preSelectSeriesDesc = snapResult.seriesDescription;
-      }
-      if (snapResult?.sliceNumber) {
-        preSelectSliceNum = snapResult.sliceNumber;
-      }
-    } catch (e) {
-      console.warn("🚨 [KEY IMAGE] Viewer detection failed:", e);
+    console.log("🚨 [KEY IMAGE] Button clicked. Using React sidebar state.");
+    
+    // 1. Get the series ID from React state (NOT OHIF)
+    const targetSeriesId = overrideSeriesId || activeSeriesId || selectedSeriesId;
+    
+    if (!targetSeriesId) {
+      console.error("🚨 [KEY IMAGE] No active series selected in sidebar!");
+      return;
     }
 
-    window.preSelectKeyImageSeries = preSelectSeriesId;
-    window.preSelectKeyImageDesc = preSelectSeriesDesc;
-    window.preSelectKeyImageSliceNum = preSelectSliceNum;
+    // 2. Find the series object from the list we already fetched from backend
+    const seriesObj = studySeriesList.find(s => 
+      String(s.series_id) === String(targetSeriesId) || 
+      String(s.series_instance_uid) === String(targetSeriesId) ||
+      String(s.orthanc_series_id) === String(targetSeriesId)
+    ) || studySeriesList[0];
 
-    setShowSlicePickerModal(true);
+    if (!seriesObj) {
+      console.error("🚨 [KEY IMAGE] Could not find series object for ID:", targetSeriesId);
+      return;
+    }
 
-    if (preSelectSeriesId || preSelectSeriesDesc) {
-      setTimeout(() => {
-        console.log("🚨 [KEY IMAGE] Auto-triggering capture event after 500ms");
-        window.dispatchEvent(new CustomEvent('auto-capture-key-image'));
-      }, 500);
+    console.log("🚨 [KEY IMAGE] Capturing from series:", seriesObj.series_description);
+
+    // 3. Determine slice number (Simple fallback: use slice 1 or read from iframe if available)
+    let sliceNumber = overrideSliceNum || 1;
+    if (!overrideSliceNum) {
+      try {
+        const iframe = document.querySelector('.rs-viewer-iframe') || document.querySelector('iframe');
+        if (iframe && iframe.contentDocument) {
+          const text = iframe.contentDocument.body.innerText || '';
+          const match = text.match(/(\d+)\s*\/\s*(\d+)/); // Looks for "14/223"
+          if (match) sliceNumber = parseInt(match[1], 10);
+        }
+      } catch (e) {
+        console.warn("🚨 [KEY IMAGE] Could not read slice number from iframe, defaulting to 1");
+      }
+    }
+
+    // Clamp slice number
+    const totalSlices = seriesObj.total_slices || seriesObj.instances?.length || 1;
+    sliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
+
+    // 4. Find the instance ID for this slice
+    const instance = seriesObj.instances?.find(inst => 
+      parseInt(inst.slice_number || inst.instance_number || 0, 10) === sliceNumber
+    ) || seriesObj.instances?.[Math.min(sliceNumber - 1, (seriesObj.instances?.length || 1) - 1)] || seriesObj.instances?.[0];
+
+    if (!instance) {
+      console.error("🚨 [KEY IMAGE] No instance found for slice:", sliceNumber);
+      return;
+    }
+
+    // 5. Build payload and send to backend
+    const payload = {
+      reportId: study?.report_id || null,
+      studyUID: studyUID,
+      seriesUID: seriesObj.series_id || seriesObj.series_instance_uid,
+      instanceId: instance.instance_id || instance.sop_instance_uid,
+      sliceNumber: sliceNumber,
+      seriesDescription: seriesObj.series_description,
+      modality: seriesObj.modality || "CT"
+    };
+
+    console.log("🚨 [KEY IMAGE] Sending payload:", payload);
+
+    try {
+      const res = await api.post("/api/pacs/v2/key-images/save", payload);
+      if (res.data?.success) {
+        // Update UI
+        setAttachedSnapshots(prev => [...prev, res.data.data]);
+        setToastMessage(`Key Image (${seriesObj.series_description} | ${sliceNumber}) attached!`);
+        setTimeout(() => setToastMessage(""), 3000);
+      }
+    } catch (err) {
+      console.error("🚨 [KEY IMAGE] Save failed:", err);
     }
   };
 
@@ -1511,8 +1556,12 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           onOpenPicker={() => setShowSlicePickerModal(true)}
           onAttachActiveSlice={(sliceNum, seriesId) => handleAttachKeyImage(sliceNum, seriesId)}
           studySeriesList={studySeriesList}
-          selectedSeriesId={selectedSeriesId}
-          onSelectSeries={(sId) => setSelectedSeriesId(sId)}
+          onSelectSeries={(sId) => {
+            const sObj = studySeriesList.find(s => String(s.series_id) === String(sId) || String(s.series_instance_uid) === String(sId));
+            console.log("🚨 [SIDEBAR] User clicked series:", sObj?.series_description || sId, "ID:", sId);
+            setSelectedSeriesId(sId);
+            setActiveSeriesId(sId);
+          }}
           onInsertToEditor={(snap) => {
             const pUrl = snap.preview_url || snap.previewUrl || snap.url;
             const chipHtml = ` <span style="background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; border-radius: 4px; padding: 2px 5px; font-weight: 700; font-size: 10px;" contenteditable="false">📸 [${snap.caption || 'Key Image'}]</span> `;
