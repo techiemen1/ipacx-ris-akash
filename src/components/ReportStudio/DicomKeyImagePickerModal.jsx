@@ -44,22 +44,30 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
   const currentSeries = seriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || seriesList[0];
 
   const handleCaptureActiveViewport = async () => {
+    console.log('[Modal] CAPTURE CLICKED - selectedSeriesId:', selectedSeriesId);
+    console.log('[Modal] Available series:', seriesList.map(s => ({ id: s.series_id, desc: s.series_description })));
+    
     setLoading(true);
     try {
+      // CRITICAL: Pass the EXACT selectedSeriesId
       const capturedPayload = await keyImageService.captureActiveViewport(
         ".rs-viewer-iframe, .dws-iframe, iframe",
         seriesList,
-        selectedSeriesId
+        selectedSeriesId, // <-- This MUST be the series_id from the modal
+        1 // fallback slice
       );
+
+      console.log('[Modal] Capture result:', capturedPayload);
 
       let snapObj = null;
       try {
         const res = await api.post("/api/pacs/capture-key-image", capturedPayload);
         if (res.data?.success && res.data?.data) {
           snapObj = res.data.data;
+          console.log('[Modal] ✅ Backend saved:', snapObj);
         }
       } catch (e) {
-        console.warn("Backend key image save notice:", e);
+        console.error("[Modal] ❌ Backend save failed:", e);
       }
 
       if (!snapObj) snapObj = capturedPayload;
@@ -69,11 +77,11 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       if (instId) {
         setAddedIds(prev => new Set(prev).add(String(instId)));
       }
-      const capText = snapObj?.caption || capturedPayload?.caption || capturedPayload?.seriesDescription || "Key Image";
+      const capText = snapObj?.caption || capturedPayload?.caption || "Key Image";
       setToastMsg(`⭐ Captured: ${capText}!`);
       setTimeout(() => setToastMsg(""), 3000);
     } catch (err) {
-      console.error("Failed capturing active viewport key image:", err);
+      console.error("[Modal] Capture failed:", err);
     } finally {
       setLoading(false);
     }
