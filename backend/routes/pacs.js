@@ -934,6 +934,93 @@ router.post("/capture-key-image", asyncHandler(async (req, res) => {
   res.json({ success: true, data: result });
 }));
 
+router.get("/direct-instance/:studyUID/:seriesUID/:instanceId", asyncHandler(async (req, res) => {
+  const { studyUID, seriesUID, instanceId } = req.params;
+  
+  try {
+    const buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(
+      studyUID, 
+      seriesUID, 
+      instanceId, 
+      null
+    );
+    
+    if (buffer && buffer.length > 500) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      return res.send(buffer);
+    } else {
+      res.status(404).json({ success: false, message: "Instance not found" });
+    }
+  } catch (err) {
+    console.error("[Direct Instance Fetch Error]:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
+
+router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
+  const { 
+    reportId, 
+    studyUID, 
+    seriesUID, 
+    instanceId, 
+    sliceNumber,
+    seriesDescription,
+    modality
+  } = req.body;
+
+  console.log("[V2 Key Image Save] Request:", {
+    reportId, studyUID, seriesUID, instanceId, sliceNumber
+  });
+
+  const buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(
+    studyUID,
+    seriesUID,
+    instanceId,
+    null
+  );
+
+  if (!buffer || buffer.length < 500) {
+    throw new Error("Failed to fetch instance from PACS");
+  }
+
+  const reportImagesDir = path.join(__dirname, "../uploads/report_images");
+  if (!fs.existsSync(reportImagesDir)) {
+    fs.mkdirSync(reportImagesDir, { recursive: true });
+  }
+
+  const cleanStudy = String(studyUID || 'study').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const cleanSeriesDesc = String(seriesDescription || 'series').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `key_${cleanStudy}_${cleanSeriesDesc}_s${sliceNumber}_${Date.now()}.jpg`;
+  const filePath = path.join(reportImagesDir, filename);
+  fs.writeFileSync(filePath, buffer);
+
+  const previewUrl = `/uploads/report_images/${filename}`;
+
+  const result = await pool.query(
+    `INSERT INTO public.study_key_images 
+     (report_id, study_uid, series_uid, sop_instance_uid, instance_id, slice_number, series_description, modality, image_path, preview_url, caption, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+     RETURNING *`,
+    [
+      reportId || null,
+      studyUID,
+      seriesUID,
+      instanceId,
+      instanceId,
+      sliceNumber,
+      seriesDescription || "Unknown",
+      modality || "CT",
+      filePath,
+      previewUrl,
+      `${seriesDescription || 'Series'} | ${sliceNumber}`
+    ]
+  );
+
+  console.log("[V2 Key Image] Saved successfully:", result.rows[0]);
+  res.json({ success: true, data: result.rows[0] });
+}));
+
 router.post("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
   const { studyId } = req.params;
   const payload = { ...req.body, studyUID: req.body.studyUID || studyId };
