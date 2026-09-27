@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, Image as ImageIcon, Layers, RefreshCw, Star } from "lucide-react";
 import api from "../../api/axios";
-import { keyImageService } from "../../services/KeyImageService";
 
 export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, onSelectImage, attachedSnapshots = [] }) {
   const [loading, setLoading] = useState(false);
   const [seriesList, setSeriesList] = useState([]);
-  const [selectedSeriesId, setSelectedSeriesId] = useState("");
+  const [selectedSeries, setSelectedSeries] = useState(null); // Store FULL object
+  const [selectedSliceIndex, setSelectedSliceIndex] = useState(0); // Track selected slice
   const [addedIds, setAddedIds] = useState(new Set());
   const [toastMsg, setToastMsg] = useState("");
 
@@ -29,7 +29,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
         setSeriesList(res.data.series);
         if (res.data.series.length > 0) {
           const defaultSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
-          setSelectedSeriesId(String(defaultSeries.series_id));
+          setSelectedSeries(defaultSeries); // Store full object
+          setSelectedSliceIndex(0);
         }
       }
     } catch (err) {
@@ -41,111 +42,84 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
   if (!isOpen) return null;
 
-  const currentSeries = seriesList.find(s => String(s.series_id) === String(selectedSeriesId)) || seriesList[0];
+  const handleCaptureSelectedSlice = async () => {
+    if (!selectedSeries) {
+      setToastMsg("❌ No series selected!");
+      setTimeout(() => setToastMsg(""), 3000);
+      return;
+    }
 
-  const handleCaptureActiveViewport = async () => {
-    console.log('[Modal] CAPTURE CLICKED - selectedSeriesId:', selectedSeriesId);
-    console.log('[Modal] Available series:', seriesList.map(s => ({ id: s.series_id, desc: s.series_description })));
-    
     setLoading(true);
     try {
-      // CRITICAL: Pass the EXACT selectedSeriesId
-      const capturedPayload = await keyImageService.captureActiveViewport(
-        ".rs-viewer-iframe, .dws-iframe, iframe",
-        seriesList,
-        selectedSeriesId, // <-- This MUST be the series_id from the modal
-        1 // fallback slice
-      );
+      const instance = selectedSeries.instances[selectedSliceIndex];
+      if (!instance) {
+        throw new Error("No instance at selected slice index");
+      }
 
-      console.log('[Modal] Capture result:', capturedPayload);
+      const sDesc = selectedSeries.series_description || `Series ${selectedSeries.series_number || 1}`;
+      const totSlices = selectedSeries.total_slices || selectedSeries.instances.length || 1;
+      const sliceNum = instance.slice_number || instance.instance_number || (selectedSliceIndex + 1);
+      const caption = `${sDesc} | ${sliceNum}/${totSlices}`;
+
+      console.log('[Modal] Capturing:', {
+        studyUID,
+        seriesUID: selectedSeries.series_id,
+        seriesDescription: sDesc,
+        sliceNumber: sliceNum,
+        instanceId: instance.instance_id,
+        previewUrl: instance.preview_url
+      });
+
+      const capturePayload = {
+        studyUID: studyUID,
+        seriesUID: selectedSeries.series_id || selectedSeries.series_instance_uid,
+        sopInstanceUid: instance.instance_id || instance.sop_instance_uid,
+        instanceId: instance.instance_id,
+        sliceNumber: sliceNum,
+        totalSlices: totSlices,
+        seriesNumber: selectedSeries.series_number || 1,
+        seriesDescription: sDesc,
+        modality: selectedSeries.modality || 'CT',
+        caption: caption,
+        previewUrl: instance.preview_url || instance.previewUrl
+      };
 
       let snapObj = null;
       try {
-        const res = await api.post("/api/pacs/capture-key-image", capturedPayload);
+        const res = await api.post("/api/pacs/capture-key-image", capturePayload);
         if (res.data?.success && res.data?.data) {
           snapObj = res.data.data;
           console.log('[Modal] ✅ Backend saved:', snapObj);
         }
       } catch (e) {
-        console.error("[Modal] ❌ Backend save failed:", e);
+        console.error("[Modal] Backend save failed:", e);
       }
 
-      if (!snapObj) snapObj = capturedPayload;
+      if (!snapObj) {
+        snapObj = {
+          id: `snap_${Date.now()}`,
+          instance_id: instance.instance_id,
+          sopInstanceUid: instance.instance_id,
+          studyUID: studyUID,
+          seriesUID: selectedSeries.series_id,
+          sliceNumber: sliceNum,
+          preview_url: instance.preview_url,
+          previewUrl: instance.preview_url,
+          caption: caption
+        };
+      }
 
       onSelectImage(snapObj);
-      const instId = snapObj.instanceId || snapObj.instance_id || snapObj.sopInstanceUid || snapObj.id;
-      if (instId) {
-        setAddedIds(prev => new Set(prev).add(String(instId)));
-      }
-      const capText = snapObj?.caption || capturedPayload?.caption || "Key Image";
-      setToastMsg(`⭐ Captured: ${capText}!`);
+      setAddedIds(prev => new Set(prev).add(String(instance.instance_id)));
+      setToastMsg(`✅ Captured: ${caption}`);
       setTimeout(() => setToastMsg(""), 3000);
     } catch (err) {
       console.error("[Modal] Capture failed:", err);
+      setToastMsg(`❌ Failed: ${err.message}`);
+      setTimeout(() => setToastMsg(""), 3000);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePick = async (inst) => {
-    let snapObj = null;
-    const sDesc = currentSeries?.series_description || `Series ${currentSeries?.series_number || 1}`;
-    const totSlices = currentSeries?.total_slices || 1;
-    const caption = inst.caption || (totSlices > 1 ? `${sDesc} | ${inst.slice_number}/${totSlices}` : `${sDesc} | ${inst.slice_number}`);
-    try {
-      const capturePayload = {
-        studyUID: studyUID,
-        studyInstanceUid: studyUID,
-        seriesUID: selectedSeriesId,
-        seriesInstanceUid: selectedSeriesId,
-        sopInstanceUid: inst.instance_id,
-        instanceId: inst.instance_id,
-        sliceNumber: inst.slice_number,
-        frameNumber: inst.slice_number,
-        totalSlices: currentSeries?.total_slices || 1,
-        seriesNumber: currentSeries?.series_number || 1,
-        seriesDescription: currentSeries?.series_description || '',
-        modality: currentSeries?.modality || 'CT',
-        caption: caption,
-        windowCenter: inst.window_center || null,
-        windowWidth: inst.window_width || null,
-        zoom: 1.0,
-        panX: 0,
-        panY: 0,
-        rotation: 0,
-        flipHorizontal: false,
-        flipVertical: false,
-        measurementData: inst.measurement_data || {},
-        viewportState: { sliceNumber: inst.slice_number, seriesNumber: currentSeries?.series_number }
-      };
-      const res = await api.post("/api/pacs/capture-key-image", capturePayload);
-      if (res.data?.success && res.data?.data) {
-        snapObj = res.data.data;
-      }
-    } catch (e) {
-      console.warn("capture-key-image failed in picker modal:", e);
-    }
-
-    if (!snapObj) {
-      const pUrl = inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(selectedSeriesId)}`;
-      snapObj = {
-        id: `snap_picker_${Date.now()}_${inst.slice_number}`,
-        instance_id: inst.instance_id,
-        sopInstanceUid: inst.instance_id,
-        studyUID: studyUID,
-        seriesUID: selectedSeriesId,
-        sliceNumber: inst.slice_number,
-        preview_url: pUrl,
-        previewUrl: pUrl,
-        caption: caption
-      };
-    }
-
-    onSelectImage(snapObj);
-
-    setAddedIds(prev => new Set(prev).add(String(inst.instance_id)));
-    setToastMsg(`Added Slice #${inst.slice_number} to Key Images!`);
-    setTimeout(() => setToastMsg(""), 2500);
   };
 
   return (
@@ -197,11 +171,11 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
               <ImageIcon size={20} color="#ffffff" />
             </div>
             <div>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
                 Select Key Diagnostic Images
               </h3>
               <p style={{ margin: "2px 0 0 0", fontSize: 12, color: "#94a3b8" }}>
-                Browse exact study series & slices. Click any thumbnail to attach as key image.
+                Browse series & slices. Click thumbnails to attach.
               </p>
             </div>
           </div>
@@ -209,7 +183,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button
               type="button"
-              onClick={handleCaptureActiveViewport}
+              onClick={handleCaptureSelectedSlice}
+              disabled={!selectedSeries || loading}
               style={{
                 background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
                 color: "#ffffff",
@@ -218,20 +193,27 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                 padding: "7px 14px",
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: selectedSeries && !loading ? "pointer" : "not-allowed",
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.4)"
+                opacity: selectedSeries && !loading ? 1 : 0.5
               }}
-              title="Capture live viewer image with active annotations and DICOM identity"
             >
-              <Star size={14} fill="#f59e0b" color="#f59e0b" /> ⭐ Capture Active Viewport
+              <Star size={14} fill="#f59e0b" color="#f59e0b" />
+              {loading ? "Capturing..." : "Capture Selected Slice"}
             </button>
 
             {toastMsg && (
-              <div style={{ background: "#10b981", color: "#ffffff", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, animation: "fadeIn 0.2s" }}>
-                ✓ {toastMsg}
+              <div style={{ 
+                background: toastMsg.includes("❌") ? "#ef4444" : "#10b981", 
+                color: "#ffffff", 
+                padding: "4px 12px", 
+                borderRadius: 20, 
+                fontSize: 12, 
+                fontWeight: 700 
+              }}>
+                {toastMsg}
               </div>
             )}
             <button
@@ -243,9 +225,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                 borderRadius: 8,
                 padding: 6,
                 cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center"
+                display: "flex"
               }}
             >
               <X size={20} />
@@ -266,11 +246,14 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
             }}
           >
             {seriesList.map((s) => {
-              const isSelected = String(s.series_id) === String(selectedSeriesId);
+              const isSelected = selectedSeries && String(s.series_id) === String(selectedSeries.series_id);
               return (
                 <button
                   key={s.series_id}
-                  onClick={() => setSelectedSeriesId(String(s.series_id))}
+                  onClick={() => {
+                    setSelectedSeries(s);
+                    setSelectedSliceIndex(0);
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -283,8 +266,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                     background: isSelected ? "#e0f2fe" : "#ffffff",
                     color: isSelected ? "#0369a1" : "#475569",
                     cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    transition: "all 0.15s ease"
+                    whiteSpace: "nowrap"
                   }}
                 >
                   <Layers size={14} color={isSelected ? "#0284c7" : "#64748b"} />
@@ -312,11 +294,11 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
           {loading ? (
             <div style={{ padding: 60, textAlign: "center", color: "#64748b" }}>
               <RefreshCw size={28} className="animate-spin" style={{ margin: "0 auto 10px auto", color: "#0284c7" }} />
-              <div style={{ fontSize: 14, fontWeight: 600 }}>Loading Study Slices & Thumbnails...</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>Loading...</div>
             </div>
-          ) : !currentSeries || !currentSeries.instances || currentSeries.instances.length === 0 ? (
+          ) : !selectedSeries || !selectedSeries.instances || selectedSeries.instances.length === 0 ? (
             <div style={{ padding: 60, textAlign: "center", color: "#64748b", fontSize: 13 }}>
-              No DICOM instances found for this series.
+              No instances found for this series.
             </div>
           ) : (
             <div
@@ -326,36 +308,27 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                 gap: 14
               }}
             >
-              {currentSeries.instances.map((inst) => {
+              {selectedSeries.instances.map((inst, idx) => {
                 const isAdded = addedIds.has(String(inst.instance_id));
+                const isSelected = idx === selectedSliceIndex;
                 return (
                   <div
                     key={inst.instance_id}
-                    onClick={() => handlePick(inst)}
+                    onClick={() => setSelectedSliceIndex(idx)}
                     style={{
                       position: "relative",
                       background: "#ffffff",
                       borderRadius: 12,
-                      border: isAdded ? "2px solid #10b981" : "1px solid #cbd5e1",
+                      border: isSelected ? "3px solid #0284c7" : (isAdded ? "2px solid #10b981" : "1px solid #cbd5e1"),
                       overflow: "hidden",
-                      boxShadow: isAdded ? "0 4px 12px rgba(16, 185, 129, 0.2)" : "0 2px 4px rgba(0,0,0,0.05)",
+                      boxShadow: isSelected ? "0 4px 12px rgba(2, 132, 199, 0.3)" : (isAdded ? "0 4px 12px rgba(16, 185, 129, 0.2)" : "0 2px 4px rgba(0,0,0,0.05)"),
                       cursor: "pointer",
-                      transition: "transform 0.15s ease, box-shadow 0.15s ease",
-                      display: "flex",
-                      flexDirection: "column"
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = "translateY(-3px)";
-                      e.currentTarget.style.boxShadow = "0 8px 16px rgba(0,0,0,0.12)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = "translateY(0)";
-                      e.currentTarget.style.boxShadow = isAdded ? "0 4px 12px rgba(16, 185, 129, 0.2)" : "0 2px 4px rgba(0,0,0,0.05)";
+                      transition: "all 0.15s ease"
                     }}
                   >
                     <div style={{ position: "relative", aspectRatio: "1/1", backgroundColor: "#000000", overflow: "hidden" }}>
                       <img
-                        src={inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(selectedSeriesId)}`}
+                        src={inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id}?studyUID=${encodeURIComponent(studyUID)}`}
                         alt={`Slice ${inst.slice_number}`}
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
@@ -369,11 +342,10 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                           padding: "2px 7px",
                           borderRadius: 6,
                           fontSize: 10,
-                          fontWeight: 800,
-                          backdropFilter: "blur(2px)"
+                          fontWeight: 800
                         }}
                       >
-                        Slice #{inst.slice_number}
+                        #{inst.slice_number || (idx + 1)}
                       </div>
 
                       {isAdded && (
@@ -395,11 +367,15 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                     </div>
 
                     <div style={{ padding: "8px 10px", background: "#ffffff", borderTop: "1px solid #f1f5f9" }}>
+                      <div style={{ fontSize: 10, color: "#64748b", marginBottom: 4 }}>
+                        Slice {inst.slice_number || (idx + 1)}
+                      </div>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handlePick(inst);
+                          setSelectedSliceIndex(idx);
+                          setTimeout(() => handleCaptureSelectedSlice(), 100);
                         }}
                         style={{
                           width: "100%",
@@ -410,20 +386,10 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                           border: "none",
                           background: isAdded ? "#ecfdf5" : "#0284c7",
                           color: isAdded ? "#047857" : "#ffffff",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 4
+                          cursor: "pointer"
                         }}
                       >
-                        {isAdded ? (
-                          <>
-                            <Check size={12} /> Added
-                          </>
-                        ) : (
-                          <>+ Select Image</>
-                        )}
+                        {isAdded ? "✓ Added" : "+ Select"}
                       </button>
                     </div>
                   </div>
@@ -445,7 +411,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
           }}
         >
           <div style={{ fontSize: 12, color: "#64748b" }}>
-            Total Attached Key Images: <b>{addedIds.size}</b>
+            Selected: <b>{selectedSeries?.series_description || 'None'}</b> | Slice: <b>{selectedSliceIndex + 1}</b> | Total Attached: <b>{addedIds.size}</b>
           </div>
           <button
             onClick={onClose}
@@ -460,7 +426,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
               cursor: "pointer"
             }}
           >
-            Done Selecting
+            Done
           </button>
         </div>
       </div>

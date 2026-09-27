@@ -909,16 +909,46 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const iframeEl = findDicomViewerIframe();
 
     try {
-      const activeSeries = overrideSeriesId || selectedSeriesId || null;
-      const capturedPayload = await keyImageService.captureActiveViewport(
-        iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe",
-        studySeriesList,
-        activeSeries,
-        overrideSliceNum || 1
-      );
+      const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe", studySeriesList, null);
+      
+      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || selectedSeriesId;
+      const seriesObj = studySeriesList.find(s => 
+        String(s.series_id) === String(targetSeriesId) || 
+        String(s.series_instance_uid) === String(targetSeriesId)
+      ) || studySeriesList[0];
 
-      const savedKeyImg = await keyImageService.addKeyImage(reportId, capturedPayload);
-      const finalObj = savedKeyImg || capturedPayload;
+      const detectedSlice = overrideSliceNum || snapResult?.sliceNumber || 1;
+      const totalSlices = seriesObj?.total_slices || seriesObj?.instances?.length || 1;
+      const clampedSlice = Math.min(Math.max(1, parseInt(detectedSlice, 10)), totalSlices);
+
+      let targetInst = null;
+      if (Array.isArray(seriesObj?.instances) && seriesObj.instances.length > 0) {
+        targetInst = seriesObj.instances.find(inst => 
+          parseInt(inst.slice_number || inst.instance_number || 0, 10) === clampedSlice
+        ) || seriesObj.instances[Math.min(clampedSlice - 1, seriesObj.instances.length - 1)];
+      }
+
+      const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
+      const caption = totalSlices > 1 ? `${seriesDesc} | ${clampedSlice}/${totalSlices}` : `${seriesDesc} | ${clampedSlice}`;
+
+      const capturePayload = {
+        studyUID: studyUID,
+        seriesUID: seriesObj?.series_id || seriesObj?.series_instance_uid,
+        sopInstanceUid: targetInst?.instance_id || snapResult?.sopInstanceUid,
+        instanceId: targetInst?.instance_id,
+        sliceNumber: clampedSlice,
+        totalSlices: totalSlices,
+        seriesNumber: seriesObj?.series_number || 1,
+        seriesDescription: seriesDesc,
+        modality: seriesObj?.modality || "CT",
+        caption: caption,
+        dataUrl: snapResult?.dataUrl || null,
+        windowCenter: snapResult?.windowCenter || null,
+        windowWidth: snapResult?.windowWidth || null
+      };
+
+      const savedKeyImg = await keyImageService.addKeyImage(reportId, capturePayload);
+      const finalObj = savedKeyImg || capturePayload;
 
       setAttachedSnapshots(prev => {
         const idToCheck = finalObj.id || finalObj.instanceId || finalObj.sopInstanceUid;
