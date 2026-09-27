@@ -421,9 +421,11 @@ router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
  * Fetches series & instances from Orthanc OR active DCM4CHEE nodes
  */
 async function fetchStudySeriesAndInstancesAcrossPacs(studyUID) {
+  console.log("🚨 [HYBRID GATEWAY] Fetching series for study:", studyUID);
   try {
     const seriesList = await hybridPacsGateway.fetchHybridSeriesAndInstances(studyUID);
     if (Array.isArray(seriesList) && seriesList.length > 0) {
+      console.log(`🚨 [HYBRID GATEWAY] Retrieved ${seriesList.length} series for study: ${studyUID}`);
       return seriesList;
     }
   } catch (e) {
@@ -929,7 +931,7 @@ router.post("/debug-dom-dump", asyncHandler(async (req, res) => {
 }));
 
 router.post("/capture-key-image", asyncHandler(async (req, res) => {
-
+  console.log("🚨 [BACKEND SAVE] Received capture-key-image payload:", { seriesUID: req.body.seriesUID, seriesDescription: req.body.seriesDescription, instanceId: req.body.instanceId });
   const result = await processKeyImageSave(req.body, req.user);
   res.json({ success: true, data: result });
 }));
@@ -959,7 +961,7 @@ router.get("/direct-instance/:studyUID/:seriesUID/:instanceId", asyncHandler(asy
 }));
 
 router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
-  console.log("🚨 BACKEND V2 SAVE RECEIVED:", req.body);
+  console.log("🚨 [BACKEND SAVE] Received seriesUID:", req.body.seriesUID, "seriesDescription:", req.body.seriesDescription, "instanceId:", req.body.instanceId);
   const { 
     reportId, 
     studyUID, 
@@ -1617,6 +1619,7 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
     const { studyUID } = req.params;
     const now = Date.now();
     const cached = studySeriesCache.get(String(studyUID));
+    console.log("🚨 [STUDY-SERIES] Fetching for studyUID:", studyUID, "Cache hit:", (cached && cached.expiresAt > now) ? "YES" : "NO");
     if (cached && cached.expiresAt > now) {
       return res.json({
         success: true,

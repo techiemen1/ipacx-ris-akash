@@ -65,6 +65,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
         sliceNumber: sliceNum
       });
 
+      console.log("🚨 [MODAL CAPTURE] Sending seriesUID:", selectedSeries?.series_id, "seriesDescription:", selectedSeries?.series_description, "instanceId:", instance?.instance_id);
+
       // Use the new V2 endpoint for direct fetch
       const payload = {
         reportId: null, // Will be set by parent
