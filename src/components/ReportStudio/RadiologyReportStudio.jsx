@@ -1007,10 +1007,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     let seriesObj = null;
 
-    // Priority 1: Live target from viewer (updates dropdown to match active series)
+    // Priority 1: Live target from active viewer viewport (updates dropdown to match active series)
     if (liveSeriesTarget) {
       const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices, null);
-      if (liveMatched && (!isScoutSeries(liveMatched) || !hasNonScoutSeries)) {
+      if (liveMatched) {
         seriesObj = liveMatched;
       }
     }

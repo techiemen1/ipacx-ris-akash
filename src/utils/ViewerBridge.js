@@ -470,6 +470,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       if (/^\d{1,2}[Yy]\s*\/\s*[MFmf]$/.test(s)) return true;
       if (/^\d{1,2}\s*[A-Za-z]{3}\s*\d{4}$/.test(s)) return true;
       if (/^(ID|ACC|PID|Patient)\s*:\s*/i.test(s)) return true;
+      if (/\bkey image\b/i.test(s) || /attached to report/i.test(s) || /cite in report/i.test(s)) return true;
       return false;
     };
 
@@ -478,7 +479,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       const tw = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
         acceptNode: (node) => {
           if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-          if (root !== activeContainer && isSidebarOrThumbnail(node.parentElement)) {
+          if (root !== activeContainer && (isSidebarOrThumbnail(node.parentElement) || node.parentElement.closest('.key-images, .rs-print-key-images, [class*="key-image"]'))) {
             return NodeFilter.FILTER_REJECT;
           }
           const val = node.nodeValue ? node.nodeValue.trim() : '';
@@ -524,20 +525,31 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       for (const val of searchStrings) {
         if (isDemographicOrDate(val)) continue;
 
-        // Pattern 0: "I: 207 (39/245)", "Im: 207 (39/245)", "1 : 52 (52/313)"
-        let m = val.match(/(?:\d+|I|Im|Slice|Image)\s*:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+        // Pattern 0A: "I: 134 190/223", "I:173 (51/223)", "Im: 134 190/223", "I: 134 (190/223)"
+        let m = val.match(/(?:I|Im|Instance|Image)\s*:?\s*(\d+)\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
         if (m) {
           const instNum = parseInt(m[1], 10);
           const sn = parseInt(m[2], 10);
           const tn2 = parseInt(m[3], 10);
           if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, instanceNumber: instNum, text: val, priority: basePriority + 300 });
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, instanceNumber: instNum, text: val, priority: basePriority + 400 });
             continue;
           }
         }
 
-        // Pattern 1: "(39/245)"
+        // Pattern 0B: "(39/245)", " ( 190 / 223 ) "
         m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+        if (m) {
+          const sn = parseInt(m[1], 10);
+          const tn2 = parseInt(m[2], 10);
+          if (sn > 0 && tn2 > 0 && sn <= tn2) {
+            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 300 });
+            continue;
+          }
+        }
+
+        // Pattern 1: "Slice 39 of 245", "Image 190 of 223"
+        m = val.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
         if (m) {
           const sn = parseInt(m[1], 10);
           const tn2 = parseInt(m[2], 10);
@@ -547,8 +559,8 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
           }
         }
 
-        // Pattern 2: "Im: 39/245", "Slice 39 of 245", "39/245"
-        m = val.match(/(?:slice|image|im|frame|sl)?\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
+        // Pattern 2: Standalone "190/223" or "190 / 223"
+        m = val.match(/(\d+)\s*\/\s*(\d+)/);
         if (m) {
           const sn = parseInt(m[1], 10);
           const tn2 = parseInt(m[2], 10);
