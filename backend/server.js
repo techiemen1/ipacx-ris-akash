@@ -110,33 +110,125 @@ try {
   const ohifBridgeScript = `
 <script id="ohif-ris-bridge-script">
 (function() {
+  var lastActiveViewportId = null;
+
+  function trackActiveViewport(e) {
+    try {
+      var target = e.target;
+      if (!target) return;
+      if (target.closest && target.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"]')) {
+        return;
+      }
+      var vpElement = target.closest ? target.closest('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .cornerstone-viewport-element, .viewport-grid-item, div[class*="viewport"], div[class*="Viewport"]') : null;
+      if (vpElement) {
+        var uid = vpElement.getAttribute('data-viewport-uid') || vpElement.id || vpElement.getAttribute('data-cy');
+        if (uid) {
+          lastActiveViewportId = uid;
+        }
+      }
+    } catch (err) {}
+  }
+
+  document.addEventListener('mousedown', trackActiveViewport, true);
+  document.addEventListener('pointerdown', trackActiveViewport, true);
+  document.addEventListener('click', trackActiveViewport, true);
+  document.addEventListener('wheel', trackActiveViewport, true);
+
   window.addEventListener('message', function(event) {
     if (event.data && event.data.type === 'OHIF_GET_ACTIVE_VIEWPORT') {
       try {
         var servicesManager = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
-        if (!servicesManager) {
-          window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: 'Services not ready' }, '*');
-          return;
+        var vgs = servicesManager ? servicesManager.services.viewportGridService : null;
+        var dss = servicesManager ? servicesManager.services.displaySetService : null;
+        var cvs = servicesManager ? servicesManager.services.cornerstoneViewportService : null;
+
+        var activeViewportId = lastActiveViewportId;
+
+        if (!activeViewportId && vgs) {
+          try {
+            var gridState = typeof vgs.getState === 'function' ? vgs.getState() : null;
+            activeViewportId = (gridState && gridState.activeViewportId) || (typeof vgs.getActiveViewportId === 'function' ? vgs.getActiveViewportId() : null);
+          } catch(e) {}
         }
 
-        var vgs = servicesManager.services.viewportGridService;
-        var dss = servicesManager.services.displaySetService;
-        var cvs = servicesManager.services.cornerstoneViewportService;
+        if (!activeViewportId) {
+          try {
+            var candidates = Array.from(document.querySelectorAll('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .viewport-grid-item'));
+            for (var i = 0; i < candidates.length; i++) {
+              var el = candidates[i];
+              var uid = el.getAttribute('data-viewport-uid') || el.id;
+              if (!uid) continue;
+              if (el.classList.contains('active') || el.classList.contains('border-primary') || el.getAttribute('data-active') === 'true') {
+                activeViewportId = uid;
+                break;
+              }
+              var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+              if (style && style.borderColor) {
+                var bc = style.borderColor.toLowerCase();
+                if (bc.includes('0, 132, 199') || bc.includes('2, 132, 199') || bc.includes('56, 189, 248') || bc.includes('#0284c7') || bc.includes('#0084c7')) {
+                  activeViewportId = uid;
+                  break;
+                }
+              }
+            }
+          } catch(e) {}
+        }
 
-        var activeViewportId = vgs ? vgs.getActiveViewportId() : null;
-        var viewport = (vgs && activeViewportId) ? vgs.getViewport(activeViewportId) : null;
+        if (!activeViewportId && vgs && typeof vgs.getActiveViewportId === 'function') {
+          activeViewportId = vgs.getActiveViewportId();
+        }
+
+        console.log('[OHIF Bridge] Active Viewport ID:', activeViewportId);
+
+        var viewport = null;
+        if (vgs && activeViewportId) {
+          if (typeof vgs.getViewport === 'function') {
+            try { viewport = vgs.getViewport(activeViewportId); } catch(e) {}
+          }
+          if (!viewport && typeof vgs.getState === 'function') {
+            try {
+              var st = vgs.getState();
+              if (st && st.viewports) {
+                if (typeof st.viewports.get === 'function') viewport = st.viewports.get(activeViewportId);
+                else if (typeof st.viewports === 'object') viewport = st.viewports[activeViewportId];
+              }
+            } catch(e) {}
+          }
+        }
+
+        console.log('[OHIF Bridge] Viewport Object:', viewport);
+
         var displaySetInstanceUID = viewport ? (viewport.displaySetInstanceUID || (Array.isArray(viewport.displaySetInstanceUIDs) ? viewport.displaySetInstanceUIDs[0] : null)) : null;
-        var displaySet = (dss && displaySetInstanceUID) ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
-        var cornerstoneViewport = (cvs && activeViewportId) ? cvs.getCornerstoneViewport(activeViewportId) : null;
+        var displaySet = (dss && displaySetInstanceUID && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
+        var cornerstoneViewport = (cvs && activeViewportId && typeof cvs.getCornerstoneViewport === 'function') ? cvs.getCornerstoneViewport(activeViewportId) : null;
 
         var sliceNumber = 1;
         var totalSlices = 1;
         var sopInstanceUid = null;
+        var seriesInstanceUID = displaySet ? (displaySet.SeriesInstanceUID || displaySet.seriesInstanceUid) : null;
+        var seriesDescription = displaySet ? (displaySet.SeriesDescription || displaySet.seriesDescription) : null;
+        var modality = displaySet ? (displaySet.Modality || displaySet.modality) : 'CT';
 
         if (cornerstoneViewport) {
-          sliceNumber = (cornerstoneViewport.getCurrentImageIdIndex ? cornerstoneViewport.getCurrentImageIdIndex() : 0) + 1;
-          var imageIds = cornerstoneViewport.getImageIds ? cornerstoneViewport.getImageIds() : [];
-          totalSlices = imageIds.length || 1;
+          try {
+            if (typeof cornerstoneViewport.getCurrentImageIdIndex === 'function') {
+              sliceNumber = cornerstoneViewport.getCurrentImageIdIndex() + 1;
+            } else if (typeof cornerstoneViewport.getSliceIndex === 'function') {
+              sliceNumber = cornerstoneViewport.getSliceIndex() + 1;
+            }
+          } catch(e) {}
+
+          try {
+            var imageIds = cornerstoneViewport.getImageIds ? cornerstoneViewport.getImageIds() : [];
+            totalSlices = imageIds.length || 1;
+            if (imageIds.length > 0 && sliceNumber > 0) {
+              var currentImageId = imageIds[sliceNumber - 1] || imageIds[0];
+              if (!seriesInstanceUID && currentImageId) {
+                var sMatch = currentImageId.match(/series\/([a-zA-Z0-9._-]+)/i) || currentImageId.match(/seriesInstanceUID=([a-zA-Z0-9._-]+)/i);
+                if (sMatch) seriesInstanceUID = sMatch[1];
+              }
+            }
+          } catch(e) {}
         }
 
         if (displaySet && displaySet.images && displaySet.images[sliceNumber - 1]) {
@@ -145,17 +237,22 @@ try {
           sopInstanceUid = displaySet.images[0].SOPInstanceUID || displaySet.images[0].sopInstanceUid;
         }
 
+        console.log('[OHIF Bridge] DisplaySet:', displaySet);
+        console.log('[OHIF Bridge] SeriesDescription:', seriesDescription);
+
         window.parent.postMessage({
           type: 'OHIF_VIEWPORT_STATE',
           success: true,
-          seriesInstanceUID: displaySet ? (displaySet.SeriesInstanceUID || displaySet.seriesInstanceUid) : null,
-          seriesDescription: displaySet ? (displaySet.SeriesDescription || displaySet.seriesDescription) : null,
-          modality: displaySet ? (displaySet.Modality || displaySet.modality) : 'CT',
+          viewportId: activeViewportId,
+          seriesInstanceUID: seriesInstanceUID,
+          seriesDescription: seriesDescription,
+          modality: modality,
           sopInstanceUid: sopInstanceUid,
           sliceNumber: sliceNumber,
           totalSlices: totalSlices
         }, '*');
       } catch (err) {
+        console.error('[OHIF Bridge] Error:', err);
         window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: err.message }, '*');
       }
     }
