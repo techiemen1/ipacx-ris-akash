@@ -134,7 +134,8 @@ class KeyImageService {
   async addKeyImage(reportId, keyImagePayload) {
     if (!keyImagePayload) return null;
     try {
-      const url = reportId ? `/api/reports/${reportId}/key-images` : "/api/pacs/capture-key-image";
+      api.post("/api/pacs/debug-key-image-payload", keyImagePayload).catch(() => {});
+      const url = reportId ? `/api/pacs/v1/reports/${reportId}/key-images` : (keyImagePayload.studyUID ? `/api/pacs/v1/studies/${encodeURIComponent(keyImagePayload.studyUID)}/key-images` : "/api/pacs/capture-key-image");
       const res = await api.post(url, keyImagePayload);
       if (res.data && res.data.success && res.data.data) {
         return res.data.data;

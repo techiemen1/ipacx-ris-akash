@@ -315,6 +315,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
   // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
+    const reportId = study?.report_id || study?.reportId || null;
     let directDomSliceInfo = null;
     const iframeEl = findDicomViewerIframe();
     try {
@@ -453,24 +454,42 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const validDataUrl = (capturedDataUrl && typeof capturedDataUrl === 'string' && capturedDataUrl.startsWith('data:image/') && capturedDataUrl.length > 500) ? capturedDataUrl : null;
     
     let snapObj = null;
+    const capturePayload = {
+      reportId: reportId || null,
+      studyUID: studyUID,
+      seriesUID: seriesObj?.series_instance_uid || seriesObj?.series_id || liveSeriesTarget || activeSeriesTarget,
+      sopInstanceUid: snapResult?.sopInstanceUid || directDomSliceInfo?.sopInstanceUid || activeViewportInfo?.sopInstanceUid || targetInst?.sop_instance_uid || targetInst?.instance_id,
+      instanceId: targetInst?.instance_id || targetInst?.id || snapResult?.instanceId || activeViewportInfo?.instance_id,
+      sliceNumber: displaySliceNum,
+      totalSlices: resolvedTotalSlices,
+      seriesDescription: seriesDesc,
+      modality: seriesObj?.modality || snapResult?.modality || "CT",
+      windowCenter: snapResult?.windowCenter || directDomSliceInfo?.windowCenter || null,
+      windowWidth: snapResult?.windowWidth || directDomSliceInfo?.windowWidth || null,
+      dataUrl: validDataUrl,
+      caption: fullCaption
+    };
+
+    // 1. Send debug analysis payload
+    api.post('/api/pacs/debug-key-image-payload', capturePayload).catch(() => {});
+
+    // 2. Send key image save request to backend API
+    const saveUrl = reportId ? `/api/pacs/v1/reports/${reportId}/key-images` : `/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images`;
     try {
-      const capturePayload = {
-        studyUID: studyUID,
-        seriesUID: seriesObj?.series_id || activeSeriesTarget,
-        sopInstanceUid: snapResult?.sopInstanceUid || directDomSliceInfo?.sopInstanceUid || activeViewportInfo?.sopInstanceUid || targetInst?.sop_instance_uid || targetInst?.instance_id,
-        instanceId: targetInst?.instance_id || snapResult?.instanceId || activeViewportInfo?.instance_id,
-        sliceNumber: displaySliceNum,
-        totalSlices: resolvedTotalSlices,
-        seriesDescription: seriesDesc,
-        dataUrl: validDataUrl,
-        caption: fullCaption
-      };
-      const res = await api.post('/api/pacs/capture-key-image', capturePayload);
+      const res = await api.post(saveUrl, capturePayload);
       if (res.data && res.data.success && res.data.data) {
         snapObj = res.data.data;
       }
     } catch (err) {
-      console.warn("capture-key-image microservice call failed:", err.message);
+      console.warn("Key image save REST API notice:", err.message);
+      try {
+        const resFb = await api.post('/api/pacs/capture-key-image', capturePayload);
+        if (resFb.data && resFb.data.success && resFb.data.data) {
+          snapObj = resFb.data.data;
+        }
+      } catch (err2) {
+        console.warn("capture-key-image fallback notice:", err2.message);
+      }
     }
 
     if (!snapObj) {

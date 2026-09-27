@@ -259,6 +259,25 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                   }
                 }
 
+                // Extract VOI LUT (Window Center / Window Width) if available
+                let windowCenter = null;
+                let windowWidth = null;
+                try {
+                  if (typeof vp.getProperties === 'function') {
+                    const props = vp.getProperties();
+                    if (props && props.voiRange) {
+                      windowWidth = props.voiRange.upper - props.voiRange.lower;
+                      windowCenter = (props.voiRange.upper + props.voiRange.lower) / 2;
+                    }
+                  } else if (typeof vp.getVOILUT === 'function') {
+                    const voi = vp.getVOILUT();
+                    windowCenter = voi?.windowCenter;
+                    windowWidth = voi?.windowWidth;
+                  }
+                } catch (e) {
+                  /* ignore VOI LUT error */
+                }
+
                 const isLastActive = (
                   el === iframeDoc._lastActiveViewport ||
                   el === iframeDoc._lastActiveCanvas ||
@@ -283,9 +302,13 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                     instanceNumber: idx + 1,
                     sliceNumber: idx + 1,
                     totalSlices: imageIds.length || (foundSeries?.total_slices) || null,
+                    seriesInstanceUid: foundSeries ? (foundSeries.series_instance_uid || foundSeries.series_id) : null,
                     matchedSeriesId: foundSeries ? (foundSeries.series_id || foundSeries.orthanc_series_id || foundSeries.series_instance_uid) : null,
                     seriesDescription: foundSeries ? foundSeries.series_description : null,
+                    modality: foundSeries?.modality || "CT",
                     sopInstanceUid: targetSop || null,
+                    windowCenter,
+                    windowWidth,
                     activeCanvas: el?.querySelector('canvas') || el
                   };
                 }
@@ -770,9 +793,13 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
           instanceNumber: sliceInfo.instanceNumber || sliceInfo.sliceNumber,
           sliceNumber: parseInt(sliceInfo.sliceNumber, 10),
           totalSlices: sliceInfo.totalSlices ? parseInt(sliceInfo.totalSlices, 10) : null,
+          seriesInstanceUid: sliceInfo.seriesInstanceUid || sliceInfo.matchedSeriesId || null,
           matchedSeriesId: sliceInfo.matchedSeriesId || null,
           seriesDescription: sliceInfo.seriesDescription || null,
-          sopInstanceUid: sliceInfo.sopInstanceUid || null
+          sopInstanceUid: sliceInfo.sopInstanceUid || null,
+          modality: sliceInfo.modality || "CT",
+          windowCenter: sliceInfo.windowCenter || null,
+          windowWidth: sliceInfo.windowWidth || null
         };
       }
     }
