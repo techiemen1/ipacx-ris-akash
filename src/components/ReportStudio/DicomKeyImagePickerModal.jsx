@@ -42,7 +42,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
   if (!isOpen) return null;
 
-  const handleCaptureSelectedSlice = async () => {
+  const handleCaptureSelectedSlice = async (overrideIndex = null) => {
     if (!selectedSeries) {
       setToastMsg("❌ No series selected!");
       setTimeout(() => setToastMsg(""), 3000);
@@ -51,7 +51,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
     setLoading(true);
     try {
-      const instance = selectedSeries.instances[selectedSliceIndex];
+      const targetIdx = overrideIndex !== null ? overrideIndex : selectedSliceIndex;
+      const instance = (selectedSeries.instances && selectedSeries.instances[targetIdx]) ? selectedSeries.instances[targetIdx] : null;
       if (!instance) {
         throw new Error("No instance at selected slice index");
       }
@@ -375,7 +376,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedSliceIndex(idx);
-                          setTimeout(() => handleCaptureSelectedSlice(), 100);
+                          handleCaptureSelectedSlice(idx);
                         }}
                         style={{
                           width: "100%",
