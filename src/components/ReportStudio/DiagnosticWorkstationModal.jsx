@@ -462,10 +462,18 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       instanceId: targetInst?.instance_id || targetInst?.id || snapResult?.instanceId || activeViewportInfo?.instance_id,
       sliceNumber: displaySliceNum,
       totalSlices: resolvedTotalSlices,
+      seriesNumber: seriesObj?.series_number || snapResult?.seriesNumber || 1,
+      instanceNumber: targetInst?.instance_number || targetInst?.instanceNumber || displaySliceNum,
       seriesDescription: seriesDesc,
       modality: seriesObj?.modality || snapResult?.modality || "CT",
       windowCenter: snapResult?.windowCenter || directDomSliceInfo?.windowCenter || null,
       windowWidth: snapResult?.windowWidth || directDomSliceInfo?.windowWidth || null,
+      zoom: snapResult?.zoom || 1.0,
+      panX: snapResult?.panX || 0.0,
+      panY: snapResult?.panY || 0.0,
+      rotation: snapResult?.rotation || 0,
+      flipHorizontal: snapResult?.flipHorizontal || false,
+      flipVertical: snapResult?.flipVertical || false,
       dataUrl: validDataUrl,
       caption: fullCaption
     };
