@@ -88,16 +88,19 @@ export default function KeyImageGallery({
   const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 999;
 
   const handleDirectAttachSlice = async () => {
-    if (!studyUID) return;
+    if (!studyUID || !selectedSeriesId) {
+      console.warn("🚨 KeyImageGallery: Cannot attach. Missing studyUID or selectedSeriesId.");
+      return;
+    }
 
     const seriesObj = (studySeriesList || []).find(s => 
       String(s.series_id) === String(selectedSeriesId) || 
       String(s.series_instance_uid) === String(selectedSeriesId) || 
       String(s.orthanc_series_id) === String(selectedSeriesId)
-    ) || (studySeriesList || [])[0];
+    );
 
     if (!seriesObj) {
-      console.warn("🚨 KeyImageGallery: No series found for explicit capture.");
+      console.warn("🚨 KeyImageGallery: No series found for explicit capture ID:", selectedSeriesId);
       return;
     }
 
