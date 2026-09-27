@@ -175,6 +175,132 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       iframeDoc.addEventListener('wheel', markActive, true);
     }
 
+    // STRATEGY 0: OHIF v3 Services Manager (PRIMARY & MOST ACCURATE for OHIF Viewer)
+    try {
+      const sm = iframeWin && (iframeWin.servicesManager || (iframeWin.ohif && iframeWin.ohif.servicesManager) || (iframeWin.ohifApp && iframeWin.ohifApp.servicesManager));
+      if (sm && sm.services && sm.services.viewportGridService) {
+        const vpgs = sm.services.viewportGridService;
+        const cvps = sm.services.cornerstoneViewportService;
+        const dss = sm.services.displaySetService;
+
+        const gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
+        const activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
+
+        if (activeVpId) {
+          let csSlice = null;
+          let csTotal = null;
+          let csvp = null;
+          let windowCenter = null;
+          let windowWidth = null;
+
+          if (cvps && typeof cvps.getCornerstoneViewport === 'function') {
+            try {
+              csvp = cvps.getCornerstoneViewport(activeVpId);
+              if (csvp) {
+                let idx = null;
+                try {
+                  if (typeof csvp.getCurrentImageIdIndex === 'function') {
+                    idx = csvp.getCurrentImageIdIndex();
+                  } else if (typeof csvp.getSliceIndex === 'function') {
+                    idx = csvp.getSliceIndex();
+                  } else if (typeof csvp.sliceIndex === 'number') {
+                    idx = csvp.sliceIndex;
+                  }
+                } catch (e) {
+                  if (typeof csvp.getSliceIndex === 'function') {
+                    try { idx = csvp.getSliceIndex(); } catch (e2) { /* ignore sliceIndex error */ }
+                  }
+                }
+                try {
+                  if (typeof csvp.getProperties === 'function') {
+                    const props = csvp.getProperties();
+                    if (props && props.voiRange) {
+                      windowWidth = props.voiRange.upper - props.voiRange.lower;
+                      windowCenter = (props.voiRange.upper + props.voiRange.lower) / 2;
+                    }
+                  } else if (typeof csvp.getVOILUT === 'function') {
+                    const voi = csvp.getVOILUT();
+                    windowCenter = voi?.windowCenter;
+                    windowWidth = voi?.windowWidth;
+                  }
+                } catch (e) {
+                  /* ignore VOI LUT error */
+                }
+
+                const ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
+                if (idx !== null && idx >= 0) {
+                  csSlice = idx + 1;
+                  csTotal = ids ? ids.length : null;
+                }
+              }
+            } catch (e) {
+              /* ignore csvp error */
+            }
+          }
+
+          let activeVp = null;
+          if (gridState && gridState.viewports) {
+            const vps = gridState.viewports;
+            if (typeof vps.get === 'function') activeVp = vps.get(activeVpId);
+            else if (Array.isArray(vps)) activeVp = vps.find(v => v.id === activeVpId || v.viewportId === activeVpId);
+            else if (typeof vps === 'object') activeVp = vps[activeVpId];
+          }
+
+          if (!activeVp && typeof vpgs.getViewport === 'function') {
+            try {
+              activeVp = vpgs.getViewport(activeVpId);
+            } catch (e) {
+              /* ignore vpgs getViewport error */
+            }
+          }
+
+          const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
+          const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
+
+          const seriesUid = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+          const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
+          const modality = ds ? (ds.Modality || ds.modality) : "CT";
+          let sopUid = null;
+          if (ds && ds.images && csSlice && ds.images[csSlice - 1]) {
+            sopUid = ds.images[csSlice - 1].SOPInstanceUID || ds.images[csSlice - 1].sopInstanceUid;
+          } else if (ds && ds.images && ds.images[0]) {
+            sopUid = ds.images[0].SOPInstanceUID || ds.images[0].sopInstanceUid;
+          }
+
+          let matchedSeriesObj = null;
+          if (seriesUid && Array.isArray(studySeriesList)) {
+            matchedSeriesObj = studySeriesList.find(s => 
+              String(s.series_instance_uid) === String(seriesUid) ||
+              String(s.series_id) === String(seriesUid) ||
+              String(s.orthanc_series_id) === String(seriesUid)
+            );
+          }
+          if (!matchedSeriesObj && seriesDesc && Array.isArray(studySeriesList)) {
+            matchedSeriesObj = studySeriesList.find(s => s.series_description === seriesDesc);
+          }
+
+          const activeCanvas = csvp?.element?.querySelector('canvas') || null;
+
+          if (csSlice || seriesUid || seriesDesc) {
+            console.log('[ViewerBridge] Strategy 0 (OHIF Services) -> slice:', csSlice, '/', csTotal, '| series:', seriesDesc || seriesUid);
+            return {
+              instanceNumber: csSlice || null,
+              sliceNumber: csSlice || 1,
+              totalSlices: csTotal || ds?.numImageFrames || matchedSeriesObj?.total_slices || 1,
+              seriesInstanceUid: seriesUid || matchedSeriesObj?.series_instance_uid || matchedSeriesObj?.series_id || null,
+              matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : seriesUid,
+              seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : seriesDesc,
+              modality: modality || matchedSeriesObj?.modality || "CT",
+              sopInstanceUid: sopUid || null,
+              windowCenter,
+              windowWidth,
+              activeCanvas
+            };
+          }
+        }
+      }
+    } catch (e) { /* skip Strategy 0 */ }
+
     // STRATEGY 1: Cornerstone3D JavaScript API (Direct, 100% exact slice & series UID)
     try {
       const cs = iframeWin && (iframeWin.cornerstone3D || iframeWin.cornerstone || iframeWin.cornerstoneCore);
@@ -293,8 +419,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                   el.getAttribute('data-active') === 'true'
                 );
 
-                const isScout = /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(foundSeries?.series_description || foundSeries?.seriesDescription || '');
-                const priority = (isLastActive ? 100000 : 0) + (idx > 0 ? 50000 : 0) + (isVpActive ? 10000 : 0) + (imageIds.length > 1 ? 5000 : 0) - (isScout ? 100000 : 0);
+                const priority = (isLastActive ? 1000000 : 0) + (isVpActive ? 100000 : 0) + (idx > 0 ? 500 : 0) + (imageIds.length > 1 ? 50 : 0);
                 if (priority > highestPriority) {
                   highestPriority = priority;
                   const targetSop = (foundSeries && foundSeries.instances && foundSeries.instances[idx]) ? (foundSeries.instances[idx].sop_instance_uid || foundSeries.instances[idx].instance_id) : null;
@@ -317,7 +442,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
           }
         }
 
-        if (bestCSResult && (highestPriority >= 3000 || bestCSResult.sliceNumber > 1)) {
+        if (bestCSResult && (highestPriority >= 50 || bestCSResult.sliceNumber > 0)) {
           console.log('[ViewerBridge] Strategy 1 (Cornerstone3D API) -> slice:', bestCSResult.sliceNumber, '/', bestCSResult.totalSlices, '| series:', bestCSResult.seriesDescription || bestCSResult.matchedSeriesId);
           return bestCSResult;
         }
