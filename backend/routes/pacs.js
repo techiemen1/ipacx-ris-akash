@@ -959,6 +959,7 @@ router.get("/direct-instance/:studyUID/:seriesUID/:instanceId", asyncHandler(asy
 }));
 
 router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
+  console.log("🚨 BACKEND V2 SAVE RECEIVED:", req.body);
   const { 
     reportId, 
     studyUID, 
@@ -968,6 +969,10 @@ router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
     seriesDescription,
     modality
   } = req.body;
+
+  if (!studyUID || !seriesUID || !instanceId) {
+    return res.status(400).json({ success: false, error: "Missing required parameters: studyUID, seriesUID, or instanceId" });
+  }
 
   console.log("[V2 Key Image Save] Request:", {
     reportId, studyUID, seriesUID, instanceId, sliceNumber

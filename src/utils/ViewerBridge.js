@@ -862,10 +862,14 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
  * Tries postMessage listener RPC, same-origin canvas extraction, and DOM overlay slice index detection.
  */
 export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeriesList = [], hintSeriesId = null) {
+  console.log("🚨 [ViewerBridge] STATE: Requesting viewer snapshot...");
   const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
-  if (!iframeEl) return { dataUrl: null, instanceNumber: null, sliceNumber: null, totalSlices: null, matchedSeriesId: null, seriesDescription: null };
+  if (!iframeEl) {
+    console.warn("🚨 [ViewerBridge] No iframe element found.");
+    return { status: "failed", reason: "no iframe element" };
+  }
 
-  // FAST PATH: Check same-origin iframe directly without 1.5s postMessage wait
+  // FAST PATH: Check same-origin iframe directly
   try {
     const iframeWin = iframeEl.contentWindow;
     const iframeDoc = iframeEl.contentDocument || (iframeWin && iframeWin.document);
@@ -889,7 +893,6 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
 
       if (activeCanvas && (activeCanvas.width > 0 || activeCanvas.clientWidth > 0)) {
         try {
-          // 1. Refresh WebGL render buffer if Cornerstone3D is active
           if (iframeWin && iframeWin.cornerstone3D && typeof iframeWin.cornerstone3D.getRenderingEngines === 'function') {
             try {
               const engines = iframeWin.cornerstone3D.getRenderingEngines();
@@ -923,16 +926,17 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         }
       }
 
-      // RETURN FAST PATH IF VALID SLICE NUMBER (> 0) WAS DETECTED
-      if (sliceInfo && sliceInfo.sliceNumber && parseInt(sliceInfo.sliceNumber, 10) > 0) {
+      if (sliceInfo && sliceInfo.sliceNumber && parseInt(sliceInfo.sliceNumber, 10) > 0 && sliceInfo.matchedSeriesId) {
+        console.log("🚨 [ViewerBridge] FAST PATH SUCCESS:", sliceInfo);
         return {
+          status: "success",
           dataUrl: (dataUrl && dataUrl.length > 1000) ? dataUrl : null,
           instanceNumber: sliceInfo.instanceNumber || sliceInfo.sliceNumber,
           sliceNumber: parseInt(sliceInfo.sliceNumber, 10),
           totalSlices: sliceInfo.totalSlices ? parseInt(sliceInfo.totalSlices, 10) : null,
-          seriesInstanceUid: sliceInfo.seriesInstanceUid || sliceInfo.matchedSeriesId || null,
-          matchedSeriesId: sliceInfo.matchedSeriesId || null,
-          seriesDescription: sliceInfo.seriesDescription || null,
+          seriesInstanceUid: sliceInfo.seriesInstanceUid || sliceInfo.matchedSeriesId,
+          matchedSeriesId: sliceInfo.matchedSeriesId,
+          seriesDescription: sliceInfo.seriesDescription || "Diagnostic Series",
           sopInstanceUid: sliceInfo.sopInstanceUid || null,
           modality: sliceInfo.modality || "CT",
           windowCenter: sliceInfo.windowCenter || null,
@@ -941,7 +945,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
       }
     }
   } catch (e) {
-    // Cross-origin iframe fallback
+    console.warn("🚨 [ViewerBridge] Cross-origin or DOM access exception:", e.message);
   }
 
   // FALLBACK PATH: Cross-origin postMessage RPC
@@ -951,7 +955,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
       iframeEl.contentWindow.postMessage({ type: MESSAGE_TYPES.OHIF_CAPTURE_VIEWPORT, action: 'CAPTURE' }, '*');
     }
   } catch (e) {
-    // Ignore postMessage error
+    console.warn("🚨 [ViewerBridge] postMessage emission failed:", e.message);
   }
 
   const waitPostMessage = new Promise((resolve) => {
@@ -977,25 +981,37 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
         const iNum = payload.instanceNumber || payload.sopInstanceUid;
 
         window.removeEventListener('message', handler);
-        resolve({
-          dataUrl: dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500) ? dUrl : null,
-          instanceNumber: iNum || null,
-          sliceNumber: fNum ? parseInt(fNum, 10) : null,
-          totalSlices: tSlices ? parseInt(tSlices, 10) : null,
-          matchedSeriesId: sUid || null,
-          seriesDescription: sDesc || null,
-          seriesNumber: payload.seriesNumber || null
-        });
+        if (sUid && fNum) {
+          resolve({
+            status: "success",
+            dataUrl: dUrl && (dUrl.startsWith('data:image/') || dUrl.length > 500) ? dUrl : null,
+            instanceNumber: iNum || null,
+            sliceNumber: fNum ? parseInt(fNum, 10) : null,
+            totalSlices: tSlices ? parseInt(tSlices, 10) : null,
+            matchedSeriesId: sUid,
+            seriesInstanceUid: sUid,
+            seriesDescription: sDesc || "Diagnostic Series",
+            seriesNumber: payload.seriesNumber || null
+          });
+        } else {
+          resolve({ status: "failed", reason: "incomplete postMessage payload" });
+        }
       }
     };
 
     window.addEventListener('message', handler);
     setTimeout(() => {
       window.removeEventListener('message', handler);
-      resolve(null);
+      resolve({ status: "failed", reason: "postMessage timeout (cross-origin or OHIF silent)" });
     }, 400);
   });
 
   const postMsgRes = await waitPostMessage;
-  return postMsgRes || { dataUrl: null, instanceNumber: null, sliceNumber: null, totalSlices: null, matchedSeriesId: null, seriesDescription: null };
+  if (postMsgRes && postMsgRes.status === "success") {
+    console.log("🚨 [ViewerBridge] POSTMESSAGE PATH SUCCESS:", postMsgRes);
+    return postMsgRes;
+  }
+
+  console.warn("🚨 [ViewerBridge] Snapshot failed: cross-origin or no metadata found.");
+  return { status: "failed", reason: "cross-origin or no metadata" };
 }

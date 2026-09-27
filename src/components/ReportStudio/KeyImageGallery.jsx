@@ -87,6 +87,62 @@ export default function KeyImageGallery({
 
   const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 999;
 
+  const handleDirectAttachSlice = async () => {
+    if (!studyUID) return;
+
+    const seriesObj = (studySeriesList || []).find(s => 
+      String(s.series_id) === String(selectedSeriesId) || 
+      String(s.series_instance_uid) === String(selectedSeriesId) || 
+      String(s.orthanc_series_id) === String(selectedSeriesId)
+    ) || (studySeriesList || [])[0];
+
+    if (!seriesObj) {
+      console.warn("🚨 KeyImageGallery: No series found for explicit capture.");
+      return;
+    }
+
+    const clampedSlice = Math.max(1, Math.min(maxSlices, parseInt(sliceInput, 10) || 1));
+    let targetInst = null;
+    if (Array.isArray(seriesObj.instances) && seriesObj.instances.length > 0) {
+      targetInst = seriesObj.instances.find(inst => 
+        parseInt(inst.slice_number || inst.instance_number || 0, 10) === clampedSlice
+      ) || seriesObj.instances[Math.min(clampedSlice - 1, seriesObj.instances.length - 1)];
+    }
+
+    const seriesUID = seriesObj.series_id || seriesObj.series_instance_uid;
+    const instanceId = targetInst?.instance_id || targetInst?.sop_instance_uid;
+
+    const payload = {
+      reportId: null,
+      studyUID,
+      seriesUID,
+      instanceId,
+      sliceNumber: clampedSlice,
+      seriesDescription: seriesObj.series_description || "Unknown",
+      modality: seriesObj.modality || "CT"
+    };
+
+    console.log("🚨 KeyImageGallery explicit capture payload:", payload);
+
+    try {
+      const res = await api.post("/api/pacs/v2/key-images/save", payload);
+      if (res.data?.success && res.data?.data) {
+        if (setAttachedSnapshots) {
+          setAttachedSnapshots(prev => {
+            const newImg = res.data.data;
+            if (prev.some(s => (s.id || s.instance_id) === (newImg.id || newImg.instance_id))) return prev;
+            return [...prev, newImg];
+          });
+        }
+      }
+    } catch (err) {
+      console.error("🚨 KeyImageGallery capture error:", err.message);
+      if (onAttachActiveSlice) {
+        onAttachActiveSlice(clampedSlice, seriesUID);
+      }
+    }
+  };
+
   return (
     <div style={{ background: "#ffffff", borderRadius: 8, border: "1px solid #e2e8f0", overflow: "hidden", marginBottom: 16 }}>
       {/* Gallery Header */}
@@ -181,10 +237,10 @@ export default function KeyImageGallery({
             </button>
           )}
 
-          {onAttachActiveSlice && (
+          {(onAttachActiveSlice || studyUID) && (
             <button
               type="button"
-              onClick={() => onAttachActiveSlice(sliceInput, selectedSeriesId)}
+              onClick={handleDirectAttachSlice}
               style={{
                 background: "#059669",
                 color: "#ffffff",

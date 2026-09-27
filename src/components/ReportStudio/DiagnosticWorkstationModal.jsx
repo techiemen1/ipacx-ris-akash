@@ -321,12 +321,25 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     try {
       const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList, null);
+      console.log("🚨 handleAttachTargetSlice result:", snapResult);
 
-      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || selectedSeriesId;
+      if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
+        console.warn("🚨 [DiagnosticWorkstationModal] Cross-origin or no metadata. Opening visual slice picker modal.");
+        setShowSlicePickerModal(true);
+        return;
+      }
+
+      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId;
       const seriesObj = studySeriesList.find(s => 
         String(s.series_id) === String(targetSeriesId) || 
         String(s.series_instance_uid) === String(targetSeriesId)
-      ) || studySeriesList[0];
+      );
+
+      if (!seriesObj) {
+        console.warn("🚨 [DiagnosticWorkstationModal] Could not resolve matching seriesObj for ID:", targetSeriesId);
+        setShowSlicePickerModal(true);
+        return;
+      }
 
       const detectedSlice = overrideSliceNum || snapResult?.sliceNumber || 1;
       const totalSlices = seriesObj?.total_slices || seriesObj?.instances?.length || 1;
@@ -358,6 +371,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
         windowWidth: snapResult?.windowWidth || null
       };
 
+      console.log("🚨 [DiagnosticWorkstationModal] STATE: Sending capture payload:", capturePayload);
       const savedKeyImg = await keyImageService.addKeyImage(reportId, capturePayload);
       const finalObj = savedKeyImg || capturePayload;
 

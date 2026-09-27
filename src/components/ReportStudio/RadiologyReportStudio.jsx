@@ -910,12 +910,25 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     try {
       const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe", studySeriesList, null);
-      
-      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId || selectedSeriesId;
+      console.log("🚨 handleAttachKeyImage result:", snapResult);
+
+      if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
+        console.warn("🚨 [RadiologyReportStudio] Cross-origin or no metadata. Opening visual slice picker modal.");
+        setShowSlicePickerModal(true);
+        return;
+      }
+
+      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId;
       const seriesObj = studySeriesList.find(s => 
         String(s.series_id) === String(targetSeriesId) || 
         String(s.series_instance_uid) === String(targetSeriesId)
-      ) || studySeriesList[0];
+      );
+
+      if (!seriesObj) {
+        console.warn("🚨 [RadiologyReportStudio] Could not resolve matching seriesObj for ID:", targetSeriesId);
+        setShowSlicePickerModal(true);
+        return;
+      }
 
       const detectedSlice = overrideSliceNum || snapResult?.sliceNumber || 1;
       const totalSlices = seriesObj?.total_slices || seriesObj?.instances?.length || 1;
@@ -947,6 +960,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         windowWidth: snapResult?.windowWidth || null
       };
 
+      console.log("🚨 [RadiologyReportStudio] STATE: Sending capture payload:", capturePayload);
       const savedKeyImg = await keyImageService.addKeyImage(reportId, capturePayload);
       const finalObj = savedKeyImg || capturePayload;
 
