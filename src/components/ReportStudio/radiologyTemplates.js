@@ -81,6 +81,17 @@ export const RADIOLOGY_TEMPLATES = {
 <p>Mucosal lining is non-thickened without air-fluid level or polypoid soft tissue lesion.</p>
 <p>Bilateral osteomeatal complexes and sphenoethmoidal recesses are patent. Nasal septum is midline.</p>`,
       conclusion: `<p><b>IMPRESSION:</b></p><ul><li>Normal CT study of paranasal sinuses. Clear sinuses and patent osteomeatal units bilaterally.</li></ul>`
+    },
+    {
+      id: "ct_spine_plain",
+      name: "CT Spine (Cervical / Thoracic / Lumbar Plain)",
+      body_part: "Spine",
+      findings: `<p><b>CLINICAL INDICATION:</b> Spine evaluation / back pain / trauma.</p>
+<p><b>TECHNIQUE:</b> Non-contrast helical CT scan of the spine with sagittal and coronal multiplanar reformations.</p>
+<p><b>VERTEBRAE & ALIGNMENT:</b> Normal spinal alignment. Vertebral body heights and posterior element structures are intact. No acute fracture line, subluxation, or destructive bony lesion.</p>
+<p><b>DISC SPACE & SPINAL CANAL:</b> Intervertebral disc spaces demonstrate normal height. No significant posterior disc protrusion, spinal canal stenosis, or neural foraminal narrowing.</p>
+<p><b>PARASPINAL SOFT TISSUES:</b> Bilateral paraspinal soft tissue structures appear unremarkable with preserved fascial planes.</p>`,
+      conclusion: `<p><b>IMPRESSION:</b></p><ul><li>Normal CT spine examination. Preserved spinal alignment and disc space heights without fracture or significant spinal stenosis.</li></ul>`
     }
   ],
 

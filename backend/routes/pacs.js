@@ -741,7 +741,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
   const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_s${targetSlice}_${Date.now()}.jpg`;
   const filePath = path.join(reportImagesDir, filename);
 
-  const targetInstId = instanceId || sopInstanceUid || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+  const targetInstId = (targetSlice > 1 ? await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice) : null) || instanceId || sopInstanceUid || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
 
   // Priority 1: Base64 canvas viewport dataUrl captured live from viewer (preserves active slice & presentation state)
   if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {

@@ -110,6 +110,7 @@ try {
 <script id="ohif-ris-bridge-script">
 (function() {
   var lastActiveViewportEl = null;
+  var lastActiveTimestamp = 0;
 
   function isSidebarOrThumbnail(el) {
     if (!el) return false;
@@ -123,34 +124,71 @@ try {
   function trackActiveViewport(e) {
     var target = e.target;
     if (!target) return;
-    var vp = target.closest && target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item, [data-cy="viewport-container"]');
+    var vp = target.closest && target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]');
+    if (!vp && target.tagName === 'CANVAS') {
+      vp = target.parentElement;
+    }
     if (vp && !isSidebarOrThumbnail(vp)) {
       lastActiveViewportEl = vp;
+      lastActiveTimestamp = Date.now();
+      vp._lastInteractionTime = lastActiveTimestamp;
     }
   }
 
   document.addEventListener('mousedown', trackActiveViewport, true);
   document.addEventListener('pointerdown', trackActiveViewport, true);
   document.addEventListener('click', trackActiveViewport, true);
+  document.addEventListener('wheel', trackActiveViewport, true);
+  document.addEventListener('scroll', trackActiveViewport, true);
+  document.addEventListener('keydown', trackActiveViewport, true);
 
   function getActiveViewportContainer() {
+    // Priority 1: Check Cornerstone3D viewport with active scroll position (idx > 0) or interaction
+    try {
+      var cs3 = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
+      if (cs3 && typeof cs3.getRenderingEngines === 'function') {
+        var engs = cs3.getRenderingEngines();
+        var bestScrolledVpEl = null;
+        var maxScrolledIdx = -1;
+        var lastInteractedVpEl = null;
+
+        for (var eIdx = 0; eIdx < engs.length; eIdx++) {
+          var vps = engs[eIdx].getViewports ? engs[eIdx].getViewports() : [];
+          for (var vIdx = 0; vIdx < vps.length; vIdx++) {
+            var vItem = vps[vIdx];
+            var vEl = vItem.element;
+            if (!vEl || isSidebarOrThumbnail(vEl)) continue;
+
+            if (vEl === lastActiveViewportEl || (lastActiveViewportEl && vEl.contains(lastActiveViewportEl))) {
+              lastInteractedVpEl = vEl;
+            }
+
+            var curIdx = typeof vItem.getCurrentImageIdIndex === 'function' ? vItem.getCurrentImageIdIndex() : (typeof vItem.sliceIndex === 'number' ? vItem.sliceIndex : 0);
+            if (curIdx > maxScrolledIdx) {
+              maxScrolledIdx = curIdx;
+              bestScrolledVpEl = vEl;
+            }
+          }
+        }
+        if (lastInteractedVpEl && document.body.contains(lastInteractedVpEl)) {
+          return lastInteractedVpEl;
+        }
+        if (bestScrolledVpEl && maxScrolledIdx > 0) {
+          return bestScrolledVpEl;
+        }
+      }
+    } catch (e) {}
+
     if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl) && !isSidebarOrThumbnail(lastActiveViewportEl)) {
       return lastActiveViewportEl;
     }
-    var activeCandidates = Array.from(document.querySelectorAll(
-      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
-    )).filter(function(el) {
-      return !isSidebarOrThumbnail(el);
-    });
-
-    if (activeCandidates.length > 0) return activeCandidates[0];
 
     try {
       var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
       if (sm && sm.services && sm.services.viewportGridService) {
         var vpgs = sm.services.viewportGridService;
         var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
-        var cs = window.cornerstone || window.cornerstoneCore;
+        var cs = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
         if (activeVpId && cs && typeof cs.getRenderingEngines === 'function') {
           var engines = cs.getRenderingEngines();
           for (var i = 0; i < engines.length; i++) {
@@ -162,6 +200,14 @@ try {
         }
       }
     } catch (e) {}
+
+    var activeCandidates = Array.from(document.querySelectorAll(
+      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
+    )).filter(function(el) {
+      return !isSidebarOrThumbnail(el);
+    });
+
+    if (activeCandidates.length > 0) return activeCandidates[0];
 
     var canvases = Array.from(document.querySelectorAll('canvas'))
       .filter(function(c) { return !isSidebarOrThumbnail(c); })
@@ -184,6 +230,9 @@ try {
       acceptNode: function(node) {
         if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
         if (isSidebarOrThumbnail(node.parentElement)) return NodeFilter.FILTER_REJECT;
+        var val = node.nodeValue ? node.nodeValue.trim() : '';
+        if (/^\d{1,2}[Yy]\s*\/\s*[MFmf]$/.test(val)) return NodeFilter.FILTER_REJECT; // Reject patient age e.g. "45Y / F"
+        if (/^\d{1,2}\s*[A-Za-z]{3}\s*\d{4}$/.test(val)) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
     }, false);
@@ -198,16 +247,16 @@ try {
 
     for (var i = 0; i < texts.length; i++) {
       var t = texts[i];
-      // Pattern 0: "I : 208 (48/255)", "1 : 52 (52/313)" -> 3 numbers: InstNum, SliceNum, TotalSlices
-      var m = t.match(/(?:\d+|I|Im|Slice|Image)\s*:\s*(\d+)\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
+      // Pattern 0: "I : 208 (48/255)", "1 : 52 (52/313)", "116 (108/223)"
+      var m = t.match(/(?:\d+|I|Im|Slice|Image)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
       if (m) {
-        var inst = parseInt(m[1], 10);
+        var inst = m[1] ? parseInt(m[1], 10) : null;
         var s = parseInt(m[2], 10);
         var tot = parseInt(m[3], 10);
         if (s > 0 && tot > 0 && s <= tot) {
           sliceNum = s;
           totalSlices = tot;
-          instNum = inst;
+          if (inst) instNum = inst;
           break;
         }
       }
@@ -225,7 +274,7 @@ try {
       }
 
       // Pattern 2: "Im: 48/255", "Slice 48 of 255", "48/255"
-      m = t.match(/(?:slice|image|im|frame|i|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i) || t.match(/\b(\d+)\s*\/\s*(\d+)\b/);
+      m = t.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
       if (m) {
         var s = parseInt(m[1], 10);
         var tot = parseInt(m[2], 10);
@@ -238,7 +287,7 @@ try {
     }
 
     // Priority 1: Check overlay quadrant elements for Series Description
-    var overlayEls = container ? container.querySelectorAll('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right') : [];
+    var overlayEls = container ? container.querySelectorAll('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right, [class*="overlay"], [class*="Overlay"]') : [];
     for (var k = 0; k < overlayEls.length; k++) {
       var el = overlayEls[k];
       var rawTxt = (el.textContent || el.innerText || '');
@@ -322,6 +371,7 @@ try {
         var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
         if (ds) {
           return {
+            activeVpId: activeVpId,
             sliceIndex: csSlice,
             totalSlices: csTotal || ds.numImageFrames || (ds.images ? ds.images.length : null),
             seriesDescription: ds.SeriesDescription || ds.seriesDescription || null,
@@ -333,6 +383,7 @@ try {
       }
       if (csSlice) {
         return {
+          activeVpId: activeVpId,
           sliceIndex: csSlice,
           totalSlices: csTotal
         };
@@ -342,7 +393,8 @@ try {
   }
 
   function getActiveCornerstoneInfo(container) {
-    var csSlice = null, csTotal = null, csSeriesUid = null, csSopUid = null, csSeriesDesc = null, csSeriesNum = null;
+    var bestInfo = { csSlice: null, csTotal: null, csSeriesUid: null, csSopUid: null, csSeriesDesc: null, csSeriesNum: null };
+    var highestScore = -1;
     try {
       var cs = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
       if (cs && typeof cs.getRenderingEngines === 'function') {
@@ -353,52 +405,66 @@ try {
             var vp = vps[j];
             var el = vp.element;
             if (!el || isSidebarOrThumbnail(el)) continue;
-            var isMatch = (
+
+            var isContainerMatch = (
               el === container ||
               el.contains(container) ||
               (container && container.contains && container.contains(el)) ||
               el.querySelector('canvas') === container ||
-              el.classList.contains('active') ||
-              el.closest('.active') ||
-              el.classList.contains('selected')
+              (container && container.querySelector && container.querySelector('canvas') === el.querySelector('canvas'))
             );
-            if (isMatch || (!csSeriesUid && vps.length === 1)) {
-              var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : null;
-              var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
-              if (idx !== null && idx >= 0 && ids && ids.length > 0) {
-                csSlice = idx + 1;
-                csTotal = ids.length;
+            var isLastActive = (el === lastActiveViewportEl);
+            var isVpActive = el.classList.contains('active') || el.closest('.active') || el.classList.contains('selected') || el.getAttribute('data-active') === 'true';
+
+            var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : (typeof vp.sliceIndex === 'number' ? vp.sliceIndex : null);
+            var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
+
+            if (idx !== null && idx >= 0 && ids && ids.length > 0) {
+              // Heavy weighting: Scrolled viewport (idx > 0) gets 50,000 points, Interacted gets 30,000 points
+              var score = (idx > 0 ? 50000 : 0) + (isLastActive ? 30000 : 0) + (isVpActive ? 20000 : 0) + (isContainerMatch ? 5000 : 0) + (ids.length > 1 ? 1000 : 0);
+
+              if (score > highestScore) {
+                highestScore = score;
                 var imgId = ids[idx] || '';
+                var cSeriesUid = '', cSopUid = '', cSeriesDesc = '', cSeriesNum = null;
 
                 if (cs.metaData && typeof cs.metaData.get === 'function') {
                   try {
                     var seriesMod = cs.metaData.get('generalSeriesModule', imgId) || cs.metaData.get('seriesModule', imgId);
                     if (seriesMod) {
-                      csSeriesUid = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid || csSeriesUid;
-                      csSeriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc || csSeriesDesc;
-                      csSeriesNum = seriesMod.seriesNumber || csSeriesNum;
+                      cSeriesUid = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid || '';
+                      cSeriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc || '';
+                      cSeriesNum = seriesMod.seriesNumber || null;
                     }
                     var sopMod = cs.metaData.get('sopCommonModule', imgId) || cs.metaData.get('generalImageModule', imgId);
                     if (sopMod) {
-                      csSopUid = sopMod.sopInstanceUID || sopMod.sopInstanceUid || csSopUid;
+                      cSopUid = sopMod.sopInstanceUID || sopMod.sopInstanceUid || '';
                     }
                   } catch(e) {}
                 }
 
-                if (!csSeriesUid) {
-                  csSeriesUid = (imgId.match(/series\/([0-9.]+)/i) || imgId.match(/seriesInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                if (!cSeriesUid) {
+                  cSeriesUid = (imgId.match(/series\/([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesUID=([a-zA-Z0-9._-]+)/i) || [])[1] || '';
                 }
-                if (!csSopUid) {
-                  csSopUid = (imgId.match(/instances\/([0-9.]+)/i) || imgId.match(/sopInstanceUID=([0-9.]+)/i) || [])[1] || '';
+                if (!cSopUid) {
+                  cSopUid = (imgId.match(/instances\/([a-zA-Z0-9._-]+)/i) || imgId.match(/sopInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/objectUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/instanceUID=([a-zA-Z0-9._-]+)/i) || [])[1] || '';
                 }
-                if (csSeriesUid || csSeriesDesc || csSlice) break;
+
+                bestInfo = {
+                  csSlice: idx + 1,
+                  csTotal: ids.length,
+                  csSeriesUid: cSeriesUid,
+                  csSopUid: cSopUid,
+                  csSeriesDesc: cSeriesDesc,
+                  csSeriesNum: cSeriesNum
+                };
               }
             }
           }
         }
       }
     } catch(e) {}
-    return { csSlice: csSlice, csTotal: csTotal, csSeriesUid: csSeriesUid, csSopUid: csSopUid, csSeriesDesc: csSeriesDesc, csSeriesNum: csSeriesNum };
+    return bestInfo;
   }
 
   function sendViewportChange() {
@@ -408,12 +474,16 @@ try {
       var csInfo = getActiveCornerstoneInfo(container);
       var ohifInfo = getOhifServicesInfo();
 
-      var finalSlice = (ohifInfo && ohifInfo.sliceIndex) || csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
-      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
-      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = overlayInfo.seriesDescription || (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || '';
-      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
+      // Priority Order:
+      // 1. overlayInfo (Directly scraped from active container overlay text e.g. "37 (37/401)" or "9 (9/25)")
+      // 2. csInfo (Cornerstone3D viewport engine on active container)
+      // 3. ohifInfo (Fallback from OHIF services manager)
+      var finalSlice = overlayInfo.sliceNumber || csInfo.csSlice || (ohifInfo && ohifInfo.sliceIndex) || 1;
+      var finalTotal = overlayInfo.totalSlices || csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || null;
+      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
+      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
+      var finalSeriesDesc = overlayInfo.seriesDescription || csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || '';
+      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
 
       window.parent.postMessage({
         type: 'OHIF_VIEWPORT_CHANGE',
@@ -435,24 +505,35 @@ try {
       var container = getActiveViewportContainer();
       var cv = container ? (container.querySelector('canvas') || container) : document.querySelector('canvas');
       var dataUrl = null;
-      if (cv && cv.tagName === 'CANVAS' && typeof cv.toDataURL === 'function') {
-        try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e) {}
+      if (cv && cv.tagName === 'CANVAS') {
+        try {
+          var tempCv = document.createElement('canvas');
+          tempCv.width = cv.width || cv.clientWidth || 512;
+          tempCv.height = cv.height || cv.clientHeight || 512;
+          var ctx = tempCv.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(cv, 0, 0);
+            dataUrl = tempCv.toDataURL('image/jpeg', 0.95);
+          }
+        } catch(e) {
+          try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e2) {}
+        }
       }
       var overlayInfo = parseViewportDOMOverlay(container);
       var csInfo = getActiveCornerstoneInfo(container);
       var ohifInfo = getOhifServicesInfo();
 
-      var finalSlice = (ohifInfo && ohifInfo.sliceIndex) || csInfo.csSlice || overlayInfo.sliceNumber || 1;
-      var finalTotal = overlayInfo.totalSlices || (ohifInfo && ohifInfo.totalSlices) || csInfo.csTotal || null;
-      var finalSeriesUid = (ohifInfo && ohifInfo.seriesInstanceUid) || csInfo.csSeriesUid || '';
-      var finalSopUid = (ohifInfo && ohifInfo.sopInstanceUid) || csInfo.csSopUid || '';
-      var finalSeriesDesc = overlayInfo.seriesDescription || (ohifInfo && ohifInfo.seriesDescription) || csInfo.csSeriesDesc || '';
-      var finalSeriesNum = (ohifInfo && ohifInfo.seriesNumber) || csInfo.csSeriesNum || null;
+      var finalSlice = overlayInfo.sliceNumber || csInfo.csSlice || (ohifInfo && ohifInfo.sliceIndex) || 1;
+      var finalTotal = overlayInfo.totalSlices || csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || null;
+      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
+      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
+      var finalSeriesDesc = overlayInfo.seriesDescription || csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || '';
+      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
 
       window.parent.postMessage({
         type: 'SNAPSHOT_CAPTURED',
         payload: {
-          dataUrl: dataUrl,
+          dataUrl: (dataUrl && dataUrl.length > 500) ? dataUrl : null,
           frameNumber: finalSlice,
           sliceNumber: finalSlice,
           totalSlices: finalTotal,

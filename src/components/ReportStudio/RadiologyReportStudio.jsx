@@ -936,7 +936,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           }
 
           // Directly invoke enhanced detectViewportSliceInfoFromDOM
-          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList);
+          directDomSliceInfo = detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList, null);
         }
       }
     } catch (e) {
@@ -957,7 +957,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       // Ignore postMessage error
     }
 
-    const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList);
+    const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, iframe", studySeriesList, null);
     const capturedDataUrl = typeof snapResult === 'string' ? snapResult : snapResult?.dataUrl;
 
     // Check viewer_state localStorage fallback if iframe detection is cross-origin
@@ -981,12 +981,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       : (
           (directDomSliceInfo?.sliceNumber && parseInt(directDomSliceInfo.sliceNumber, 10) > 0 ? parseInt(directDomSliceInfo.sliceNumber, 10) : null) ||
           (snapResult?.sliceNumber && parseInt(snapResult.sliceNumber, 10) > 0 ? parseInt(snapResult.sliceNumber, 10) : null) ||
-          (activeViewportInfo?.frameNumber && parseInt(activeViewportInfo.frameNumber, 10) > 0 ? parseInt(activeViewportInfo.frameNumber, 10) : null) ||
-          (activeViewportInfo?.sliceNumber && parseInt(activeViewportInfo.sliceNumber, 10) > 0 ? parseInt(activeViewportInfo.sliceNumber, 10) : null) ||
           (savedViewerStateSlice && parseInt(savedViewerStateSlice, 10) > 0 ? parseInt(savedViewerStateSlice, 10) : null) ||
           (directDomSliceInfo?.instanceNumber && parseInt(directDomSliceInfo.instanceNumber, 10) > 0 ? parseInt(directDomSliceInfo.instanceNumber, 10) : null) ||
           (snapResult?.instanceNumber && parseInt(snapResult.instanceNumber, 10) > 0 ? parseInt(snapResult.instanceNumber, 10) : null) ||
-          (targetSliceNumber && parseInt(targetSliceNumber, 10) > 0 ? parseInt(targetSliceNumber, 10) : null) ||
           null
         );
 
@@ -1009,25 +1006,25 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     let seriesObj = null;
 
-    // Priority 1: Check user selected series in UI dropdown (must not be scout if non-scout exists)
-    if (selectedSeriesId) {
+    // Priority 1: Live target from viewer (updates dropdown to match active series)
+    if (liveSeriesTarget) {
+      const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices, null);
+      if (liveMatched && (!isScoutSeries(liveMatched) || !hasNonScoutSeries)) {
+        seriesObj = liveMatched;
+      }
+    }
+
+    // Priority 2: Check user selected series in UI dropdown if no live target found
+    if (!seriesObj && selectedSeriesId) {
       const userSelected = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId));
       if (userSelected && (!isScoutSeries(userSelected) || !hasNonScoutSeries)) {
         seriesObj = userSelected;
       }
     }
 
-    // Priority 2: Live target from viewer if it matches a non-scout series
-    if (!seriesObj && liveSeriesTarget) {
-      const liveMatched = findSeriesInList(studySeriesList, liveSeriesTarget, displaySliceNum, totalSlices);
-      if (liveMatched && (!isScoutSeries(liveMatched) || !hasNonScoutSeries)) {
-        seriesObj = liveMatched;
-      }
-    }
-
     // Priority 3: Fallback diagnostic series with total_slices > 1
     if (!seriesObj) {
-      seriesObj = findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices);
+      seriesObj = findSeriesInList(studySeriesList, null, displaySliceNum, totalSlices, selectedSeriesId);
     }
 
     const activeSeriesTarget = seriesObj?.series_id || liveSeriesTarget || selectedSeriesId;
@@ -1081,10 +1078,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       const capturePayload = {
         studyUID: studyUID,
         seriesUID: seriesObj?.series_id || activeSeriesTarget,
+        sopInstanceUid: snapResult?.sopInstanceUid || directDomSliceInfo?.sopInstanceUid || activeViewportInfo?.sopInstanceUid || targetInst?.sop_instance_uid || targetInst?.instance_id,
+        instanceId: targetInst?.instance_id || snapResult?.instanceId || activeViewportInfo?.instance_id,
         sliceNumber: displaySliceNum,
         totalSlices: resolvedTotalSlices,
         seriesDescription: seriesDesc,
-        instanceId: targetInst?.instance_id,
         dataUrl: validDataUrl,
         caption: fullCaption
       };
