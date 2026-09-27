@@ -903,86 +903,43 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     return document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
   };
 
-  // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
+  // 1-CLICK HYBRID AUTO-CAPTURE (FEELS 100% INSTANT & SEAMLESS)
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
-    const reportId = study?.report_id || study?.reportId || null;
+    console.log("🚨 [KEY IMAGE] Button clicked - Opening modal with auto-select & auto-capture");
     const iframeEl = findDicomViewerIframe();
 
-    console.log("🚨 [REPORT STUDIO] Key image capture button clicked. Attempting requestViewerSnapshot...");
+    let preSelectSeriesId = overrideSeriesId || null;
+    let preSelectSeriesDesc = null;
+    let preSelectSliceNum = overrideSliceNum || null;
+
     try {
       const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe", studySeriesList, null);
-      console.log("🚨 [REPORT STUDIO] requestViewerSnapshot result:", snapResult);
+      console.log("🚨 [KEY IMAGE] requestViewerSnapshot result:", snapResult);
 
-      if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
-        console.warn("🚨 [RadiologyReportStudio] Cross-origin or no metadata. Opening visual slice picker modal.");
-        setShowSlicePickerModal(true);
-        return;
+      if (snapResult?.matchedSeriesId) {
+        preSelectSeriesId = snapResult.matchedSeriesId;
       }
-
-      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId;
-      let seriesObj = studySeriesList.find(s => 
-        String(s.series_id) === String(targetSeriesId) || 
-        String(s.series_instance_uid) === String(targetSeriesId) ||
-        String(s.orthanc_series_id) === String(targetSeriesId)
-      );
-
-      if (!seriesObj && snapResult?.seriesDescription) {
-        seriesObj = studySeriesList.find(s => 
-          s.series_description && String(s.series_description).trim().toLowerCase() === String(snapResult.seriesDescription).trim().toLowerCase()
-        );
+      if (snapResult?.seriesDescription) {
+        preSelectSeriesDesc = snapResult.seriesDescription;
       }
-
-      if (!seriesObj) {
-        console.warn("🚨 [RadiologyReportStudio] Could not resolve matching seriesObj for ID:", targetSeriesId, "Desc:", snapResult?.seriesDescription);
-        setShowSlicePickerModal(true);
-        return;
+      if (snapResult?.sliceNumber) {
+        preSelectSliceNum = snapResult.sliceNumber;
       }
+    } catch (e) {
+      console.warn("🚨 [KEY IMAGE] Viewer detection failed:", e);
+    }
 
-      const detectedSlice = overrideSliceNum || snapResult?.sliceNumber || 1;
-      const totalSlices = seriesObj?.total_slices || seriesObj?.instances?.length || 1;
-      const clampedSlice = Math.min(Math.max(1, parseInt(detectedSlice, 10)), totalSlices);
+    window.preSelectKeyImageSeries = preSelectSeriesId;
+    window.preSelectKeyImageDesc = preSelectSeriesDesc;
+    window.preSelectKeyImageSliceNum = preSelectSliceNum;
 
-      let targetInst = null;
-      if (Array.isArray(seriesObj?.instances) && seriesObj.instances.length > 0) {
-        targetInst = seriesObj.instances.find(inst => 
-          parseInt(inst.slice_number || inst.instance_number || 0, 10) === clampedSlice
-        ) || seriesObj.instances[Math.min(clampedSlice - 1, seriesObj.instances.length - 1)];
-      }
+    setShowSlicePickerModal(true);
 
-      const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
-      const caption = totalSlices > 1 ? `${seriesDesc} | ${clampedSlice}/${totalSlices}` : `${seriesDesc} | ${clampedSlice}`;
-
-      const capturePayload = {
-        studyUID: studyUID,
-        seriesUID: seriesObj?.series_id || seriesObj?.series_instance_uid,
-        sopInstanceUid: targetInst?.instance_id || snapResult?.sopInstanceUid,
-        instanceId: targetInst?.instance_id,
-        sliceNumber: clampedSlice,
-        totalSlices: totalSlices,
-        seriesNumber: seriesObj?.series_number || 1,
-        seriesDescription: seriesDesc,
-        modality: seriesObj?.modality || "CT",
-        caption: caption,
-        dataUrl: snapResult?.dataUrl || null,
-        windowCenter: snapResult?.windowCenter || null,
-        windowWidth: snapResult?.windowWidth || null
-      };
-
-      console.log("🚨 [RadiologyReportStudio] STATE: Sending capture payload:", capturePayload);
-      const savedKeyImg = await keyImageService.addKeyImage(reportId, capturePayload);
-      const finalObj = savedKeyImg || capturePayload;
-
-      setAttachedSnapshots(prev => {
-        const idToCheck = finalObj.id || finalObj.instanceId || finalObj.sopInstanceUid;
-        if (idToCheck && prev.some(s => String(s.id || s.instance_id || s.sopInstanceUid) === String(idToCheck))) {
-          return prev;
-        }
-        return [...prev, finalObj];
-      });
-
-      toast.success(`⭐ Key Image (${finalObj.caption || 'Captured'}) attached to report!`);
-    } catch (err) {
-      console.error("[RadiologyReportStudio] Key image capture failed:", err);
+    if (preSelectSeriesId || preSelectSeriesDesc) {
+      setTimeout(() => {
+        console.log("🚨 [KEY IMAGE] Auto-triggering capture event after 500ms");
+        window.dispatchEvent(new CustomEvent('auto-capture-key-image'));
+      }, 500);
     }
   };
 

@@ -17,9 +17,53 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
   }, [isOpen, studyUID]);
 
   useEffect(() => {
-    const ids = new Set((attachedSnapshots || []).map(s => String(s.instance_id || s.sopInstanceUid || s.id)));
-    setAddedIds(ids);
-  }, [attachedSnapshots]);
+    if (isOpen && seriesList.length > 0) {
+      const preSelectId = window.preSelectKeyImageSeries;
+      const preSelectDesc = window.preSelectKeyImageDesc;
+      const preSelectSliceNum = window.preSelectKeyImageSliceNum;
+
+      let found = seriesList.find(s => 
+        String(s.series_id) === String(preSelectId) ||
+        String(s.series_instance_uid) === String(preSelectId) ||
+        String(s.orthanc_series_id) === String(preSelectId)
+      );
+
+      if (!found && preSelectDesc) {
+        found = seriesList.find(s => 
+          s.series_description && String(s.series_description).trim().toLowerCase() === String(preSelectDesc).trim().toLowerCase()
+        );
+      }
+
+      if (found) {
+        setSelectedSeries(found);
+        console.log("🚨 [MODAL] Auto-selected series:", found.series_description, "ID:", found.series_id);
+        if (preSelectSliceNum && found.instances?.length > 0) {
+          const matchedIdx = found.instances.findIndex(inst => 
+            parseInt(inst.slice_number || inst.instance_number || 0, 10) === parseInt(preSelectSliceNum, 10)
+          );
+          if (matchedIdx >= 0) setSelectedSliceIndex(matchedIdx);
+          else setSelectedSliceIndex(0);
+        } else {
+          setSelectedSliceIndex(0);
+        }
+      }
+    }
+  }, [isOpen, seriesList]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleAutoCapture = () => {
+      console.log("🚨 [MODAL] Auto-capturing selected series event received!");
+      if (selectedSeries) {
+        console.log("🚨 [MODAL] Auto-capturing selected series:", selectedSeries.series_description);
+        handleCaptureSelectedSlice();
+      }
+    };
+
+    window.addEventListener('auto-capture-key-image', handleAutoCapture);
+    return () => window.removeEventListener('auto-capture-key-image', handleAutoCapture);
+  }, [isOpen, selectedSeries, selectedSliceIndex]);
 
   const loadSeriesInstances = async () => {
     setLoading(true);
@@ -28,7 +72,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       if (res.data?.success && Array.isArray(res.data.series)) {
         setSeriesList(res.data.series);
         console.log("🔍 [TRACE 3: FRONTEND STATE] Received series list:", res.data.series.map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })));
-        if (res.data.series.length > 0) {
+        if (res.data.series.length > 0 && !window.preSelectKeyImageSeries && !window.preSelectKeyImageDesc) {
           const defaultSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
           setSelectedSeries(defaultSeries);
           setSelectedSliceIndex(0);
@@ -232,6 +276,40 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
             })}
           </div>
         )}
+
+        {/* Visual Active Viewport Capture Banner */}
+        <div style={{ 
+          background: selectedSeries ? "#dcfce7" : "#fef3c7", 
+          padding: "12px 20px", 
+          borderRadius: "8px", 
+          margin: "12px 20px 0 20px",
+          border: "2px solid",
+          borderColor: selectedSeries ? "#22c55e" : "#f59e0b",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between"
+        }}>
+          <strong style={{ fontSize: "14px", color: selectedSeries ? "#15803d" : "#b45309" }}>
+            {selectedSeries ? `✓ Capturing from: ${selectedSeries.series_description}` : "⚠️ Select a series below"}
+          </strong>
+          {selectedSeries && (
+            <button
+              onClick={() => handleCaptureSelectedSlice()}
+              style={{
+                background: "#16a34a",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "6px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              ⚡ Confirm Capture Slice #{selectedSliceIndex + 1}
+            </button>
+          )}
+        </div>
 
         {/* Image Grid */}
         <div style={{ flex: 1, overflowY: "auto", padding: 20, background: "#f1f5f9" }}>
