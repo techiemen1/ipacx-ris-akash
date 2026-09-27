@@ -319,9 +319,10 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const reportId = study?.report_id || study?.reportId || null;
     const iframeEl = findDicomViewerIframe();
 
+    console.log("🚨 [WORKSTATION] Key image capture button clicked. Attempting requestViewerSnapshot...");
     try {
       const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList, null);
-      console.log("🚨 handleAttachTargetSlice result:", snapResult);
+      console.log("🚨 [WORKSTATION] requestViewerSnapshot result:", snapResult);
 
       if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
         console.warn("🚨 [DiagnosticWorkstationModal] Cross-origin or no metadata. Opening visual slice picker modal.");

@@ -94,6 +94,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
   if (!isOpen) return null;
 
+  console.log("🚨 [MODAL RENDER] selectedSeries:", selectedSeries?.series_description, "ID:", selectedSeries?.series_id);
+
   return (
     <div
       style={{
@@ -151,7 +153,31 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={() => {
+                console.log("🚨 [TEST BUTTON CLICKED] Current selectedSeries:", selectedSeries?.series_description, "ID:", selectedSeries?.series_id);
+                alert(`Current Selected Series: ${selectedSeries?.series_description || "None"}\nID: ${selectedSeries?.series_id || "None"}`);
+              }}
+              style={{ background: "#8b5cf6", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >
+              🧪 TEST STATE
+            </button>
+
+            <button
+              onClick={() => {
+                localStorage.clear();
+                sessionStorage.clear();
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+                }
+                window.location.reload(true);
+              }}
+              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >
+              🗑️ CLEAR CACHE & RELOAD
+            </button>
+
             {toastMsg && (
               <div style={{ 
                 background: toastMsg.includes("✅") ? "#10b981" : "#ef4444", 
@@ -179,9 +205,13 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
                 <button
                   key={s.series_id}
                   onClick={() => {
-                    console.log("🚨 [MODAL] Tab clicked - Setting selectedSeries to:", s.series_description, "ID:", s.series_id);
+                    console.log("🚨 [TAB CLICK] Changing from:", selectedSeries?.series_description, "TO:", s.series_description);
+                    console.log("🚨 [TAB CLICK] Series ID from:", selectedSeries?.series_id, "TO:", s.series_id);
                     setSelectedSeries(s);
                     setSelectedSliceIndex(0);
+                    setTimeout(() => {
+                      console.log("🚨 [TAB CLICK] After setState, selectedSeries is:", selectedSeries?.series_description);
+                    }, 100);
                   }}
                   style={{
                     padding: "8px 14px",

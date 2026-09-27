@@ -908,9 +908,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const reportId = study?.report_id || study?.reportId || null;
     const iframeEl = findDicomViewerIframe();
 
+    console.log("🚨 [REPORT STUDIO] Key image capture button clicked. Attempting requestViewerSnapshot...");
     try {
       const snapResult = await requestViewerSnapshot(iframeEl || ".rs-viewer-iframe, .dws-iframe, iframe", studySeriesList, null);
-      console.log("🚨 handleAttachKeyImage result:", snapResult);
+      console.log("🚨 [REPORT STUDIO] requestViewerSnapshot result:", snapResult);
 
       if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
         console.warn("🚨 [RadiologyReportStudio] Cross-origin or no metadata. Opening visual slice picker modal.");
