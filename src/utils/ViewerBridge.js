@@ -282,7 +282,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
           const activeCanvas = csvp?.element?.querySelector('canvas') || null;
 
           if (csSlice || seriesUid || seriesDesc) {
-            console.log('[ViewerBridge] Strategy 0 (OHIF Services) -> slice:', csSlice, '/', csTotal, '| series:', seriesDesc || seriesUid);
+            console.log("🚨 [VIEWERBRIDGE] Matched series:", matchedSeriesObj?.series_description || seriesDesc || "NONE", "(Strategy 0 OHIF Services)");
             return {
               instanceNumber: csSlice || null,
               sliceNumber: csSlice || 1,
@@ -443,7 +443,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
         }
 
         if (bestCSResult && (highestPriority >= 50 || bestCSResult.sliceNumber > 0)) {
-          console.log('[ViewerBridge] Strategy 1 (Cornerstone3D API) -> slice:', bestCSResult.sliceNumber, '/', bestCSResult.totalSlices, '| series:', bestCSResult.seriesDescription || bestCSResult.matchedSeriesId);
+          console.log("🚨 [VIEWERBRIDGE] Matched series:", bestCSResult.seriesDescription || bestCSResult.matchedSeriesId || "NONE", "(Strategy 1 Cornerstone3D API)");
           return bestCSResult;
         }
       }
@@ -724,7 +724,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     }
 
     if (sliceResult || matchedSeriesObj) {
-      console.log('[ViewerBridge] Parsed slice info -> slice:', sliceResult?.sliceNumber, '/', sliceResult?.totalSlices, '| series:', matchedSeriesObj?.series_description);
+      console.log("🚨 [VIEWERBRIDGE] Matched series:", matchedSeriesObj?.series_description || "NONE", "(slice:", sliceResult?.sliceNumber, "/", sliceResult?.totalSlices, ")");
       return {
         instanceNumber: sliceResult?.instanceNumber || null,
         sliceNumber: sliceResult ? sliceResult.sliceNumber : null,
