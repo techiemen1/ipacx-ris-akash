@@ -920,13 +920,20 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       }
 
       const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId;
-      const seriesObj = studySeriesList.find(s => 
+      let seriesObj = studySeriesList.find(s => 
         String(s.series_id) === String(targetSeriesId) || 
-        String(s.series_instance_uid) === String(targetSeriesId)
+        String(s.series_instance_uid) === String(targetSeriesId) ||
+        String(s.orthanc_series_id) === String(targetSeriesId)
       );
 
+      if (!seriesObj && snapResult?.seriesDescription) {
+        seriesObj = studySeriesList.find(s => 
+          s.series_description && String(s.series_description).trim().toLowerCase() === String(snapResult.seriesDescription).trim().toLowerCase()
+        );
+      }
+
       if (!seriesObj) {
-        console.warn("🚨 [RadiologyReportStudio] Could not resolve matching seriesObj for ID:", targetSeriesId);
+        console.warn("🚨 [RadiologyReportStudio] Could not resolve matching seriesObj for ID:", targetSeriesId, "Desc:", snapResult?.seriesDescription);
         setShowSlicePickerModal(true);
         return;
       }

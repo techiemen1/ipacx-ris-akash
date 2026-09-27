@@ -149,7 +149,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     const isSidebarOrThumbnail = (el) => {
       if (!el) return false;
       try {
-        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
+        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, aside, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
       } catch(e) {
         return false;
       }
@@ -173,141 +173,152 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       iframeDoc.addEventListener('pointerdown', markActive, true);
       iframeDoc.addEventListener('mousedown', markActive, true);
       iframeDoc.addEventListener('wheel', markActive, true);
+      iframeDoc.addEventListener('focusin', markActive, true);
     }
 
-    // STRATEGY 0: OHIF v3 Services Manager (PRIMARY & MOST ACCURATE for OHIF Viewer)
+    // Identify OHIF v3 Active Viewport ID from Services Manager if available
+    let ohifActiveVpId = null;
+    let sm = null;
     try {
-      const sm = iframeWin && (iframeWin.servicesManager || (iframeWin.ohif && iframeWin.ohif.servicesManager) || (iframeWin.ohifApp && iframeWin.ohifApp.servicesManager));
+      sm = iframeWin && (iframeWin.servicesManager || (iframeWin.ohif && iframeWin.ohif.servicesManager) || (iframeWin.ohifApp && iframeWin.ohifApp.servicesManager));
       if (sm && sm.services && sm.services.viewportGridService) {
+        const vpgs = sm.services.viewportGridService;
+        const gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
+        ohifActiveVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
+      }
+    } catch (e) { /* ignore */ }
+
+    // Helper: Determine if a DOM element is the active viewport
+    const isElementActive = (el) => {
+      if (!el || isSidebarOrThumbnail(el)) return false;
+      if (el === iframeDoc._lastActiveViewport || el === iframeDoc._lastActiveCanvas || (iframeDoc._lastActiveCanvas && el.contains(iframeDoc._lastActiveCanvas))) return true;
+      if (iframeDoc.activeElement && (el === iframeDoc.activeElement || el.contains(iframeDoc.activeElement))) return true;
+      if (ohifActiveVpId && (el.getAttribute('data-viewport-uid') === ohifActiveVpId || el.id === ohifActiveVpId || el.getAttribute('data-cy')?.includes(ohifActiveVpId))) return true;
+
+      if (el.classList.contains('active') || el.classList.contains('focused') || el.classList.contains('selected') || el.classList.contains('active-viewport') || el.classList.contains('border-primary') || el.getAttribute('data-active') === 'true' || el.getAttribute('data-is-active') === 'true') return true;
+
+      try {
+        const style = iframeWin.getComputedStyle ? iframeWin.getComputedStyle(el) : null;
+        if (style && style.borderColor) {
+          const bc = style.borderColor.toLowerCase();
+          if (bc.includes('0, 132, 199') || bc.includes('2, 132, 199') || bc.includes('56, 189, 248') || bc.includes('#0284c7') || bc.includes('#0084c7') || bc.includes('#38bdf8')) return true;
+        }
+      } catch (e) { /* ignore style check */ }
+
+      return false;
+    };
+
+    // STRATEGY 0: OHIF v3 Services Manager (PRIMARY for OHIF Viewer)
+    try {
+      if (sm && sm.services && sm.services.viewportGridService && ohifActiveVpId) {
         const vpgs = sm.services.viewportGridService;
         const cvps = sm.services.cornerstoneViewportService;
         const dss = sm.services.displaySetService;
-
         const gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-        const activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
 
-        if (activeVpId) {
-          let csSlice = null;
-          let csTotal = null;
-          let csvp = null;
-          let windowCenter = null;
-          let windowWidth = null;
+        let activeVp = null;
+        if (gridState && gridState.viewports) {
+          const vps = gridState.viewports;
+          if (typeof vps.get === 'function') activeVp = vps.get(ohifActiveVpId);
+          else if (Array.isArray(vps)) activeVp = vps.find(v => v.id === ohifActiveVpId || v.viewportId === ohifActiveVpId);
+          else if (typeof vps === 'object') activeVp = vps[ohifActiveVpId];
+        }
 
-          if (cvps && typeof cvps.getCornerstoneViewport === 'function') {
-            try {
-              csvp = cvps.getCornerstoneViewport(activeVpId);
-              if (csvp) {
-                let idx = null;
-                try {
-                  if (typeof csvp.getCurrentImageIdIndex === 'function') {
-                    idx = csvp.getCurrentImageIdIndex();
-                  } else if (typeof csvp.getSliceIndex === 'function') {
-                    idx = csvp.getSliceIndex();
-                  } else if (typeof csvp.sliceIndex === 'number') {
-                    idx = csvp.sliceIndex;
-                  }
-                } catch (e) {
-                  if (typeof csvp.getSliceIndex === 'function') {
-                    try { idx = csvp.getSliceIndex(); } catch (e2) { /* ignore sliceIndex error */ }
+        if (!activeVp && typeof vpgs.getViewport === 'function') {
+          try { activeVp = vpgs.getViewport(ohifActiveVpId); } catch (e) { /* ignore */ }
+        }
+
+        let csvp = null;
+        let csSlice = null;
+        let csTotal = null;
+        let windowCenter = null;
+        let windowWidth = null;
+
+        if (cvps && typeof cvps.getCornerstoneViewport === 'function') {
+          try {
+            csvp = cvps.getCornerstoneViewport(ohifActiveVpId);
+            if (csvp) {
+              let idx = null;
+              try {
+                if (typeof csvp.getCurrentImageIdIndex === 'function') idx = csvp.getCurrentImageIdIndex();
+                else if (typeof csvp.getSliceIndex === 'function') idx = csvp.getSliceIndex();
+                else if (typeof csvp.sliceIndex === 'number') idx = csvp.sliceIndex;
+              } catch (e) { /* ignore */ }
+
+              try {
+                if (typeof csvp.getProperties === 'function') {
+                  const props = csvp.getProperties();
+                  if (props && props.voiRange) {
+                    windowWidth = props.voiRange.upper - props.voiRange.lower;
+                    windowCenter = (props.voiRange.upper + props.voiRange.lower) / 2;
                   }
                 }
-                try {
-                  if (typeof csvp.getProperties === 'function') {
-                    const props = csvp.getProperties();
-                    if (props && props.voiRange) {
-                      windowWidth = props.voiRange.upper - props.voiRange.lower;
-                      windowCenter = (props.voiRange.upper + props.voiRange.lower) / 2;
-                    }
-                  } else if (typeof csvp.getVOILUT === 'function') {
-                    const voi = csvp.getVOILUT();
-                    windowCenter = voi?.windowCenter;
-                    windowWidth = voi?.windowWidth;
-                  }
-                } catch (e) {
-                  /* ignore VOI LUT error */
-                }
+              } catch (e) { /* ignore */ }
 
-                const ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
-                if (idx !== null && idx >= 0) {
-                  csSlice = idx + 1;
-                  csTotal = ids ? ids.length : null;
-                }
+              const ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
+              if (idx !== null && idx >= 0) {
+                csSlice = idx + 1;
+                csTotal = ids ? ids.length : null;
               }
-            } catch (e) {
-              /* ignore csvp error */
             }
-          }
+          } catch (e) { /* ignore */ }
+        }
 
-          let activeVp = null;
-          if (gridState && gridState.viewports) {
-            const vps = gridState.viewports;
-            if (typeof vps.get === 'function') activeVp = vps.get(activeVpId);
-            else if (Array.isArray(vps)) activeVp = vps.find(v => v.id === activeVpId || v.viewportId === activeVpId);
-            else if (typeof vps === 'object') activeVp = vps[activeVpId];
-          }
+        const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
+        const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
 
-          if (!activeVp && typeof vpgs.getViewport === 'function') {
-            try {
-              activeVp = vpgs.getViewport(activeVpId);
-            } catch (e) {
-              /* ignore vpgs getViewport error */
-            }
-          }
+        const seriesUid = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+        const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
+        const modality = ds ? (ds.Modality || ds.modality) : "CT";
+        let sopUid = null;
+        if (ds && ds.images && csSlice && ds.images[csSlice - 1]) {
+          sopUid = ds.images[csSlice - 1].SOPInstanceUID || ds.images[csSlice - 1].sopInstanceUid;
+        } else if (ds && ds.images && ds.images[0]) {
+          sopUid = ds.images[0].SOPInstanceUID || ds.images[0].sopInstanceUid;
+        }
 
-          const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
-          const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
+        let matchedSeriesObj = null;
+        if (seriesUid && Array.isArray(studySeriesList)) {
+          matchedSeriesObj = studySeriesList.find(s => 
+            String(s.series_instance_uid) === String(seriesUid) ||
+            String(s.series_id) === String(seriesUid) ||
+            String(s.orthanc_series_id) === String(seriesUid)
+          );
+        }
+        if (!matchedSeriesObj && seriesDesc && Array.isArray(studySeriesList)) {
+          matchedSeriesObj = studySeriesList.find(s => 
+            s.series_description && String(s.series_description).trim().toLowerCase() === String(seriesDesc).trim().toLowerCase()
+          );
+        }
 
-          const seriesUid = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
-          const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
-          const modality = ds ? (ds.Modality || ds.modality) : "CT";
-          let sopUid = null;
-          if (ds && ds.images && csSlice && ds.images[csSlice - 1]) {
-            sopUid = ds.images[csSlice - 1].SOPInstanceUID || ds.images[csSlice - 1].sopInstanceUid;
-          } else if (ds && ds.images && ds.images[0]) {
-            sopUid = ds.images[0].SOPInstanceUID || ds.images[0].sopInstanceUid;
-          }
+        const activeCanvas = csvp?.element?.querySelector('canvas') || null;
 
-          let matchedSeriesObj = null;
-          if (seriesUid && Array.isArray(studySeriesList)) {
-            matchedSeriesObj = studySeriesList.find(s => 
-              String(s.series_instance_uid) === String(seriesUid) ||
-              String(s.series_id) === String(seriesUid) ||
-              String(s.orthanc_series_id) === String(seriesUid)
-            );
-          }
-          if (!matchedSeriesObj && seriesDesc && Array.isArray(studySeriesList)) {
-            matchedSeriesObj = studySeriesList.find(s => s.series_description === seriesDesc);
-          }
-
-          const activeCanvas = csvp?.element?.querySelector('canvas') || null;
-
-          if (csSlice || seriesUid || seriesDesc) {
-            console.log("🚨 [VIEWERBRIDGE] Matched series:", matchedSeriesObj?.series_description || seriesDesc || "NONE", "(Strategy 0 OHIF Services)");
-            return {
-              instanceNumber: csSlice || null,
-              sliceNumber: csSlice || 1,
-              totalSlices: csTotal || ds?.numImageFrames || matchedSeriesObj?.total_slices || 1,
-              seriesInstanceUid: seriesUid || matchedSeriesObj?.series_instance_uid || matchedSeriesObj?.series_id || null,
-              matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : seriesUid,
-              seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : seriesDesc,
-              modality: modality || matchedSeriesObj?.modality || "CT",
-              sopInstanceUid: sopUid || null,
-              windowCenter,
-              windowWidth,
-              activeCanvas
-            };
-          }
+        if (csSlice || seriesUid || seriesDesc) {
+          console.log("🚨 [VIEWERBRIDGE] Strategy 0 (OHIF Services) -> Matched active series:", matchedSeriesObj?.series_description || seriesDesc, "slice:", csSlice, "/", csTotal);
+          return {
+            instanceNumber: csSlice || null,
+            sliceNumber: csSlice || 1,
+            totalSlices: csTotal || ds?.numImageFrames || matchedSeriesObj?.total_slices || 1,
+            seriesInstanceUid: seriesUid || matchedSeriesObj?.series_instance_uid || matchedSeriesObj?.series_id || null,
+            matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : seriesUid,
+            seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : seriesDesc,
+            modality: modality || matchedSeriesObj?.modality || "CT",
+            sopInstanceUid: sopUid || null,
+            windowCenter,
+            windowWidth,
+            activeCanvas
+          };
         }
       }
     } catch (e) { /* skip Strategy 0 */ }
 
-    // STRATEGY 1: Cornerstone3D JavaScript API (Direct, 100% exact slice & series UID)
+    // STRATEGY 1: Cornerstone3D API (Filtered for ACTIVE viewport element)
     try {
       const cs = iframeWin && (iframeWin.cornerstone3D || iframeWin.cornerstone || iframeWin.cornerstoneCore);
       if (cs && typeof cs.getRenderingEngines === 'function') {
         const engines = cs.getRenderingEngines();
         let bestCSResult = null;
-        let highestPriority = -1;
+        let highestScore = -1;
 
         for (const engine of engines) {
           const viewports = engine.getViewports ? engine.getViewports() : [];
@@ -316,20 +327,15 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
               const el = vp.element;
               if (!el || isSidebarOrThumbnail(el)) continue;
 
+              const activeFlag = isElementActive(el);
+              const score = (activeFlag ? 1000000 : 0) + (ohifActiveVpId && (vp.id === ohifActiveVpId || vp.viewportId === ohifActiveVpId) ? 5000000 : 0);
+
               let idx = null;
               try {
-                if (typeof vp.getCurrentImageIdIndex === 'function') {
-                  idx = vp.getCurrentImageIdIndex();
-                } else if (typeof vp.getSliceIndex === 'function') {
-                  idx = vp.getSliceIndex();
-                } else if (typeof vp.sliceIndex === 'number') {
-                  idx = vp.sliceIndex;
-                }
-              } catch (e) {
-                if (typeof vp.getSliceIndex === 'function') {
-                  try { idx = vp.getSliceIndex(); } catch (e2) { /* ignore sliceIndex error */ }
-                }
-              }
+                if (typeof vp.getCurrentImageIdIndex === 'function') idx = vp.getCurrentImageIdIndex();
+                else if (typeof vp.getSliceIndex === 'function') idx = vp.getSliceIndex();
+                else if (typeof vp.sliceIndex === 'number') idx = vp.sliceIndex;
+              } catch (e) { /* ignore */ }
 
               const imageIds = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
 
@@ -337,7 +343,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                 const imgId = imageIds[idx] || imageIds[0] || '';
                 let foundSeries = null;
 
-                // 1. Match series UID from URL regex
                 const seriesUidMatch = imgId.match(/series\/([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesUID=([a-zA-Z0-9._-]+)/i);
                 if (seriesUidMatch) {
                   const uid = seriesUidMatch[1];
@@ -348,7 +353,6 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                   );
                 }
 
-                // 2. Check Cornerstone3D metaData module
                 if (!foundSeries && cs.metaData && typeof cs.metaData.get === 'function') {
                   try {
                     const seriesMod = cs.metaData.get('generalSeriesModule', imgId) || cs.metaData.get('seriesModule', imgId);
@@ -366,26 +370,9 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                         foundSeries = studySeriesList.find(s => s.series_description === sDesc);
                       }
                     }
-                  } catch (e) { /* ignore metaData error */ }
+                  } catch (e) { /* ignore */ }
                 }
 
-                // 3. Match instance ID from URL against studySeriesList.instances
-                if (!foundSeries) {
-                  const instIdMatch = imgId.match(/instances\/([a-zA-Z0-9._-]+)/i) || imgId.match(/sopInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/objectUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/instanceUID=([a-zA-Z0-9._-]+)/i);
-                  if (instIdMatch) {
-                    const instId = instIdMatch[1];
-                    foundSeries = studySeriesList.find(s =>
-                      Array.isArray(s.instances) && s.instances.some(inst =>
-                        String(inst.id) === String(instId) ||
-                        String(inst.instance_id) === String(instId) ||
-                        String(inst.sop_instance_uid) === String(instId) ||
-                        String(inst.orthanc_instance_id) === String(instId)
-                      )
-                    );
-                  }
-                }
-
-                // Extract VOI LUT (Window Center / Window Width) if available
                 let windowCenter = null;
                 let windowWidth = null;
                 try {
@@ -395,33 +382,11 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                       windowWidth = props.voiRange.upper - props.voiRange.lower;
                       windowCenter = (props.voiRange.upper + props.voiRange.lower) / 2;
                     }
-                  } else if (typeof vp.getVOILUT === 'function') {
-                    const voi = vp.getVOILUT();
-                    windowCenter = voi?.windowCenter;
-                    windowWidth = voi?.windowWidth;
                   }
-                } catch (e) {
-                  /* ignore VOI LUT error */
-                }
+                } catch (e) { /* ignore */ }
 
-                const isLastActive = (
-                  el === iframeDoc._lastActiveViewport ||
-                  el === iframeDoc._lastActiveCanvas ||
-                  (iframeDoc._lastActiveCanvas && el.contains(iframeDoc._lastActiveCanvas))
-                );
-
-                const isVpActive = el && (
-                  isLastActive ||
-                  el.classList.contains('active') ||
-                  el.closest('.active') ||
-                  el.classList.contains('selected') ||
-                  el.classList.contains('border-primary') ||
-                  el.getAttribute('data-active') === 'true'
-                );
-
-                const priority = (isLastActive ? 1000000 : 0) + (isVpActive ? 100000 : 0) + (idx > 0 ? 500 : 0) + (imageIds.length > 1 ? 50 : 0);
-                if (priority > highestPriority) {
-                  highestPriority = priority;
+                if (score > highestScore) {
+                  highestScore = score;
                   const targetSop = (foundSeries && foundSeries.instances && foundSeries.instances[idx]) ? (foundSeries.instances[idx].sop_instance_uid || foundSeries.instances[idx].instance_id) : null;
                   bestCSResult = {
                     instanceNumber: idx + 1,
@@ -438,119 +403,18 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
                   };
                 }
               }
-            } catch (e) { /* ignore viewport error */ }
+            } catch (e) { /* ignore */ }
           }
         }
 
-        if (bestCSResult && (highestPriority >= 50 || bestCSResult.sliceNumber > 0)) {
-          console.log("🚨 [VIEWERBRIDGE] Matched series:", bestCSResult.seriesDescription || bestCSResult.matchedSeriesId || "NONE", "(Strategy 1 Cornerstone3D API)");
+        if (bestCSResult && highestScore > 0) {
+          console.log("🚨 [VIEWERBRIDGE] Strategy 1 (Cornerstone3D API) -> Matched active series:", bestCSResult.seriesDescription || bestCSResult.matchedSeriesId, "slice:", bestCSResult.sliceNumber);
           return bestCSResult;
         }
       }
     } catch (e) { /* ignore CS3D */ }
 
-    // STRATEGY 0: OHIF v3 Services Manager (Fallback)
-    try {
-      const sm = iframeWin && (iframeWin.servicesManager || (iframeWin.ohif && iframeWin.ohif.servicesManager) || (iframeWin.ohifApp && iframeWin.ohifApp.servicesManager));
-      if (sm && sm.services && sm.services.viewportGridService) {
-        const vpgs = sm.services.viewportGridService;
-        const cvps = sm.services.cornerstoneViewportService;
-        const dss = sm.services.displaySetService;
-
-        const gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-        const activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
-
-        if (activeVpId) {
-          let csSlice = null;
-          let csTotal = null;
-          let csvp = null;
-
-          if (cvps && typeof cvps.getCornerstoneViewport === 'function') {
-            try {
-              csvp = cvps.getCornerstoneViewport(activeVpId);
-              if (csvp) {
-                let idx = null;
-                try {
-                  if (typeof csvp.getCurrentImageIdIndex === 'function') {
-                    idx = csvp.getCurrentImageIdIndex();
-                  } else if (typeof csvp.getSliceIndex === 'function') {
-                    idx = csvp.getSliceIndex();
-                  } else if (typeof csvp.sliceIndex === 'number') {
-                    idx = csvp.sliceIndex;
-                  }
-                } catch (e) {
-                  if (typeof csvp.getSliceIndex === 'function') {
-                    try { idx = csvp.getSliceIndex(); } catch (e2) { /* ignore sliceIndex error */ }
-                  }
-                }
-                const ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
-                if (idx !== null && idx >= 0) {
-                  csSlice = idx + 1;
-                  csTotal = ids ? ids.length : null;
-                }
-              }
-            } catch (e) {
-              /* ignore csvp error */
-            }
-          }
-
-          let activeVp = null;
-          if (gridState && gridState.viewports) {
-            const vps = gridState.viewports;
-            if (typeof vps.get === 'function') activeVp = vps.get(activeVpId);
-            else if (Array.isArray(vps)) activeVp = vps.find(v => v.id === activeVpId || v.viewportId === activeVpId);
-            else if (typeof vps === 'object') activeVp = vps[activeVpId];
-          }
-
-          if (!activeVp && typeof vpgs.getViewport === 'function') {
-            try {
-              activeVp = vpgs.getViewport(activeVpId);
-            } catch (e) {
-              /* ignore vpgs getViewport error */
-            }
-          }
-
-          const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
-          const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
-
-          const seriesUid = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
-          const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
-          let sopUid = null;
-          if (ds && ds.images && csSlice && ds.images[csSlice - 1]) {
-            sopUid = ds.images[csSlice - 1].SOPInstanceUID || ds.images[csSlice - 1].sopInstanceUid;
-          } else if (ds && ds.images && ds.images[0]) {
-            sopUid = ds.images[0].SOPInstanceUID || ds.images[0].sopInstanceUid;
-          }
-
-          let matchedSeriesObj = null;
-          if (seriesUid && Array.isArray(studySeriesList)) {
-            matchedSeriesObj = studySeriesList.find(s => 
-              String(s.series_instance_uid) === String(seriesUid) ||
-              String(s.series_id) === String(seriesUid) ||
-              String(s.orthanc_series_id) === String(seriesUid)
-            );
-          }
-          if (!matchedSeriesObj && seriesDesc && Array.isArray(studySeriesList)) {
-            matchedSeriesObj = studySeriesList.find(s => s.series_description === seriesDesc);
-          }
-
-          if (csSlice || seriesUid || seriesDesc) {
-            console.log('[ViewerBridge] Strategy 0 (OHIF Services) -> slice:', csSlice, '/', csTotal, '| series:', seriesDesc || seriesUid);
-            return {
-              instanceNumber: csSlice || null,
-              sliceNumber: csSlice || null,
-              totalSlices: csTotal || ds?.numImageFrames || matchedSeriesObj?.total_slices || null,
-              matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : seriesUid,
-              seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : seriesDesc,
-              sopInstanceUid: sopUid || null,
-              activeCanvas: csvp?.element?.querySelector('canvas') || null
-            };
-          }
-        }
-      }
-    } catch (e) { /* skip Strategy 0 */ }
-
-    // STRATEGY 2: DOM Text Overlay Parsing (Hybrid DOM Inspection)
+    // STRATEGY 2: DOM Text Overlay Inspection strictly inside ACTIVE viewport container
     let activeContainer = null;
     if (iframeDoc._lastActiveViewport && !isSidebarOrThumbnail(iframeDoc._lastActiveViewport)) {
       activeContainer = iframeDoc._lastActiveViewport;
@@ -559,36 +423,23 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     }
 
     if (!activeContainer) {
-      const activeCandidates = Array.from(iframeDoc.querySelectorAll(
-        '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-canvas-wrapper.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
-      )).filter(el => {
-        return !isSidebarOrThumbnail(el) && (el.querySelector('canvas') || el.classList.contains('viewport-element') || el.classList.contains('viewport-wrapper'));
-      });
+      const allViewportContainers = Array.from(iframeDoc.querySelectorAll(
+        '.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]'
+      )).filter(el => !isSidebarOrThumbnail(el) && (el.querySelector('canvas') || el.clientHeight > 100));
 
-      if (activeCandidates.length > 0) activeContainer = activeCandidates[0];
-    }
-
-    if (!activeContainer || isSidebarOrThumbnail(activeContainer)) {
-      const canvases = Array.from(iframeDoc.querySelectorAll('canvas'))
-        .filter(c => !isSidebarOrThumbnail(c))
-        .map(c => ({
-          c,
-          area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0),
-          container: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || c.parentElement
-        }))
-        .filter(({ area, container }) => area > 5000 && !isSidebarOrThumbnail(container))
-        .sort((a, b) => b.area - a.area);
-
-      if (canvases.length > 0) activeContainer = canvases[0].container || canvases[0].c.parentElement;
+      const activeCandidate = allViewportContainers.find(el => isElementActive(el));
+      if (activeCandidate) activeContainer = activeCandidate;
+      else if (allViewportContainers.length > 0) activeContainer = allViewportContainers[0];
     }
 
     if (activeContainer && activeContainer.tagName === 'CANVAS') {
       activeContainer = activeContainer.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || activeContainer.parentElement;
     }
 
-    const activeTexts = [];
-    const globalTexts = [];
+    if (!activeContainer || isSidebarOrThumbnail(activeContainer)) return null;
 
+    // Collect text ONLY from the activeContainer (DO NOT search bodyEl / sidebar!)
+    const activeTexts = [];
     const isDemographicOrDate = (str) => {
       if (!str) return true;
       const s = str.trim();
@@ -599,28 +450,20 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       return false;
     };
 
-    const collectFromNode = (root, targetArray) => {
-      if (!root) return;
-      const tw = iframeDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode: (node) => {
-          if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-          if (root !== activeContainer && (isSidebarOrThumbnail(node.parentElement) || node.parentElement.closest('.key-images, .rs-print-key-images, [class*="key-image"]'))) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          const val = node.nodeValue ? node.nodeValue.trim() : '';
-          if (isDemographicOrDate(val)) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      }, false);
-      let tn;
-      while ((tn = tw.nextNode())) {
-        const v = tn.nodeValue && tn.nodeValue.trim();
-        if (v && v.length > 0 && v.length <= 150) targetArray.push(v);
+    const tw = iframeDoc.createTreeWalker(activeContainer, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
+        const val = node.nodeValue ? node.nodeValue.trim() : '';
+        if (isDemographicOrDate(val)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
       }
-    };
+    }, false);
 
-    if (activeContainer) collectFromNode(activeContainer, activeTexts);
-    collectFromNode(bodyEl, globalTexts);
+    let tn;
+    while ((tn = tw.nextNode())) {
+      const v = tn.nodeValue && tn.nodeValue.trim();
+      if (v && v.length > 0 && v.length <= 150) activeTexts.push(v);
+    }
 
     // 1. Direct Series Description Matching from active viewport visible text nodes
     let matchedSeriesObj = null;
@@ -631,7 +474,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
         if (!cleanDesc) continue;
         const matchesActive = activeTexts.some(txt => {
           const tNorm = String(txt).trim().toLowerCase();
-          return tNorm === cleanDesc || (cleanDesc.length >= 4 && tNorm.includes(cleanDesc));
+          return tNorm === cleanDesc || (cleanDesc.length >= 3 && tNorm.includes(cleanDesc));
         });
         if (matchesActive) {
           matchedSeriesObj = s;
@@ -640,98 +483,81 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       }
     }
 
-    // 2. Parse Slice Number and Total Slices from activeTexts AND activeContainer.textContent
-    const parseSliceCandidates = (textList, containerText = '', basePriority = 100) => {
-      const candidates = [];
-      
-      const searchStrings = [...textList];
-      if (containerText) searchStrings.push(containerText);
-
-      for (const val of searchStrings) {
-        if (isDemographicOrDate(val)) continue;
-
-        // Pattern 0A: "I: 134 190/223", "I:173 (51/223)", "Im: 134 190/223", "I: 134 (190/223)"
-        let m = val.match(/(?:I|Im|Instance|Image)\s*:?\s*(\d+)\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
-        if (m) {
-          const instNum = parseInt(m[1], 10);
-          const sn = parseInt(m[2], 10);
-          const tn2 = parseInt(m[3], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, instanceNumber: instNum, text: val, priority: basePriority + 400 });
-            continue;
-          }
-        }
-
-        // Pattern 0B: "(39/245)", " ( 190 / 223 ) "
-        m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
-        if (m) {
-          const sn = parseInt(m[1], 10);
-          const tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 300 });
-            continue;
-          }
-        }
-
-        // Pattern 1: "Slice 39 of 245", "Image 190 of 223"
-        m = val.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
-        if (m) {
-          const sn = parseInt(m[1], 10);
-          const tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 200 });
-            continue;
-          }
-        }
-
-        // Pattern 2: Standalone "190/223" or "190 / 223"
-        m = val.match(/(\d+)\s*\/\s*(\d+)/);
-        if (m) {
-          const sn = parseInt(m[1], 10);
-          const tn2 = parseInt(m[2], 10);
-          if (sn > 0 && tn2 > 0 && sn <= tn2) {
-            candidates.push({ sliceNumber: sn, totalSlices: tn2, text: val, priority: basePriority + 100 });
-            continue;
-          }
+    // Dynamic Series Description regex extraction if studySeriesList match wasn't found
+    let dynamicSeriesDesc = null;
+    if (!matchedSeriesObj) {
+      for (const txt of activeTexts) {
+        const clean = txt.trim();
+        if (/^[A-Za-z0-9][A-Za-z0-9\s._\-/\\]{2,60}$/.test(clean) && !/^(CT|MR|US|CR|DX|XA|W:|L:|I:|\d+)/i.test(clean)) {
+          dynamicSeriesDesc = clean;
+          break;
         }
       }
-      return candidates;
-    };
+    }
 
-    const containerFullText = activeContainer ? (activeContainer.textContent || activeContainer.innerText || '') : '';
-    let sliceCandidates = parseSliceCandidates(activeTexts, containerFullText, 200);
-    if (sliceCandidates.length === 0) sliceCandidates = parseSliceCandidates(globalTexts, '', 100);
+    // 2. Parse Slice Number and Total Slices strictly from activeTexts or activeContainer.textContent
+    const containerText = activeContainer.textContent || activeContainer.innerText || '';
+    const searchStrings = [...activeTexts, containerText];
+    let sliceNumber = null;
+    let totalSlices = null;
+    let instanceNumber = null;
 
-    sliceCandidates.sort((a, b) => b.priority - a.priority);
-    const sliceResult = sliceCandidates.length > 0 ? sliceCandidates[0] : null;
+    for (const val of searchStrings) {
+      if (isDemographicOrDate(val)) continue;
 
-    if (!matchedSeriesObj && sliceResult?.totalSlices && Array.isArray(studySeriesList)) {
+      // Pattern 0A: "I: 134 190/223", "I:173 (51/223)", "Im: 134 190/223", "I: 134 (190/223)"
+      let m = val.match(/(?:I|Im|Instance|Image)\s*:?\s*(\d+)\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
+      if (m) {
+        instanceNumber = parseInt(m[1], 10);
+        sliceNumber = parseInt(m[2], 10);
+        totalSlices = parseInt(m[3], 10);
+        break;
+      }
+
+      // Pattern 0B: "(39/245)", " ( 190 / 223 ) "
+      m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+      if (m) {
+        sliceNumber = parseInt(m[1], 10);
+        totalSlices = parseInt(m[2], 10);
+        break;
+      }
+
+      // Pattern 1: "Slice 39 of 245", "Image 190 of 223"
+      m = val.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
+      if (m) {
+        sliceNumber = parseInt(m[1], 10);
+        totalSlices = parseInt(m[2], 10);
+        break;
+      }
+
+      // Pattern 2: Standalone "190/223" or "1/1"
+      m = val.match(/(\d+)\s*\/\s*(\d+)/);
+      if (m) {
+        sliceNumber = parseInt(m[1], 10);
+        totalSlices = parseInt(m[2], 10);
+        break;
+      }
+    }
+
+    if (!matchedSeriesObj && totalSlices && Array.isArray(studySeriesList)) {
       const countCandidates = studySeriesList.filter(s =>
-        parseInt(s.total_slices, 10) === sliceResult.totalSlices ||
-        (Array.isArray(s.instances) && s.instances.length === sliceResult.totalSlices)
+        parseInt(s.total_slices, 10) === totalSlices ||
+        (Array.isArray(s.instances) && s.instances.length === totalSlices)
       );
       if (countCandidates.length === 1) {
         matchedSeriesObj = countCandidates[0];
       }
     }
 
-    if (!matchedSeriesObj && hintSeriesId && Array.isArray(studySeriesList)) {
-      matchedSeriesObj = studySeriesList.find(s =>
-        String(s.series_id) === String(hintSeriesId) ||
-        String(s.series_instance_uid) === String(hintSeriesId) ||
-        String(s.orthanc_series_id) === String(hintSeriesId)
-      ) || null;
-    }
-
-    if (sliceResult || matchedSeriesObj) {
-      console.log("🚨 [VIEWERBRIDGE] Matched series:", matchedSeriesObj?.series_description || "NONE", "(slice:", sliceResult?.sliceNumber, "/", sliceResult?.totalSlices, ")");
+    if (sliceNumber || matchedSeriesObj || dynamicSeriesDesc) {
+      console.log("🚨 [VIEWERBRIDGE] Strategy 2 (Active DOM Overlay) -> Matched active series:", matchedSeriesObj?.series_description || dynamicSeriesDesc || "NONE", "slice:", sliceNumber, "/", totalSlices);
       return {
-        instanceNumber: sliceResult?.instanceNumber || null,
-        sliceNumber: sliceResult ? sliceResult.sliceNumber : null,
-        totalSlices: sliceResult?.totalSlices || matchedSeriesObj?.total_slices || null,
+        instanceNumber: instanceNumber || sliceNumber || 1,
+        sliceNumber: sliceNumber || 1,
+        totalSlices: totalSlices || matchedSeriesObj?.total_slices || 1,
         matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
-        seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : null,
-        activeCanvas: (activeContainer ? activeContainer.querySelector('canvas') : null) || iframeDoc._lastActiveCanvas || null
+        seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : (dynamicSeriesDesc || "Diagnostic Viewport"),
+        activeCanvas: activeContainer.querySelector('canvas') || iframeDoc._lastActiveCanvas || null
       };
     }
 
