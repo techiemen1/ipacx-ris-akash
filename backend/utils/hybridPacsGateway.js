@@ -85,9 +85,12 @@ class HybridPacsGateway {
   async fetchHybridSeriesAndInstances(studyUID) {
     if (!studyUID) return [];
 
+    console.log("🔍 [TRACE 1: PACS QUERY] hybridPacsGateway searching for studyUID:", studyUID);
+
     // 1. Try Orthanc PACS
     try {
       const orthancUrl = await getOrthancUrl();
+      console.log("🔍 [TRACE 1: PACS QUERY] Querying Orthanc PACS at:", orthancUrl);
       let orthancId = null;
 
       try {
@@ -107,21 +110,28 @@ class HybridPacsGateway {
         const { data: studyData } = await axios.get(`${orthancUrl}studies/${orthancId}`, { ...orthancAuthConfig(), timeout: 4000 }).catch(() => ({ data: null }));
         if (studyData && Array.isArray(studyData.Series) && studyData.Series.length > 0) {
           const orthSeries = await this.fetchOrthancSeries(orthancUrl, studyData);
-          if (orthSeries && orthSeries.length > 0) return this.sortSeriesList(orthSeries);
+          if (orthSeries && orthSeries.length > 0) {
+            console.log(`🔍 [TRACE 1: PACS QUERY] Orthanc SUCCESS. Returned ${orthSeries.length} series:`, orthSeries.map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })));
+            return this.sortSeriesList(orthSeries);
+          }
         }
       }
+      console.log("🔍 [TRACE 1: PACS QUERY] Orthanc found 0 series for studyUID:", studyUID);
     } catch (e) {
-      console.warn("[Hybrid PACS] Orthanc series lookup notice:", e.message);
+      console.warn("🔍 [TRACE 1: PACS QUERY] Orthanc series lookup notice:", e.message);
     }
 
     // 2. Try DCM4CHEE / DCM4CHEE-ARC via QIDO-RS
     try {
+      console.log("🔍 [TRACE 1: PACS QUERY] Querying DCM4CHEE PACS for studyUID:", studyUID);
       const dcmSeries = await dcm4cheeHelper.searchDcm4cheeSeriesAndInstances(studyUID);
       if (Array.isArray(dcmSeries) && dcmSeries.length > 0) {
+        console.log(`🔍 [TRACE 1: PACS QUERY] DCM4CHEE SUCCESS. Returned ${dcmSeries.length} series:`, dcmSeries.map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })));
         return this.sortSeriesList(dcmSeries);
       }
+      console.log("🔍 [TRACE 1: PACS QUERY] DCM4CHEE found 0 series for studyUID:", studyUID);
     } catch (e) {
-      console.warn("[Hybrid PACS] DCM4CHEE series search notice:", e.message);
+      console.warn("🔍 [TRACE 1: PACS QUERY] DCM4CHEE series search notice:", e.message);
     }
 
     // 3. Try Generic DICOMweb / VNA active nodes

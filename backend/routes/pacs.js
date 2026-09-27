@@ -421,11 +421,10 @@ router.get("/instance-tags/:instanceId", asyncHandler(async (req, res) => {
  * Fetches series & instances from Orthanc OR active DCM4CHEE nodes
  */
 async function fetchStudySeriesAndInstancesAcrossPacs(studyUID) {
-  console.log("🚨 [HYBRID GATEWAY] Fetching series for study:", studyUID);
+  console.log("🔍 [TRACE 1: PACS QUERY] Fetching series for studyUID:", studyUID);
   try {
     const seriesList = await hybridPacsGateway.fetchHybridSeriesAndInstances(studyUID);
     if (Array.isArray(seriesList) && seriesList.length > 0) {
-      console.log(`🚨 [HYBRID GATEWAY] Retrieved ${seriesList.length} series for study: ${studyUID}`);
       return seriesList;
     }
   } catch (e) {
@@ -961,7 +960,7 @@ router.get("/direct-instance/:studyUID/:seriesUID/:instanceId", asyncHandler(asy
 }));
 
 router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
-  console.log("🚨 [BACKEND SAVE] Received seriesUID:", req.body.seriesUID, "seriesDescription:", req.body.seriesDescription, "instanceId:", req.body.instanceId);
+  console.log("🔍 [TRACE 5: BACKEND SAVE] Received payload:", req.body);
   const { 
     reportId, 
     studyUID, 
@@ -1024,7 +1023,8 @@ router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
     ]
   );
 
-  console.log("[V2 Key Image] Saved successfully:", result.rows[0]);
+  const dbRow = result.rows[0];
+  console.log("🔍 [TRACE 5: BACKEND SAVE] DB Inserted Row:", dbRow ? { id: dbRow.id, series_description: dbRow.series_description, preview_url: dbRow.preview_url } : "FAILED");
   res.json({ success: true, data: result.rows[0] });
 }));
 
@@ -1620,22 +1620,22 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
     const now = Date.now();
     const cached = studySeriesCache.get(String(studyUID));
     console.log("🚨 [STUDY-SERIES] Fetching for studyUID:", studyUID, "Cache hit:", (cached && cached.expiresAt > now) ? "YES" : "NO");
+    let seriesList = [];
     if (cached && cached.expiresAt > now) {
-      return res.json({
-        success: true,
-        studyUID,
-        series: cached.series
-      });
+      seriesList = cached.series;
+    } else {
+      seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
+      if (Array.isArray(seriesList) && seriesList.length > 0) {
+        if (studySeriesCache.size >= MAX_SERIES_CACHE && !studySeriesCache.has(String(studyUID))) {
+          const oldestKey = studySeriesCache.keys().next().value;
+          if (oldestKey) studySeriesCache.delete(oldestKey);
+        }
+        studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 60000 });
+      }
     }
 
-    const seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
-    if (Array.isArray(seriesList) && seriesList.length > 0) {
-      if (studySeriesCache.size >= MAX_SERIES_CACHE && !studySeriesCache.has(String(studyUID))) {
-        const oldestKey = studySeriesCache.keys().next().value;
-        if (oldestKey) studySeriesCache.delete(oldestKey);
-      }
-      studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 60000 });
-    }
+    console.log("🔍 [TRACE 2: API RESPONSE] Sending to frontend. Series count:", (seriesList || []).length);
+    console.log("🔍 [TRACE 2: API RESPONSE] Sending series to frontend:", JSON.stringify((seriesList || []).map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })), null, 2));
 
     res.json({
       success: true,

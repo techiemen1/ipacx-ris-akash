@@ -27,6 +27,7 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       const res = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
       if (res.data?.success && Array.isArray(res.data.series)) {
         setSeriesList(res.data.series);
+        console.log("🔍 [TRACE 3: FRONTEND STATE] Received series list:", res.data.series.map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })));
         if (res.data.series.length > 0) {
           const defaultSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
           setSelectedSeries(defaultSeries);
@@ -58,16 +59,6 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       const sliceNum = instance.slice_number || instance.instance_number || (idxToUse + 1);
       const caption = `${selectedSeries.series_description} | ${sliceNum}/${selectedSeries.total_slices || selectedSeries.instances.length}`;
 
-      console.log('[Modal] Capturing:', {
-        studyUID,
-        seriesUID: selectedSeries.series_id,
-        instanceId: instance.instance_id,
-        sliceNumber: sliceNum
-      });
-
-      console.log("🚨 [MODAL CAPTURE] Sending seriesUID:", selectedSeries?.series_id, "seriesDescription:", selectedSeries?.series_description, "instanceId:", instance?.instance_id);
-
-      // Use the new V2 endpoint for direct fetch
       const payload = {
         reportId: null, // Will be set by parent
         studyUID: studyUID,
@@ -77,6 +68,8 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
         seriesDescription: selectedSeries.series_description || "Unknown",
         modality: selectedSeries.modality || "CT"
       };
+
+      console.log("🔍 [TRACE 4: CAPTURE PAYLOAD] Sending to backend:", JSON.stringify({ studyUID, seriesUID: selectedSeries?.series_id, seriesDesc: selectedSeries?.series_description, instanceId: instance?.instance_id, slice: idxToUse }, null, 2));
 
       const res = await api.post("/api/pacs/v2/key-images/save", payload);
       
@@ -184,7 +177,11 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
               return (
                 <button
                   key={s.series_id}
-                  onClick={() => { setSelectedSeries(s); setSelectedSliceIndex(0); }}
+                  onClick={() => {
+                    console.log("🔍 [TRACE 3: FRONTEND STATE] Tab clicked. New selectedSeries:", s.series_description, "ID:", s.series_id);
+                    setSelectedSeries(s);
+                    setSelectedSliceIndex(0);
+                  }}
                   style={{
                     padding: "8px 14px",
                     borderRadius: 8,
