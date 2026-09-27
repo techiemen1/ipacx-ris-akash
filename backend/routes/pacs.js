@@ -682,6 +682,26 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
   return null;
 }
 
+// ADD THIS DEBUG ENDPOINT to see what frontend is sending
+router.post("/debug-key-image-payload", asyncHandler(async (req, res) => {
+  console.log('\n[DEBUG_KEY_IMAGE_PAYLOAD] ===== FRONTEND PAYLOAD ANALYSIS =====');
+  console.log('[DEBUG] studyUID:', req.body.studyUID);
+  console.log('[DEBUG] seriesUID:', req.body.seriesUID);
+  console.log('[DEBUG] sopInstanceUid:', req.body.sopInstanceUid);
+  console.log('[DEBUG] sliceNumber:', req.body.sliceNumber);
+  console.log('[DEBUG] totalSlices:', req.body.totalSlices);
+  console.log('[DEBUG] seriesDescription:', req.body.seriesDescription);
+  console.log('[DEBUG] modality:', req.body.modality);
+  console.log('[DEBUG] windowCenter:', req.body.windowCenter);
+  console.log('[DEBUG] windowWidth:', req.body.windowWidth);
+  console.log('[DEBUG] hasDataUrl:', !!(req.body.dataUrl && req.body.dataUrl.length > 500));
+  console.log('[DEBUG] dataUrlLength:', req.body.dataUrl?.length || 0);
+  console.log('[DEBUG] annotationData:', JSON.stringify(req.body.annotationData || {}));
+  console.log('[DEBUG] ======================================\n');
+  res.json({ success: true, received: req.body });
+}));
+
+// REPLACE THE ENTIRE processKeyImageSave FUNCTION WITH THIS:
 async function processKeyImageSave(payload, reqUser = {}) {
   const { 
     reportId,
@@ -724,6 +744,8 @@ async function processKeyImageSave(payload, reqUser = {}) {
     totalSlices,
     seriesDescription,
     caption,
+    windowCenter,
+    windowWidth,
     hasDataUrl: !!(dataUrl && dataUrl.length > 500)
   });
 
@@ -738,10 +760,21 @@ async function processKeyImageSave(payload, reqUser = {}) {
 
   let finalUrl = null;
   const targetSlice = sliceNumber ? parseInt(sliceNumber, 10) : 1;
-  const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_s${targetSlice}_${Date.now()}.jpg`;
+  
+  // Generate unique filename with series info to avoid collisions
+  const seriesSafe = String(seriesDescription || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
+  const filename = `key_${String(studyUID).replace(/[^a-zA-Z0-9_-]/g, '_')}_${seriesSafe}_s${targetSlice}_${Date.now()}.jpg`;
   const filePath = path.join(reportImagesDir, filename);
 
-  const targetInstId = (targetSlice > 1 ? await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice) : null) || instanceId || sopInstanceUid || await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+  // Priority 1: Use provided instanceId or sopInstanceUid directly
+  let targetInstId = instanceId || sopInstanceUid;
+  
+  // If no instanceId provided, resolve it from seriesUID and sliceNumber
+  if (!targetInstId && seriesUID) {
+    targetInstId = await resolveInstanceIdForSlice(studyUID, seriesUID, targetSlice);
+  }
+
+  console.log("[KEY_IMAGE_RESOLVED_INSTANCE]:", { targetInstId, seriesUID, targetSlice });
 
   // Priority 1: Base64 canvas viewport dataUrl captured live from viewer (preserves active slice & presentation state)
   if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/') && dataUrl.length > 500) {
@@ -751,6 +784,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
         const base64Data = matches[2];
         fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
         finalUrl = `/uploads/report_images/${filename}`;
+        console.log("[KEY_IMAGE_SAVED_FROM_DATAURL]:", finalUrl);
       }
     } catch (e) {
       console.warn("[PACS] Failed writing key image base64 data to disk:", e.message);
@@ -764,6 +798,7 @@ async function processKeyImageSave(payload, reqUser = {}) {
       if (renderedBuffer && renderedBuffer.length > 500) {
         fs.writeFileSync(filePath, Buffer.from(renderedBuffer));
         finalUrl = `/uploads/report_images/${filename}`;
+        console.log("[KEY_IMAGE_SAVED_FROM_PACS]:", finalUrl);
       }
     } catch (err) {
       console.warn("[PACS] Failed rendering PACS DICOM slice for key image:", err.message);
@@ -772,7 +807,10 @@ async function processKeyImageSave(payload, reqUser = {}) {
 
   // Priority 3: Fallback preview URL
   if (!finalUrl) {
-    finalUrl = targetInstId ? `/api/pacs/instance-preview/${targetInstId}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID || '')}` : `/api/pacs/snapshots/${studyUID}`;
+    finalUrl = targetInstId 
+      ? `/api/pacs/instance-preview/${targetInstId}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID || '')}` 
+      : `/api/pacs/snapshots/${studyUID}`;
+    console.log("[KEY_IMAGE_FALLBACK_URL]:", finalUrl);
   }
 
   const sDesc = seriesDescription || "Diagnostic Series";
@@ -831,13 +869,16 @@ async function processKeyImageSave(payload, reqUser = {}) {
         createdBy
       ]
     ).catch(e => {
-      console.warn("study_key_images DB insert notice:", e.message);
+      console.error("[KEY_IMAGE_DB_INSERT_ERROR]:", e.message);
       return { rows: [] };
     });
 
     dbRow = insertRes.rows[0];
+    if (dbRow) {
+      console.log("[KEY_IMAGE_DB_INSERT_SUCCESS]:", { id: dbRow.id, preview_url: finalUrl });
+    }
   } catch (dbErr) {
-    console.warn("Failed persisting key image to database:", dbErr.message);
+    console.error("[KEY_IMAGE_DB_ERROR]:", dbErr.message);
   }
 
   return {
@@ -854,12 +895,15 @@ async function processKeyImageSave(payload, reqUser = {}) {
     totalSlices: totSlices,
     seriesDesc: sDesc,
     studyUID,
+    seriesUID,
     windowCenter,
     windowWidth,
     zoom,
     panX,
     panY,
     rotation,
+    flipHorizontal,
+    flipVertical,
     annotationData: annotationData || {},
     measurementData: measurementData || {}
   };
