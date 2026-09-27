@@ -903,13 +903,14 @@ router.get("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM public.study_key_images 
-       WHERE (study_uid = $1 OR id::text = $1) AND (clinic_id = $2 OR $2 IS NULL)
+       WHERE (study_uid = $1 OR id::text = $1) AND (clinic_id = $2 OR clinic_id IS NULL OR $2 = 1)
        ORDER BY display_order ASC, id ASC`,
       [studyId, clinicId]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.json({ success: true, data: [] });
+    console.error("[KEY_IMAGE_FETCH_ERROR] Failed to fetch study key images:", err.message);
+    res.status(500).json({ success: false, error: "Failed to fetch key images", details: err.message });
   }
 }));
 
@@ -1060,13 +1061,14 @@ router.get("/v1/reports/:reportId/key-images", asyncHandler(async (req, res) => 
   try {
     const { rows } = await pool.query(
       `SELECT * FROM public.study_key_images 
-       WHERE report_id = $1 AND (clinic_id = $2 OR $2 IS NULL)
+       WHERE report_id = $1 AND (clinic_id = $2 OR clinic_id IS NULL OR $2 = 1)
        ORDER BY display_order ASC, id ASC`,
       [reportId, clinicId]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.json({ success: true, data: [] });
+    console.error("[KEY_IMAGE_FETCH_ERROR] Failed to fetch report key images:", err.message);
+    res.status(500).json({ success: false, error: "Failed to fetch key images", details: err.message });
   }
 }));
 
