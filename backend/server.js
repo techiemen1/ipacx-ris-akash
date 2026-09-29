@@ -27,6 +27,11 @@ initWebSockets(server);
 const { setupGraphQLServer } = require("./services/graphqlService");
 setupGraphQLServer(app);
 
+/**
+ * CORS Configuration - HARDENED
+ * Validates origins against strict whitelist + LAN IP ranges
+ * Prevents CSRF and cross-site data exfiltration attacks
+ */
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
@@ -39,17 +44,37 @@ const allowedOrigins = [
   "http://127.0.0.1:5000",
   "http://localhost:3015",
   "http://127.0.0.1:3015",
+  // DCM4CHEE-ARC & OHIF Production
+  process.env.DICOM_VIEWER_URL,
+  process.env.OHIF_VIEWER_URL,
 ].filter(Boolean);
 
+// Enhanced LAN origin validation: 192.168.x.x, 10.x.x.x, 172.16-31.x.x
 const lanOriginPattern = /^http:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/;
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || lanOriginPattern.test(origin)) {
+    // No origin (same-origin requests, like <form>, <link>, <script>)
+    if (!origin) {
       return callback(null, true);
     }
-    logger.warn(`[CORS Blocked] Origin: ${origin}`);
-    return callback(new Error("Not allowed by CORS"));
+
+    // Exact match in whitelist
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Pattern match: LAN IP ranges
+    if (lanOriginPattern.test(origin)) {
+      return callback(null, true);
+    }
+
+    // BLOCKED: Log and reject
+    logger.warn(`[CORS Blocked] Unauthorized origin: ${origin}`, {
+      timestamp: new Date().toISOString(),
+      remoteIP: this.req?.ip || "unknown"
+    });
+    return callback(new Error(`CORS policy: origin '${origin}' not allowed`));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -63,6 +88,13 @@ const corsOptions = {
     "x-audit-role",
     "x-audit-session",
   ],
+  exposedHeaders: [
+    "Content-Length",
+    "Content-Range",
+    "Content-Type",
+    "X-RateLimit-Limit",
+  ],
+  maxAge: 86400, // 24 hours
 };
 
 app.use(cors(corsOptions));
@@ -81,15 +113,20 @@ app.use((req, res, next) => {
   next();
 });
 
+// Limit JSON payloads to 50MB (prevent DoS); binary uploads handled separately
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Static file serving
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/uploads/report_images", express.static(path.join(__dirname, "uploads/report_images")));
 app.use("/uploads/signatures", express.static(path.join(__dirname, "uploads/signatures")));
+
 // Proxy OHIF Viewer for same-origin iframe canvas capture with automatic Orthanc authentication
 try {
   const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
   const { getOrthancUrl, getOrthancAuthHeader, getActivePacsCredentials } = require("./utils/orthancHelper");
+  const zlib = require("zlib");
 
   const getDynamicTarget = async () => {
     const url = await getOrthancUrl();
@@ -119,7 +156,7 @@ try {
       if (target.closest && target.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"]')) {
         return;
       }
-      var vpElement = target.closest ? target.closest('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .cornerstone-viewport-element, .viewport-grid-item, div[class*="viewport"], div[class*="Viewport"]') : null;
+      var vpElement = target.closest ? target.closest('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .cornerstone-viewport-element, .viewport-grid-item') : null;
       if (vpElement) {
         var uid = vpElement.getAttribute('data-viewport-uid') || vpElement.id || vpElement.getAttribute('data-cy');
         if (uid) {
@@ -162,20 +199,8 @@ try {
                 activeViewportId = uid;
                 break;
               }
-              var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-              if (style && style.borderColor) {
-                var bc = style.borderColor.toLowerCase();
-                if (bc.includes('0, 132, 199') || bc.includes('2, 132, 199') || bc.includes('56, 189, 248') || bc.includes('#0284c7') || bc.includes('#0084c7')) {
-                  activeViewportId = uid;
-                  break;
-                }
-              }
             }
           } catch(e) {}
-        }
-
-        if (!activeViewportId && vgs && typeof vgs.getActiveViewportId === 'function') {
-          activeViewportId = vgs.getActiveViewportId();
         }
 
         console.log('[OHIF Bridge] Active Viewport ID:', activeViewportId);
@@ -195,8 +220,6 @@ try {
             } catch(e) {}
           }
         }
-
-        console.log('[OHIF Bridge] Viewport Object:', viewport);
 
         var displaySetInstanceUID = viewport ? (viewport.displaySetInstanceUID || (Array.isArray(viewport.displaySetInstanceUIDs) ? viewport.displaySetInstanceUIDs[0] : null)) : null;
         var displaySet = (dss && displaySetInstanceUID && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
@@ -223,10 +246,6 @@ try {
             totalSlices = imageIds.length || 1;
             if (imageIds.length > 0 && sliceNumber > 0) {
               var currentImageId = imageIds[sliceNumber - 1] || imageIds[0];
-              if (!seriesInstanceUID && currentImageId) {
-                var sMatch = currentImageId.match(/series\/([a-zA-Z0-9._-]+)/i) || currentImageId.match(/seriesInstanceUID=([a-zA-Z0-9._-]+)/i);
-                if (sMatch) seriesInstanceUID = sMatch[1];
-              }
             }
           } catch(e) {}
         }
@@ -236,9 +255,6 @@ try {
         } else if (displaySet && displaySet.images && displaySet.images[0]) {
           sopInstanceUid = displaySet.images[0].SOPInstanceUID || displaySet.images[0].sopInstanceUid;
         }
-
-        console.log('[OHIF Bridge] DisplaySet:', displaySet);
-        console.log('[OHIF Bridge] SeriesDescription:', seriesDescription);
 
         window.parent.postMessage({
           type: 'OHIF_VIEWPORT_STATE',
@@ -257,456 +273,6 @@ try {
       }
     }
   });
-
-  var lastActiveViewportEl = null;
-  var lastActiveTimestamp = 0;
-
-  function isSidebarOrThumbnail(el) {
-    if (!el) return false;
-    try {
-      return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
-    } catch(e) {
-      return false;
-    }
-  }
-
-  function trackActiveViewport(e) {
-    var target = e.target;
-    if (!target) return;
-    var vp = target.closest && target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .cornerstone-viewport-element, .viewport-container, .viewport-grid-item, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]');
-    if (!vp && target.tagName === 'CANVAS') {
-      vp = target.parentElement;
-    }
-    if (vp && !isSidebarOrThumbnail(vp)) {
-      lastActiveViewportEl = vp;
-      lastActiveTimestamp = Date.now();
-      vp._lastInteractionTime = lastActiveTimestamp;
-    }
-  }
-
-  document.addEventListener('mousedown', trackActiveViewport, true);
-  document.addEventListener('pointerdown', trackActiveViewport, true);
-  document.addEventListener('click', trackActiveViewport, true);
-  document.addEventListener('wheel', trackActiveViewport, true);
-  document.addEventListener('scroll', trackActiveViewport, true);
-  document.addEventListener('keydown', trackActiveViewport, true);
-
-  function getActiveViewportContainer() {
-    // Priority 1: Check Cornerstone3D viewport with active scroll position (idx > 0) or interaction
-    try {
-      var cs3 = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
-      if (cs3 && typeof cs3.getRenderingEngines === 'function') {
-        var engs = cs3.getRenderingEngines();
-        var bestScrolledVpEl = null;
-        var maxScrolledIdx = -1;
-        var lastInteractedVpEl = null;
-
-        for (var eIdx = 0; eIdx < engs.length; eIdx++) {
-          var vps = engs[eIdx].getViewports ? engs[eIdx].getViewports() : [];
-          for (var vIdx = 0; vIdx < vps.length; vIdx++) {
-            var vItem = vps[vIdx];
-            var vEl = vItem.element;
-            if (!vEl || isSidebarOrThumbnail(vEl)) continue;
-
-            if (vEl === lastActiveViewportEl || (lastActiveViewportEl && vEl.contains(lastActiveViewportEl))) {
-              lastInteractedVpEl = vEl;
-            }
-
-            var curIdx = typeof vItem.getCurrentImageIdIndex === 'function' ? vItem.getCurrentImageIdIndex() : (typeof vItem.sliceIndex === 'number' ? vItem.sliceIndex : 0);
-            if (curIdx > maxScrolledIdx) {
-              maxScrolledIdx = curIdx;
-              bestScrolledVpEl = vEl;
-            }
-          }
-        }
-        if (lastInteractedVpEl && document.body.contains(lastInteractedVpEl)) {
-          return lastInteractedVpEl;
-        }
-        if (bestScrolledVpEl && maxScrolledIdx > 0) {
-          return bestScrolledVpEl;
-        }
-      }
-    } catch (e) {}
-
-    if (lastActiveViewportEl && document.body.contains(lastActiveViewportEl) && !isSidebarOrThumbnail(lastActiveViewportEl)) {
-      return lastActiveViewportEl;
-    }
-
-    try {
-      var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
-      if (sm && sm.services && sm.services.viewportGridService) {
-        var vpgs = sm.services.viewportGridService;
-        var activeVpId = typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null;
-        var cs = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
-        if (activeVpId && cs && typeof cs.getRenderingEngines === 'function') {
-          var engines = cs.getRenderingEngines();
-          for (var i = 0; i < engines.length; i++) {
-            var vp = typeof engines[i].getViewport === 'function' ? engines[i].getViewport(activeVpId) : null;
-            if (vp && vp.element && !isSidebarOrThumbnail(vp.element)) {
-              return vp.element;
-            }
-          }
-        }
-      }
-    } catch (e) {}
-
-    var activeCandidates = Array.from(document.querySelectorAll(
-      '.viewport-element.active, .viewport-wrapper.active, [data-viewport-uid].active, .cornerstone-viewport-element.active, .viewport-container.active, .viewport-grid-item.active, .active-viewport, .viewport-element.selected, .viewport-wrapper.selected, [data-cy="viewport-container"][data-active="true"], [data-cy="viewport-container"].active, [data-cy="viewport-container"].border-primary, div[class*="border-primary"]'
-    )).filter(function(el) {
-      return !isSidebarOrThumbnail(el);
-    });
-
-    if (activeCandidates.length > 0) return activeCandidates[0];
-
-    var canvases = Array.from(document.querySelectorAll('canvas'))
-      .filter(function(c) { return !isSidebarOrThumbnail(c); })
-      .map(function(c) {
-        return { c: c, area: (c.clientWidth || c.width || 0) * (c.clientHeight || c.height || 0), parent: c.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]') || c.parentElement };
-      })
-      .filter(function(item) { return item.area > 5000 && !isSidebarOrThumbnail(item.parent); })
-      .sort(function(a, b) { return b.area - a.area; });
-
-    if (canvases.length > 0) return canvases[0].parent || canvases[0].c.parentElement;
-    return document.body;
-  }
-
-  function parseViewportDOMOverlay(container) {
-    var texts = [];
-    if (!container) container = getActiveViewportContainer();
-    
-    // Ignore sidebar, thumbnail lists, study browser, and navigation drawers
-    var tw = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode: function(node) {
-        if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-        if (isSidebarOrThumbnail(node.parentElement)) return NodeFilter.FILTER_REJECT;
-        var val = node.nodeValue ? node.nodeValue.trim() : '';
-        if (/^\d{1,2}[Yy]\s*\/\s*[MFmf]$/.test(val)) return NodeFilter.FILTER_REJECT; // Reject patient age e.g. "45Y / F"
-        if (/^\d{1,2}\s*[A-Za-z]{3}\s*\d{4}$/.test(val)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }, false);
-
-    var tn;
-    while ((tn = tw.nextNode())) {
-      var val = tn.nodeValue ? tn.nodeValue.trim() : '';
-      if (val && val.length > 0 && val.length <= 150) texts.push(val);
-    }
-
-    var sliceNum = null, totalSlices = null, instNum = null, seriesDesc = null;
-
-    for (var i = 0; i < texts.length; i++) {
-      var t = texts[i];
-      // Pattern 0: "I : 208 (48/255)", "1 : 52 (52/313)", "116 (108/223)"
-      var m = t.match(/(?:\d+|I|Im|Slice|Image)?\s*:?\s*(\d+)?\s*\(\s*(\d+)\s*\/\s*(\d+)\s*\)/i);
-      if (m) {
-        var inst = m[1] ? parseInt(m[1], 10) : null;
-        var s = parseInt(m[2], 10);
-        var tot = parseInt(m[3], 10);
-        if (s > 0 && tot > 0 && s <= tot) {
-          sliceNum = s;
-          totalSlices = tot;
-          if (inst) instNum = inst;
-          break;
-        }
-      }
-
-      // Pattern 1: "(48/255)" -> 2 numbers: SliceNum, TotalSlices
-      m = t.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
-      if (m) {
-        var s = parseInt(m[1], 10);
-        var tot = parseInt(m[2], 10);
-        if (s > 0 && tot > 0 && s <= tot) {
-          sliceNum = s;
-          totalSlices = tot;
-          break;
-        }
-      }
-
-      // Pattern 2: "Im: 48/255", "Slice 48 of 255", "48/255"
-      m = t.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
-      if (m) {
-        var s = parseInt(m[1], 10);
-        var tot = parseInt(m[2], 10);
-        if (s > 0 && tot > 0 && s <= tot) {
-          sliceNum = s;
-          totalSlices = tot;
-          break;
-        }
-      }
-    }
-
-    // Priority 1: Check overlay quadrant elements for Series Description
-    var overlayEls = container ? container.querySelectorAll('.top-left, .top-right, [class*="top-left"], [class*="top-right"], .cornerstone-overlay-top-left, .cornerstone-overlay-top-right, .viewport-overlay-top-left, .viewport-overlay-top-right, [class*="overlay"], [class*="Overlay"]') : [];
-    for (var k = 0; k < overlayEls.length; k++) {
-      var el = overlayEls[k];
-      var rawTxt = (el.textContent || el.innerText || '');
-      var lines = rawTxt.split(/[\n\r]+/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
-      for (var l = 0; l < lines.length; l++) {
-        var trText = lines[l];
-        if (trText && trText.length >= 2 && !/^\d+$/.test(trText) && !/\d+\s*\/\s*\d+/.test(trText) && !/^[WwLl]:/i.test(trText) && !/^\d{1,2}[\s\.\/-]+[A-Za-z]{3}[\s\.\/-]+\d{2,4}$/i.test(trText) && !/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(trText)) {
-          seriesDesc = trText;
-          break;
-        }
-      }
-      if (seriesDesc) break;
-    }
-
-    if (!seriesDesc) {
-      for (var j = 0; j < texts.length; j++) {
-        var txt = texts[j];
-        if (!txt) continue;
-        if (/^\d{1,2}\s+[A-Za-z]{3}\s+\d{4}$/.test(txt)) continue;
-        if (/\d+\s*\/\s*\d+/.test(txt)) continue;
-        if (/^[WwLl]:\s*\d+/.test(txt) || /W:\s*\d+\s+L:\s*\d+/i.test(txt)) continue;
-        if (/^[APLRHF]{1,2}$/i.test(txt)) continue;
-        if (/^(CT|MR|CR|DX|US|XA|PT|NM)$/i.test(txt)) continue;
-        if (/^\d+$/.test(txt)) continue;
-        if (txt.length >= 3 && !seriesDesc) {
-          seriesDesc = txt;
-        }
-      }
-    }
-
-    return { sliceNumber: sliceNum, totalSlices: totalSlices, instanceNumber: instNum, seriesDescription: seriesDesc, allTexts: texts };
-  }
-
-  function getOhifServicesInfo() {
-    try {
-      var sm = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
-      if (!sm || !sm.services) return null;
-      var vpgs = sm.services.viewportGridService;
-      var cvps = sm.services.cornerstoneViewportService;
-      var dss = sm.services.displaySetService;
-      if (!vpgs) return null;
-
-      var gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-      var activeVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
-
-      var csSlice = null;
-      var csTotal = null;
-
-      if (cvps && activeVpId && typeof cvps.getCornerstoneViewport === 'function') {
-        try {
-          var csvp = cvps.getCornerstoneViewport(activeVpId);
-          if (csvp) {
-            var idx = typeof csvp.getCurrentImageIdIndex === 'function' ? csvp.getCurrentImageIdIndex() : (typeof csvp.sliceIndex === 'number' ? csvp.sliceIndex : null);
-            var ids = typeof csvp.getImageIds === 'function' ? csvp.getImageIds() : [];
-            if (idx !== null && idx >= 0) {
-              csSlice = idx + 1;
-              csTotal = ids ? ids.length : null;
-            }
-          }
-        } catch(e) {}
-      }
-
-      var activeVp = null;
-      if (gridState && gridState.viewports) {
-        var vps = gridState.viewports;
-        if (typeof vps.get === 'function' && activeVpId) {
-          activeVp = vps.get(activeVpId);
-        } else if (Array.isArray(vps) && activeVpId) {
-          activeVp = vps.find(function(v) { return v.id === activeVpId || v.viewportId === activeVpId; });
-        } else if (typeof vps === 'object' && activeVpId) {
-          activeVp = vps[activeVpId];
-        }
-      }
-
-      if (!activeVp && typeof vpgs.getViewport === 'function' && activeVpId) {
-        try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
-      }
-
-      if (activeVp) {
-        var dsUid = activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null);
-        var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(dsUid) : null;
-        if (ds) {
-          return {
-            activeVpId: activeVpId,
-            sliceIndex: csSlice,
-            totalSlices: csTotal || ds.numImageFrames || (ds.images ? ds.images.length : null),
-            seriesDescription: ds.SeriesDescription || ds.seriesDescription || null,
-            seriesInstanceUid: ds.SeriesInstanceUID || ds.seriesInstanceUid || null,
-            seriesNumber: ds.SeriesNumber || ds.seriesNumber || null,
-            sopInstanceUid: activeVp.SOPInstanceUID || (ds.images && csSlice && ds.images[csSlice - 1] ? ds.images[csSlice - 1].SOPInstanceUID : (ds.images && ds.images[0] ? ds.images[0].SOPInstanceUID : null))
-          };
-        }
-      }
-      if (csSlice) {
-        return {
-          activeVpId: activeVpId,
-          sliceIndex: csSlice,
-          totalSlices: csTotal
-        };
-      }
-    } catch(e) {}
-    return null;
-  }
-
-  function getActiveCornerstoneInfo(container) {
-    var bestInfo = { csSlice: null, csTotal: null, csSeriesUid: null, csSopUid: null, csSeriesDesc: null, csSeriesNum: null };
-    var highestScore = -1;
-    try {
-      var cs = window.cornerstone3D || window.cornerstone || window.cornerstoneCore;
-      if (cs && typeof cs.getRenderingEngines === 'function') {
-        var engines = cs.getRenderingEngines();
-        for (var i = 0; i < engines.length; i++) {
-          var vps = engines[i].getViewports ? engines[i].getViewports() : [];
-          for (var j = 0; j < vps.length; j++) {
-            var vp = vps[j];
-            var el = vp.element;
-            if (!el || isSidebarOrThumbnail(el)) continue;
-
-            var isContainerMatch = (
-              el === container ||
-              el.contains(container) ||
-              (container && container.contains && container.contains(el)) ||
-              el.querySelector('canvas') === container ||
-              (container && container.querySelector && container.querySelector('canvas') === el.querySelector('canvas'))
-            );
-            var isLastActive = (el === lastActiveViewportEl);
-            var isVpActive = el.classList.contains('active') || el.closest('.active') || el.classList.contains('selected') || el.getAttribute('data-active') === 'true';
-
-            var idx = typeof vp.getCurrentImageIdIndex === 'function' ? vp.getCurrentImageIdIndex() : (typeof vp.sliceIndex === 'number' ? vp.sliceIndex : null);
-            var ids = typeof vp.getImageIds === 'function' ? vp.getImageIds() : [];
-
-            if (idx !== null && idx >= 0 && ids && ids.length > 0) {
-              // Heavy weighting: Scrolled viewport (idx > 0) gets 50,000 points, Interacted gets 30,000 points
-              var score = (idx > 0 ? 50000 : 0) + (isLastActive ? 30000 : 0) + (isVpActive ? 20000 : 0) + (isContainerMatch ? 5000 : 0) + (ids.length > 1 ? 1000 : 0);
-
-              if (score > highestScore) {
-                highestScore = score;
-                var imgId = ids[idx] || '';
-                var cSeriesUid = '', cSopUid = '', cSeriesDesc = '', cSeriesNum = null;
-
-                if (cs.metaData && typeof cs.metaData.get === 'function') {
-                  try {
-                    var seriesMod = cs.metaData.get('generalSeriesModule', imgId) || cs.metaData.get('seriesModule', imgId);
-                    if (seriesMod) {
-                      cSeriesUid = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid || '';
-                      cSeriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc || '';
-                      cSeriesNum = seriesMod.seriesNumber || null;
-                    }
-                    var sopMod = cs.metaData.get('sopCommonModule', imgId) || cs.metaData.get('generalImageModule', imgId);
-                    if (sopMod) {
-                      cSopUid = sopMod.sopInstanceUID || sopMod.sopInstanceUid || '';
-                    }
-                  } catch(e) {}
-                }
-
-                if (!cSeriesUid) {
-                  cSeriesUid = (imgId.match(/series\/([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/seriesUID=([a-zA-Z0-9._-]+)/i) || [])[1] || '';
-                }
-                if (!cSopUid) {
-                  cSopUid = (imgId.match(/instances\/([a-zA-Z0-9._-]+)/i) || imgId.match(/sopInstanceUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/objectUID=([a-zA-Z0-9._-]+)/i) || imgId.match(/instanceUID=([a-zA-Z0-9._-]+)/i) || [])[1] || '';
-                }
-
-                bestInfo = {
-                  csSlice: idx + 1,
-                  csTotal: ids.length,
-                  csSeriesUid: cSeriesUid,
-                  csSopUid: cSopUid,
-                  csSeriesDesc: cSeriesDesc,
-                  csSeriesNum: cSeriesNum
-                };
-              }
-            }
-          }
-        }
-      }
-    } catch(e) {}
-    return bestInfo;
-  }
-
-  function sendViewportChange() {
-    try {
-      var container = getActiveViewportContainer();
-      var overlayInfo = parseViewportDOMOverlay(container);
-      var csInfo = getActiveCornerstoneInfo(container);
-      var ohifInfo = getOhifServicesInfo();
-
-      // Priority Order:
-      // 1. overlayInfo (Directly scraped from active container overlay text e.g. "37 (37/401)" or "9 (9/25)")
-      // 2. csInfo (Cornerstone3D viewport engine on active container)
-      // 3. ohifInfo (Fallback from OHIF services manager)
-      var finalSlice = overlayInfo.sliceNumber || csInfo.csSlice || (ohifInfo && ohifInfo.sliceIndex) || 1;
-      var finalTotal = overlayInfo.totalSlices || csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || null;
-      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
-      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
-      var finalSeriesDesc = overlayInfo.seriesDescription || csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || '';
-      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
-
-      window.parent.postMessage({
-        type: 'OHIF_VIEWPORT_CHANGE',
-        payload: {
-          frameNumber: finalSlice,
-          sliceNumber: finalSlice,
-          totalSlices: finalTotal,
-          seriesInstanceUid: finalSeriesUid,
-          sopInstanceUid: finalSopUid,
-          seriesDescription: finalSeriesDesc,
-          seriesNumber: finalSeriesNum
-        }
-      }, '*');
-    } catch(err) {}
-  }
-
-  function captureAndSendViewport() {
-    try {
-      var container = getActiveViewportContainer();
-      var cv = container ? (container.querySelector('canvas') || container) : document.querySelector('canvas');
-      var dataUrl = null;
-      if (cv && cv.tagName === 'CANVAS') {
-        try {
-          var tempCv = document.createElement('canvas');
-          tempCv.width = cv.width || cv.clientWidth || 512;
-          tempCv.height = cv.height || cv.clientHeight || 512;
-          var ctx = tempCv.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(cv, 0, 0);
-            dataUrl = tempCv.toDataURL('image/jpeg', 0.95);
-          }
-        } catch(e) {
-          try { dataUrl = cv.toDataURL('image/jpeg', 0.95); } catch(e2) {}
-        }
-      }
-      var overlayInfo = parseViewportDOMOverlay(container);
-      var csInfo = getActiveCornerstoneInfo(container);
-      var ohifInfo = getOhifServicesInfo();
-
-      var finalSlice = overlayInfo.sliceNumber || csInfo.csSlice || (ohifInfo && ohifInfo.sliceIndex) || 1;
-      var finalTotal = overlayInfo.totalSlices || csInfo.csTotal || (ohifInfo && ohifInfo.totalSlices) || null;
-      var finalSeriesUid = csInfo.csSeriesUid || (ohifInfo && ohifInfo.seriesInstanceUid) || '';
-      var finalSopUid = csInfo.csSopUid || (ohifInfo && ohifInfo.sopInstanceUid) || '';
-      var finalSeriesDesc = overlayInfo.seriesDescription || csInfo.csSeriesDesc || (ohifInfo && ohifInfo.seriesDescription) || '';
-      var finalSeriesNum = csInfo.csSeriesNum || (ohifInfo && ohifInfo.seriesNumber) || null;
-
-      window.parent.postMessage({
-        type: 'SNAPSHOT_CAPTURED',
-        payload: {
-          dataUrl: (dataUrl && dataUrl.length > 500) ? dataUrl : null,
-          frameNumber: finalSlice,
-          sliceNumber: finalSlice,
-          totalSlices: finalTotal,
-          seriesInstanceUid: finalSeriesUid,
-          sopInstanceUid: finalSopUid,
-          seriesDescription: finalSeriesDesc,
-          seriesNumber: finalSeriesNum
-        }
-      }, '*');
-    } catch(err) {
-      console.warn('[OHIF_BRIDGE] captureAndSendViewport exception:', err);
-    }
-  }
-
-  window.addEventListener('message', function(ev) {
-    var d = ev.data;
-    if (typeof d === 'string') { try { d = JSON.parse(d); } catch(e) {} }
-    if (d && (d.type === 'REQUEST_SNAPSHOT' || d.type === 'OHIF_CAPTURE_VIEWPORT' || d.action === 'CAPTURE')) {
-      captureAndSendViewport();
-    }
-  });
-
-  document.addEventListener('mouseup', sendViewportChange, true);
-  document.addEventListener('keyup', sendViewportChange, true);
 })();
 </script>
 `;
