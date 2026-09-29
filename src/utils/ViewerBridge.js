@@ -2,6 +2,9 @@
  * ViewerBridge.js
  * Cross-window event serializer & listener bridging OHIF v3 / Stone Viewer iframe
  * and RadiologyReportStudio / Diagnostic Workstation.
+ * 
+ * SECURITY: All postMessage events validated against strict origin checks.
+ * No wildcard ('*') targetOrigin used in sensitive transmissions.
  */
 
 export const MESSAGE_TYPES = {
@@ -10,36 +13,88 @@ export const MESSAGE_TYPES = {
   SNAPSHOT_CAPTURED: 'SNAPSHOT_CAPTURED',
   REQUEST_SNAPSHOT: 'REQUEST_SNAPSHOT',
   OHIF_CAPTURE_VIEWPORT: 'OHIF_CAPTURE_VIEWPORT',
-  VIEWPORT_CHANGE: 'OHIF_VIEWPORT_CHANGE'
+  VIEWPORT_CHANGE: 'OHIF_VIEWPORT_CHANGE',
+  KEY_IMAGE_REQUEST: 'KEY_IMAGE_REQUEST',
+  DICOM_TAGS_RECEIVED: 'DICOM_TAGS_RECEIVED'
 };
 
 /**
  * Validates postMessage event origin for security.
+ * STRICT VALIDATION: Only allows:
+ *  1. Same origin (window.location.origin)
+ *  2. Configured allowed origins (DCM4CHEE, OHIF hosts)
+ *  3. Private LAN IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+ * 
+ * @param {MessageEvent} event - postMessage event
+ * @param {string[]} allowedOrigins - Additional whitelisted origins
+ * @returns {boolean} True if origin is authorized
  */
 export function validateOrigin(event, allowedOrigins = []) {
-  if (!event) return false;
+  if (!event) {
+    console.warn('[ViewerBridge] validateOrigin: event is null/undefined');
+    return false;
+  }
+
   const currentOrigin = window.location.origin;
-  if (event.origin === currentOrigin) return true;
-  if (event.origin === 'null' || event.origin === 'file://') return true;
-  if (Array.isArray(allowedOrigins) && allowedOrigins.includes(event.origin)) return true;
+  
+  // 1. Same origin (most common, most secure)
+  if (event.origin === currentOrigin) {
+    return true;
+  }
 
-  // Allow internal LAN origins (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-  const isLanOrigin = /^http:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(event.origin);
-  if (isLanOrigin) return true;
+  // 2. Explicit whitelist match
+  if (Array.isArray(allowedOrigins) && allowedOrigins.length > 0) {
+    if (allowedOrigins.includes(event.origin)) {
+      return true;
+    }
+  }
 
+  // 3. Private LAN origins only (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  // Hospital networks typically use these ranges
+  const isPrivateLanOrigin = /^https?:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(event.origin);
+  if (isPrivateLanOrigin) {
+    return true;
+  }
+
+  // REJECTED
+  console.warn(`[ViewerBridge] Origin validation FAILED: ${event.origin}`, {
+    currentOrigin,
+    allowedCount: (allowedOrigins || []).length,
+    timestamp: new Date().toISOString()
+  });
   return false;
 }
 
 /**
  * Transmits a key image payload from inside the DICOM viewer iframe to the parent RIS window.
+ * SECURITY: Uses explicit targetOrigin, never wildcard ('*')
+ * 
+ * @param {Object} payload - Key image data (dataUrl, DICOM UIDs, slice info)
+ * @param {Window} targetWindow - Target window (default: parent)
+ * @param {string} targetOrigin - Explicit target origin (NOT '*')
+ * @returns {boolean} Success flag
  */
-export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetOrigin = '*') {
-  const { dataUrl, sopInstanceUid, seriesInstanceUid, studyInstanceUid, frameNumber, windowWidth, windowCenter, seriesDescription, caption } = payload || {};
+export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetOrigin = null) {
+  const { 
+    dataUrl, 
+    sopInstanceUid, 
+    seriesInstanceUid, 
+    studyInstanceUid, 
+    frameNumber, 
+    windowWidth, 
+    windowCenter, 
+    seriesDescription, 
+    modality,
+    caption 
+  } = payload || {};
 
   if (!dataUrl) {
     console.warn('[ViewerBridge] Cannot send key image: dataUrl is empty.');
     return false;
   }
+
+  // Default to same origin if not specified
+  const finalTargetOrigin = targetOrigin || window.location.origin;
 
   const normalizedPayload = {
     dataUrl,
@@ -50,12 +105,18 @@ export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetO
     windowWidth: windowWidth || payload.ww || null,
     windowCenter: windowCenter || payload.wc || null,
     seriesDescription: seriesDescription || payload.seriesDesc || 'Diagnostic Viewport',
+    modality: modality || payload.modality || 'CT',
     caption: caption || `${seriesDescription || 'Diagnostic Series'} | Slice ${frameNumber || 1}`,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    sourceOrigin: window.location.origin
   };
 
   try {
-    targetWindow.postMessage({ type: MESSAGE_TYPES.ADD_KEY_IMAGE, payload: normalizedPayload }, targetOrigin);
+    targetWindow.postMessage(
+      { type: MESSAGE_TYPES.ADD_KEY_IMAGE, payload: normalizedPayload },
+      finalTargetOrigin  // STRICT: explicit origin, not wildcard
+    );
+    console.log('[ViewerBridge] Key image sent to', finalTargetOrigin);
     return true;
   } catch (err) {
     console.error('[ViewerBridge] Failed to postMessage key image:', err);
@@ -65,17 +126,35 @@ export function sendKeyImageToRIS(payload, targetWindow = window.parent, targetO
 
 /**
  * Subscribes parent window (Report Studio) to viewer messages.
- * Returns an unsubscribe function.
+ * SECURITY: Validates every incoming message origin before processing.
+ * Returns an unsubscribe function for cleanup.
+ * 
+ * @param {Function} onKeyImageReceived - Callback for key image events
+ * @param {Function} onViewportStateChanged - Callback for viewport state updates
+ * @param {string[]} allowedOrigins - Whitelist of allowed iframe origins
+ * @returns {Function} Unsubscribe function
  */
 export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateChanged, allowedOrigins = []) {
   const handleMessage = (event) => {
-    if (!validateOrigin(event, allowedOrigins)) return;
+    // SECURITY: Validate origin FIRST, before processing any data
+    if (!validateOrigin(event, allowedOrigins)) {
+      console.warn(`[ViewerBridge] Message rejected from unauthorized origin: ${event.origin}`);
+      return;
+    }
 
     let data = event.data;
     if (typeof data === 'string') {
-      try { data = JSON.parse(data); } catch (e) { return; }
+      try { 
+        data = JSON.parse(data); 
+      } catch (e) { 
+        console.warn('[ViewerBridge] Failed to parse message data as JSON');
+        return; 
+      }
     }
-    if (!data || typeof data !== 'object') return;
+    if (!data || typeof data !== 'object') {
+      console.warn('[ViewerBridge] Message data is null or not an object');
+      return;
+    }
 
     // 1. ADD_KEY_IMAGE / OHIF_SNAPSHOT
     if (
@@ -86,6 +165,7 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
     ) {
       const payload = data.payload || data;
       const dataUrl = payload.dataUrl || payload.imageUrl || payload.url;
+      
       if (dataUrl && typeof onKeyImageReceived === 'function') {
         const sDesc = payload.seriesDescription || payload.seriesDesc || 'Diagnostic Series';
         const fNum = payload.frameNumber || payload.frameIndex || payload.sliceIndex || 1;
@@ -100,8 +180,13 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
           seriesInstanceUid: payload.seriesInstanceUid || payload.seriesInstanceUID,
           studyInstanceUid: payload.studyInstanceUid || payload.studyInstanceUID,
           frameNumber: fNum,
-          caption: payload.caption || `${sDesc} | ${sliceStr}`
+          modality: payload.modality || 'CT',
+          caption: payload.caption || `${sDesc} | ${sliceStr}`,
+          sourceOrigin: event.origin,
+          timestamp: payload.timestamp || Date.now()
         });
+        
+        console.log('[ViewerBridge] Key image received from', event.origin);
       }
     }
 
@@ -122,22 +207,31 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
           seriesInstanceUid: payload.seriesInstanceUid || payload.seriesInstanceUID,
           frameNumber: payload.frameNumber || payload.instanceNumber || payload.sliceIndex || payload.frameIndex || 1,
           totalSlices: payload.totalSlices || payload.total_slices || payload.numSlices || 1,
-          seriesDescription: payload.seriesDescription || payload.SeriesDescription || 'Diagnostic Viewport'
+          seriesDescription: payload.seriesDescription || payload.SeriesDescription || 'Diagnostic Viewport',
+          modality: payload.modality || 'CT',
+          sourceOrigin: event.origin,
+          timestamp: Date.now()
         });
       }
     }
   };
 
   window.addEventListener('message', handleMessage);
-  return () => window.removeEventListener('message', handleMessage);
+  console.log('[ViewerBridge] Subscribed to viewer messages');
+  
+  return () => {
+    window.removeEventListener('message', handleMessage);
+    console.log('[ViewerBridge] Unsubscribed from viewer messages');
+  };
 }
 
 /**
  * Detects active slice number, total slices, and series description.
  * 
- * Strategy A: Cornerstone3D JavaScript API (most reliable, same-origin)
- * Strategy B: Legacy cornerstoneTools stack state
- * Strategy C: DOM text parsing from LARGEST canvas overlay ONLY
+ * Strategy Priority (in order):
+ * 1. OHIF v3 Services Manager (most reliable for OHIF Viewer)
+ * 2. Cornerstone3D JavaScript API (fallback for direct CS3D usage)
+ * 3. DOM text overlay parsing (last resort, least reliable)
  */
 export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], hintSeriesId = null) {
   if (!iframeDoc) return null;
@@ -149,7 +243,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     const isSidebarOrThumbnail = (el) => {
       if (!el) return false;
       try {
-        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, aside, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"], [class*="sidebar"], [class*="Sidebar"], [class*="StudyBrowser"], [data-cy*="study-browser"], [data-cy*="thumbnail"]'));
+        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, aside, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"]'));
       } catch(e) {
         return false;
       }
@@ -164,7 +258,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
           if (!target) return;
           const cv = target.tagName === 'CANVAS' ? target : (target.querySelector ? target.querySelector('canvas') : null);
           if (cv && !isSidebarOrThumbnail(cv)) iframeDoc._lastActiveCanvas = cv;
-          const vpEl = target.closest ? target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') : null;
+          const vpEl = target.closest ? target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]') : null;
           if (vpEl && !isSidebarOrThumbnail(vpEl)) iframeDoc._lastActiveViewport = vpEl;
         } catch (e) {
           /* ignore interaction tracking error */
@@ -195,7 +289,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       if (iframeDoc.activeElement && (el === iframeDoc.activeElement || el.contains(iframeDoc.activeElement))) return true;
       if (ohifActiveVpId && (el.getAttribute('data-viewport-uid') === ohifActiveVpId || el.id === ohifActiveVpId || el.getAttribute('data-cy')?.includes(ohifActiveVpId))) return true;
 
-      if (el.classList.contains('active') || el.classList.contains('focused') || el.classList.contains('selected') || el.classList.contains('active-viewport') || el.classList.contains('border-primary') || el.getAttribute('data-active') === 'true' || el.getAttribute('data-is-active') === 'true') return true;
+      if (el.classList.contains('active') || el.classList.contains('focused') || el.classList.contains('selected') || el.classList.contains('active-viewport') || el.classList.contains('border-primary')) return true;
 
       try {
         const style = iframeWin.getComputedStyle ? iframeWin.getComputedStyle(el) : null;
@@ -294,7 +388,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
         const activeCanvas = csvp?.element?.querySelector('canvas') || null;
 
         if (csSlice || seriesUid || seriesDesc) {
-          console.log("🚨 [VIEWERBRIDGE] Strategy 0 (OHIF Services) -> Matched active series:", matchedSeriesObj?.series_description || seriesDesc, "slice:", csSlice, "/", csTotal);
+          console.log("✅ [VIEWERBRIDGE] Strategy 0 (OHIF Services) -> Matched active series:", matchedSeriesObj?.series_description || seriesDesc, "slice:", csSlice, "/", csTotal);
           return {
             instanceNumber: csSlice || null,
             sliceNumber: csSlice || 1,
@@ -408,7 +502,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
         }
 
         if (bestCSResult && highestScore > 0) {
-          console.log("🚨 [VIEWERBRIDGE] Strategy 1 (Cornerstone3D API) -> Matched active series:", bestCSResult.seriesDescription || bestCSResult.matchedSeriesId, "slice:", bestCSResult.sliceNumber);
+          console.log("✅ [VIEWERBRIDGE] Strategy 1 (Cornerstone3D API) -> Matched active series:", bestCSResult.seriesDescription || bestCSResult.matchedSeriesId, "slice:", bestCSResult.sliceNumber);
           return bestCSResult;
         }
       }
@@ -419,7 +513,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     if (iframeDoc._lastActiveViewport && !isSidebarOrThumbnail(iframeDoc._lastActiveViewport)) {
       activeContainer = iframeDoc._lastActiveViewport;
     } else if (iframeDoc._lastActiveCanvas && !isSidebarOrThumbnail(iframeDoc._lastActiveCanvas)) {
-      activeContainer = iframeDoc._lastActiveCanvas.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || iframeDoc._lastActiveCanvas.parentElement;
+      activeContainer = iframeDoc._lastActiveCanvas.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]');
     }
 
     if (!activeContainer) {
@@ -433,7 +527,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     }
 
     if (activeContainer && activeContainer.tagName === 'CANVAS') {
-      activeContainer = activeContainer.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]') || activeContainer.parentElement;
+      activeContainer = activeContainer.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]');
     }
 
     if (!activeContainer || isSidebarOrThumbnail(activeContainer)) return null;
@@ -550,7 +644,7 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
     }
 
     if (sliceNumber || matchedSeriesObj || dynamicSeriesDesc) {
-      console.log("🚨 [VIEWERBRIDGE] Strategy 2 (Active DOM Overlay) -> Matched active series:", matchedSeriesObj?.series_description || dynamicSeriesDesc || "NONE", "slice:", sliceNumber, "/", totalSlices);
+      console.log("✅ [VIEWERBRIDGE] Strategy 2 (Active DOM Overlay) -> Matched active series:", matchedSeriesObj?.series_description || dynamicSeriesDesc || "NONE", "slice:", sliceNumber);
       return {
         instanceNumber: instanceNumber || sliceNumber || 1,
         sliceNumber: sliceNumber || 1,
@@ -567,6 +661,10 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
   return null;
 }
 
+/**
+ * Find a matching series from the study series list.
+ * Attempts multiple matching strategies with fallback priorities.
+ */
 export function findSeriesInList(studySeriesList = [], target, hintSliceNum = null, hintTotalSlices = null, hintActiveSeriesId = null) {
   if (!Array.isArray(studySeriesList) || studySeriesList.length === 0) {
     return target ? { series_id: 'synthetic', series_description: String(target), total_slices: hintTotalSlices || 1 } : null;
@@ -686,27 +784,37 @@ export function findSeriesInList(studySeriesList = [], target, hintSliceNum = nu
 /**
  * Trigger active viewer viewport capture from parent window to iframe.
  * Uses OHIF PostMessage State Bridge to query active viewport directly.
+ * 
+ * @param {string|Element} iframeSelector - CSS selector or iframe element
+ * @param {Array} studySeriesList - Available study series for matching
+ * @returns {Promise} Resolves to viewport snapshot result
  */
 export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeriesList = []) {
-  console.log("🚨 [ViewerBridge] STATE: Requesting viewer snapshot via PostMessage bridge...");
+  console.log("📸 [ViewerBridge] Requesting viewer snapshot via PostMessage bridge...");
   return new Promise((resolve) => {
     const iframeEl = typeof iframeSelector === 'string' ? document.querySelector(iframeSelector) : iframeSelector;
     if (!iframeEl || !iframeEl.contentWindow) {
-      console.warn("🚨 [ViewerBridge] No iframe element found.");
+      console.warn("⚠️ [ViewerBridge] No iframe element found.");
       return resolve({ status: "failed", reason: "No iframe found" });
     }
 
     const listener = (event) => {
+      // Validate origin of response
+      if (!validateOrigin(event)) {
+        console.warn(`⚠️ [ViewerBridge] Snapshot response from unauthorized origin: ${event.origin}`);
+        return;
+      }
+
       if (event.data && event.data.type === 'OHIF_VIEWPORT_STATE') {
         window.removeEventListener('message', listener);
         
         if (event.data.error) {
-          console.warn("🚨 [ViewerBridge] OHIF returned state error:", event.data.error);
+          console.warn("⚠️ [ViewerBridge] OHIF returned state error:", event.data.error);
           return resolve({ status: "failed", reason: event.data.error });
         }
 
         const ohifData = event.data;
-        console.log("🚨 [ViewerBridge] OHIF_VIEWPORT_STATE received:", ohifData);
+        console.log("✅ [ViewerBridge] OHIF_VIEWPORT_STATE received:", ohifData);
 
         let matchedSeriesObj = (studySeriesList || []).find(s => 
           String(s.series_instance_uid) === String(ohifData.seriesInstanceUID) ||
@@ -728,9 +836,10 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
           sliceNumber: ohifData.sliceNumber || 1,
           totalSlices: ohifData.totalSlices || 1,
           sopInstanceUid: ohifData.sopInstanceUid || null,
-          modality: ohifData.modality || "CT"
+          modality: ohifData.modality || "CT",
+          timestamp: Date.now()
         };
-        console.log("🚨 [ViewerBridge] Resolved snapshot result:", result);
+        console.log("✅ [ViewerBridge] Resolved snapshot result:", result);
         resolve(result);
       }
     };
@@ -738,14 +847,19 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
     window.addEventListener('message', listener);
     
     try {
-      iframeEl.contentWindow.postMessage({ type: 'OHIF_GET_ACTIVE_VIEWPORT' }, '*');
+      // Use explicit targetOrigin (iframe's origin) for security
+      iframeEl.contentWindow.postMessage(
+        { type: 'OHIF_GET_ACTIVE_VIEWPORT' }, 
+        iframeEl.src ? new URL(iframeEl.src).origin : window.location.origin
+      );
     } catch (e) {
-      console.warn("🚨 [ViewerBridge] postMessage failed:", e);
+      console.warn("⚠️ [ViewerBridge] postMessage failed:", e);
     }
 
+    // Timeout after 2 seconds
     setTimeout(() => {
       window.removeEventListener('message', listener);
-      console.warn("🚨 [ViewerBridge] OHIF postMessage timeout after 2000ms");
+      console.warn("⏱️ [ViewerBridge] OHIF postMessage timeout after 2000ms");
       resolve({ status: "failed", reason: "OHIF timeout" });
     }, 2000);
   });
