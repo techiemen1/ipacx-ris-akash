@@ -489,6 +489,7 @@ app.use("/api/mwl-settings", checkRole("ADMIN"), mwlSettingsRoutes);
 app.use("/api/clinics", clinicsRoutes);
 
 const reportsRoutes = require("./routes/reports");
+app.use("/api", reportsRoutes);
 app.use("/", reportsRoutes);
 
 const patientsRoutes = require("./routes/patients");

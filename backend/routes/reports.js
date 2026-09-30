@@ -75,7 +75,7 @@ const upload = multer({
 // ======================================================
 // UPLOAD REPORT IMAGES
 // ======================================================
-router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
+router.post(["/api/reports/upload", "/reports/upload"], upload.array("images", 10), (req, res) => {
   try {
     const paths = req.files.map((f) => `/uploads/report_images/${f.filename}`);
     res.json({ success: true, paths });
@@ -88,7 +88,7 @@ router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
 // ======================================================
 // GET STUDY + REPORT BY STUDY UID
 // ======================================================
-router.get("/api/study-report/:uid", async (req, res) => {
+router.get(["/api/study-report/:uid", "/study-report/:uid"], async (req, res) => {
   try {
     const data = await reportService.getStudyReportByUid(req, req.params.uid);
     res.json(data);
@@ -104,7 +104,7 @@ router.get("/api/study-report/:uid", async (req, res) => {
 // ======================================================
 // GET STUDY DETAILS BY UID (PACS Proxy)
 // ======================================================
-router.get("/api/studies/:uid", async (req, res) => {
+router.get(["/api/studies/:uid", "/studies/:uid"], async (req, res) => {
   try {
     const uid = req.params.uid;
     const find = await axios.post(
@@ -151,7 +151,7 @@ router.get("/api/studies/:uid", async (req, res) => {
 // ======================================================
 // GET ALL REPORTS
 // ======================================================
-router.get("/api/reports", async (req, res) => {
+router.get(["/api/reports", "/reports"], async (req, res) => {
   try {
     const reports = await reportService.getAllReports(req);
     res.json(reports);
@@ -177,13 +177,13 @@ const saveReportHandler = async (req, res) => {
   }
 };
 
-router.post("/api/reports/save", saveReportHandler);
-router.post("/api/reports", saveReportHandler);
+router.post(["/api/reports/save", "/reports/save"], saveReportHandler);
+router.post(["/api/reports", "/reports"], saveReportHandler);
 
 // ======================================================
 // GET REPORT BY STUDY UID
 // ======================================================
-router.get("/api/reports/by-study/:uid", async (req, res) => {
+router.get(["/api/reports/by-study/:uid", "/reports/by-study/:uid"], async (req, res) => {
   try {
     const reportData = await reportService.getReportByStudyUid(req, req.params.uid);
     res.json(reportData);
@@ -196,7 +196,7 @@ router.get("/api/reports/by-study/:uid", async (req, res) => {
 // ======================================================
 // SAVE ADDENDUM REASON
 // ======================================================
-router.post("/api/addendum/save-reason", async (req, res) => {
+router.post(["/api/addendum/save-reason", "/addendum/save-reason"], async (req, res) => {
   try {
     const id = await reportService.saveAddendumReason(req);
     res.json({ success: true, id });
@@ -212,7 +212,7 @@ router.post("/api/addendum/save-reason", async (req, res) => {
 // ======================================================
 // GET PDF BY REPORT ID
 // ======================================================
-router.get("/api/reports/:id/pdf", async (req, res) => {
+router.get(["/api/reports/:id/pdf", "/reports/:id/pdf"], async (req, res) => {
   try {
     const reportData = await reportRepository.findReportForPdf(req.params.id, req);
     const pdfPath = await reportService.generateReportPdf(req, req.params.id, false);
@@ -237,7 +237,7 @@ router.get("/api/reports/:id/pdf", async (req, res) => {
 // ======================================================
 // GET PDF BY STUDY UID
 // ======================================================
-router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
+router.get(["/api/reports/study/:studyUid/pdf", "/reports/study/:studyUid/pdf"], async (req, res) => {
   try {
     const reportData = await reportRepository.findReportForStudyPdf(req.params.studyUid, req.query.type, req);
     const pdfPath = await reportService.generateStudyReportPdf(req, req.params.studyUid, req.query.type);
@@ -263,7 +263,7 @@ router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
 // ======================================================
 // PRINT PDF
 // ======================================================
-router.get("/api/reports/:id/pdf/print", async (req, res) => {
+router.get(["/api/reports/:id/pdf/print", "/reports/:id/pdf/print"], async (req, res) => {
   try {
     const pdfPath = await reportService.generateReportPdf(req, req.params.id, true);
     res.contentType("application/pdf").sendFile(path.resolve(pdfPath));
@@ -279,7 +279,7 @@ router.get("/api/reports/:id/pdf/print", async (req, res) => {
 // ======================================================
 // DELETE REPORT
 // ======================================================
-router.delete("/api/reports/:id", async (req, res) => {
+router.delete(["/api/reports/:id", "/reports/:id"], async (req, res) => {
   try {
     await reportService.deleteReport(req, req.params.id);
     res.json({ success: true, message: "Report deleted successfully" });
@@ -295,7 +295,7 @@ router.delete("/api/reports/:id", async (req, res) => {
 // ======================================================
 // SAVE KEY IMAGES FOR STUDY / REPORT
 // ======================================================
-router.post("/api/studies/:studyId/key-images", async (req, res) => {
+router.post(["/api/studies/:studyId/key-images", "/studies/:studyId/key-images"], async (req, res) => {
   try {
     const studyId = req.params.studyId;
     const keyImages = req.body.keyImages || req.body.images || req.body.snapshots || [];
@@ -310,7 +310,7 @@ router.post("/api/studies/:studyId/key-images", async (req, res) => {
   }
 });
 
-router.post("/api/v1/reports/:id/key-images", async (req, res) => {
+router.post(["/api/v1/reports/:id/key-images", "/v1/reports/:id/key-images"], async (req, res) => {
   try {
     const reportId = req.params.id;
     const report = await reportService.findReportForPdf(req, reportId);
@@ -327,7 +327,7 @@ router.post("/api/v1/reports/:id/key-images", async (req, res) => {
 });
 
 // GET PRIOR STUDIES FOR PATIENT
-router.get("/api/reports/priors/:patientId", async (req, res) => {
+router.get(["/api/reports/priors/:patientId", "/reports/priors/:patientId"], async (req, res) => {
   try {
     const priors = await reportService.getPatientPriorStudies(req.params.patientId, req.query.currentUid);
     res.json({ success: true, priors });
@@ -342,7 +342,7 @@ router.get("/api/reports/priors/:patientId", async (req, res) => {
 // ======================================================
 const reportingLockManager = require("../utils/reportingLockManager");
 
-router.post("/api/reports/session/lock", (req, res) => {
+router.post(["/api/reports/session/lock", "/reports/session/lock"], (req, res) => {
   try {
     const { studyUID } = req.body;
     const user = req.user || { id: req.body.userId || 'user_1', name: req.body.doctorName || 'Radiologist' };
@@ -354,7 +354,7 @@ router.post("/api/reports/session/lock", (req, res) => {
   }
 });
 
-router.post("/api/reports/session/heartbeat", (req, res) => {
+router.post(["/api/reports/session/heartbeat", "/reports/session/heartbeat"], (req, res) => {
   try {
     const { studyUID } = req.body;
     const userId = req.user?.id || req.body.userId || 'user_1';
@@ -365,7 +365,7 @@ router.post("/api/reports/session/heartbeat", (req, res) => {
   }
 });
 
-router.post("/api/reports/session/unlock", (req, res) => {
+router.post(["/api/reports/session/unlock", "/reports/session/unlock"], (req, res) => {
   try {
     const { studyUID } = req.body;
     const userId = req.user?.id || req.body.userId || 'user_1';
@@ -376,7 +376,7 @@ router.post("/api/reports/session/unlock", (req, res) => {
   }
 });
 
-router.get("/api/reports/session/active-locks", (req, res) => {
+router.get(["/api/reports/session/active-locks", "/reports/session/active-locks"], (req, res) => {
   try {
     const locks = reportingLockManager.getActiveLocks();
     res.json({ success: true, locks });
