@@ -953,73 +953,52 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     const iframeEl = findDicomViewerIframe();
     if (iframeEl) injectOHIFBridge(iframeEl);
 
-    // 1. Live DOM overlay detection from OHIF iframe
+    // 1. Live DOM & postMessage active viewport detection
+    const liveDataUrl = captureActiveViewportCanvas();
     const domDetected = detectViewportSliceInfoFromDOM(studySeriesList);
-    // Prioritize explicit user UI selection (overrideSeriesId || selectedSeriesId) over DOM detection or background activeSeriesId
-    const targetSeriesId = overrideSeriesId || selectedSeriesId || (domDetected?.series?.series_id || domDetected?.series?.series_instance_uid) || activeSeriesId || null;
 
-    console.log("🔍 [TRACE 3] SelectedSeriesId & Target:", {
-      overrideSeriesId,
-      selectedSeriesId,
-      domDetectedSeries: domDetected?.series?.series_description || domDetected?.series?.series_id || null,
-      activeSeriesId,
-      finalTargetSeriesId: targetSeriesId
-    });
-
-    let seriesObj = null;
-    if (targetSeriesId) {
-      seriesObj = (studySeriesList || []).find(s => 
-        String(s.series_id) === String(targetSeriesId) || 
-        String(s.series_instance_uid) === String(targetSeriesId) ||
-        String(s.orthanc_series_id) === String(targetSeriesId)
-      );
+    let activeSeriesFromBridge = null;
+    if (activeViewportInfo?.seriesInstanceUid || activeViewportInfo?.seriesDescription) {
+      activeSeriesFromBridge = findSeriesInList(studySeriesList, activeViewportInfo.seriesInstanceUid || activeViewportInfo.seriesDescription);
     }
 
-    if (!seriesObj && domDetected?.series) {
-      seriesObj = domDetected.series;
-    }
+    const detectedSeriesObj = domDetected?.series || activeSeriesFromBridge || null;
 
-    if (!seriesObj) {
-      seriesObj = (studySeriesList || []).find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || "")) || (studySeriesList || [])[0];
-    }
+    // Prioritize active series open in active viewport on screen unless overrideSeriesId is explicitly passed
+    const seriesObj = overrideSeriesId
+      ? (studySeriesList || []).find(s => String(s.series_id) === String(overrideSeriesId) || String(s.series_instance_uid) === String(overrideSeriesId))
+      : (detectedSeriesObj || (selectedSeriesId ? (studySeriesList || []).find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) : null) || (studySeriesList || [])[0]);
 
     if (!seriesObj) {
       if (forceModal) setShowSlicePickerModal(true);
       return;
     }
 
-    const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
-    const sliceNumber = (domDetected && domDetected.sliceNumber)
-      ? domDetected.sliceNumber
-      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : fallbackSliceNum);
+    const activeFrameNumber = (domDetected && domDetected.sliceNumber) 
+      ? domDetected.sliceNumber 
+      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : (targetSliceNumber ? parseInt(targetSliceNumber, 10) : 1));
+
     const totalSlices = seriesObj.total_slices || seriesObj.instances?.length || 1;
-    const validSliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
+    const validSliceNumber = Math.min(Math.max(1, overrideSliceNum || activeFrameNumber), totalSlices);
+
     const instance = seriesObj.instances?.find(inst => parseInt(inst.slice_number || inst.instance_number || 0, 10) === validSliceNumber) || seriesObj.instances?.[Math.min(validSliceNumber - 1, totalSlices - 1)] || seriesObj.instances?.[0];
 
-    if (!instance) {
-      console.error("🚨 [KEY IMAGE] No instance found for slice:", validSliceNumber);
-      return;
-    }
+    const instanceId = instance?.instance_id || instance?.sop_instance_uid || activeViewportInfo?.sopInstanceUid || `inst_${Date.now()}`;
+    const sDesc = seriesObj.series_description || activeViewportInfo?.seriesDescription || "Diagnostic Series";
 
-    const instanceId = instance.instance_id || instance.sop_instance_uid || instance.id;
-    if (!instanceId) {
-      console.error("🚨 [KEY IMAGE] No valid instance identifier found.");
-      return;
-    }
-
-    const liveDataUrl = captureActiveViewportCanvas();
     const payload = {
       reportId: study?.report_id || null,
       studyUID: studyUID,
       seriesUID: seriesObj.series_id || seriesObj.series_instance_uid,
       instanceId: instanceId,
       sliceNumber: validSliceNumber,
-      seriesDescription: seriesObj.series_description,
+      seriesDescription: sDesc,
       modality: seriesObj.modality || "CT",
-      dataUrl: liveDataUrl || null
+      dataUrl: liveDataUrl || activeViewportInfo?.dataUrl || null,
+      caption: `${sDesc} | Slice ${validSliceNumber}/${totalSlices}`
     };
 
-    console.log("🔍 [TRACE 4 VIEWER PAYLOAD] Key image payload sending to backend:", payload);
+    console.log("🚀 [KEY IMAGE CAPTURE SUCCESS] Live payload sending to backend:", payload);
 
     try {
       const res = await api.post("/api/pacs/v2/key-images/save", payload);
@@ -1034,7 +1013,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           )) return prev;
           return [...prev, newImg];
         });
-        setToastMessage(`📸 Key Image (${seriesObj.series_description} | Slice ${sliceNumber}) Attached!`);
+        setToastMessage(`📸 Key Image (${sDesc} | Slice ${validSliceNumber}) Captured!`);
         setTimeout(() => setToastMessage(""), 3000);
       }
     } catch (err) {

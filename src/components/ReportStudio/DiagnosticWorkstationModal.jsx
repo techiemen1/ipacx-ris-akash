@@ -369,25 +369,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const liveDataUrl = captureActiveViewportCanvas();
     const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 
-    // Determine target series
-    let targetSeriesObj = null;
-    const effectiveSeriesId = overrideSeriesId || selectedSeriesId || activeSeriesId;
-
-    if (effectiveSeriesId) {
-      targetSeriesObj = (studySeriesList || []).find(s => 
-        String(s.series_id) === String(effectiveSeriesId) || 
-        String(s.series_instance_uid) === String(effectiveSeriesId) ||
-        String(s.orthanc_series_id) === String(effectiveSeriesId)
-      );
+    let activeSeriesFromBridge = null;
+    if (activeViewportInfo?.seriesInstanceUid || activeViewportInfo?.seriesDescription) {
+      activeSeriesFromBridge = findSeriesInList(studySeriesList, activeViewportInfo.seriesInstanceUid || activeViewportInfo.seriesDescription);
     }
 
-    if (!targetSeriesObj && detected && detected.series) {
-      targetSeriesObj = detected.series;
-    }
+    const detectedSeriesObj = detected?.series || activeSeriesFromBridge || null;
 
-    if (!targetSeriesObj) {
-      targetSeriesObj = (studySeriesList || []).find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || "")) || (studySeriesList || [])[0];
-    }
+    // Prioritize active series open in active viewport on screen unless overrideSeriesId is explicitly passed
+    const targetSeriesObj = overrideSeriesId
+      ? (studySeriesList || []).find(s => String(s.series_id) === String(overrideSeriesId) || String(s.series_instance_uid) === String(overrideSeriesId))
+      : (detectedSeriesObj || (selectedSeriesId ? (studySeriesList || []).find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) : null) || (studySeriesList || [])[0]);
 
     if (!targetSeriesObj) {
       console.error("🚨 [1-CLICK] Series not found");
@@ -396,34 +388,29 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       return;
     }
 
+    const activeFrameNumber = (detected && detected.sliceNumber) 
+      ? detected.sliceNumber 
+      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : (targetSliceNumber ? parseInt(targetSliceNumber, 10) : 1));
+
     const totalSlices = targetSeriesObj.total_slices || targetSeriesObj.instances?.length || 1;
-    
-    // Determine target slice number accurately using all available fallbacks
-    const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
-    const targetSliceNum = (detected && detected.sliceNumber)
-      ? detected.sliceNumber
-      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : Math.min(Math.max(1, fallbackSliceNum), totalSlices));
+    const targetSliceNum = Math.min(Math.max(1, overrideSliceNum || activeFrameNumber), totalSlices);
 
     const instance = targetSeriesObj.instances?.find(inst => 
       parseInt(inst.slice_number || inst.instance_number || 0, 10) === targetSliceNum
     ) || targetSeriesObj.instances?.[Math.min(targetSliceNum - 1, totalSlices - 1)] || targetSeriesObj.instances?.[0];
 
-    if (!instance) {
-      console.error("🚨 [1-CLICK] Instance not found for slice:", targetSliceNum);
-      return;
-    }
-
-    const sDesc = targetSeriesObj.series_description || "Diagnostic Series";
+    const instanceId = instance?.instance_id || instance?.sop_instance_uid || activeViewportInfo?.sopInstanceUid || `inst_${Date.now()}`;
+    const sDesc = targetSeriesObj.series_description || activeViewportInfo?.seriesDescription || "Diagnostic Series";
 
     const payload = {
       reportId: study?.report_id || study?.reportId || null,
       studyUID: studyUID,
       seriesUID: targetSeriesObj.series_id || targetSeriesObj.series_instance_uid,
-      instanceId: instance.instance_id || instance.sop_instance_uid,
+      instanceId: instanceId,
       sliceNumber: targetSliceNum,
       seriesDescription: sDesc,
       modality: targetSeriesObj.modality || "CT",
-      dataUrl: liveDataUrl || null,
+      dataUrl: liveDataUrl || activeViewportInfo?.dataUrl || null,
       caption: `${sDesc} | Slice ${targetSliceNum}/${totalSlices}`
     };
 

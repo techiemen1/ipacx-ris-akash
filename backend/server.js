@@ -240,9 +240,39 @@ try {
         const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
         const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
 
-        const seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
-        const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : "Diagnostic Viewport";
-        const modality = ds ? (ds.Modality || ds.modality) : "CT";
+        let seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+        let seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
+        let modality = ds ? (ds.Modality || ds.modality) : "CT";
+
+        // Query Cornerstone3D MetaData provider directly for exact image DICOM headers
+        if (csvp && imageIds && imageIds.length > 0) {
+          const currentImgId = imageIds[sliceIdx] || imageIds[0];
+          if (currentImgId && window.cornerstone3D && window.cornerstone3D.metaData) {
+            try {
+              const seriesMod = window.cornerstone3D.metaData.get("generalSeriesModule", currentImgId) || window.cornerstone3D.metaData.get("seriesModule", currentImgId);
+              if (seriesMod) {
+                if (!seriesUID) seriesUID = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid;
+                if (!seriesDesc) seriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc;
+                if (seriesMod.modality) modality = seriesMod.modality;
+              }
+            } catch(e) {}
+          }
+        }
+
+        // Native DOM overlay series text scrape inside OHIF
+        if (!seriesDesc || seriesDesc === "Diagnostic Viewport") {
+          try {
+            const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane']") || document.body;
+            const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
+            const textLines = paneText.split("\n").map(l => l.trim()).filter(l => l.length > 1 && !/^\d{2}-[A-Za-z]{3}-\d{4}/.test(l) && !/^\d+\s*[\/\(]\s*\d+/.test(l) && !/W:\d+/.test(l));
+            if (textLines.length > 0) {
+              seriesDesc = textLines[0];
+            }
+          } catch(e) {}
+        }
+
+        if (!seriesDesc) seriesDesc = "Diagnostic Series";
+
         const sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
 
         const canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
