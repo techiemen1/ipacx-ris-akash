@@ -1005,12 +1005,31 @@ router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
     reportId, studyUID, seriesUID, instanceId, sliceNumber
   });
 
-  const buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(
-    studyUID,
-    seriesUID,
-    instanceId,
-    null
-  );
+  let buffer = null;
+
+  // 1. Priority 1: Direct live canvas Base64 JPEG dataUrl provided by frontend
+  if (req.body.dataUrl && typeof req.body.dataUrl === "string" && req.body.dataUrl.startsWith("data:image")) {
+    try {
+      const base64Data = req.body.dataUrl.replace(/^data:image\/\w+;base64,/, "");
+      const b = Buffer.from(base64Data, "base64");
+      if (b && b.length > 500) {
+        buffer = b;
+        console.log("✅ [V2 Key Image Save] Using live active canvas dataUrl buffer:", buffer.length, "bytes");
+      }
+    } catch (e) {
+      console.warn("Failed parsing live dataUrl base64:", e.message);
+    }
+  }
+
+  // 2. Priority 2: Fetch rendered slice buffer directly from PACS (Orthanc / DCM4CHEE-ARC)
+  if (!buffer || buffer.length < 500) {
+    buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(
+      studyUID,
+      seriesUID,
+      instanceId,
+      sliceNumber
+    );
+  }
 
   if (!buffer || buffer.length < 500) {
     throw new Error("Failed to fetch instance from PACS");

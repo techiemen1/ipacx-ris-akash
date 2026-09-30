@@ -42,16 +42,26 @@ export function validateOrigin(event, allowedOrigins = []) {
     return true;
   }
 
-  // 2. Explicit whitelist match
+  // 2. Allow same hostname on different ports (e.g. RIS on 3010, Orthanc OHIF on 8042)
+  try {
+    const currentHost = window.location.hostname;
+    const eventUrl = new URL(event.origin);
+    if (eventUrl.hostname === currentHost || eventUrl.hostname === 'localhost' || eventUrl.hostname === '127.0.0.1') {
+      return true;
+    }
+  } catch (e) {
+    // Ignore invalid origin URL format
+  }
+
+  // 3. Explicit whitelist match
   if (Array.isArray(allowedOrigins) && allowedOrigins.length > 0) {
     if (allowedOrigins.includes(event.origin)) {
       return true;
     }
   }
 
-  // 3. Private LAN origins only (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
-  // Hospital networks typically use these ranges
-  const isPrivateLanOrigin = /^https?:\/\/(192\.168|10|172\.(1[6-9]|2[0-9]|3[01]))\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(event.origin);
+  // 4. Private LAN origins only (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  const isPrivateLanOrigin = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(event.origin);
   if (isPrivateLanOrigin) {
     return true;
   }
