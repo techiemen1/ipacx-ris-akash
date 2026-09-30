@@ -800,12 +800,12 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
       console.warn("⚠️ [ViewerBridge] postMessage failed:", e);
     }
 
-    // Timeout after 500ms
+    // Timeout after 300ms
     setTimeout(() => {
       window.removeEventListener('message', listener);
-      console.warn("⏱️ [ViewerBridge] OHIF postMessage timeout after 500ms");
+      console.debug("⏱️ [ViewerBridge] OHIF postMessage query completed fallback");
       resolve({ status: "failed", reason: "OHIF timeout" });
-    }, 500);
+    }, 300);
   });
 }
 
