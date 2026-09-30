@@ -25,7 +25,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas, injectOHIFBridge } from "../../utils/ViewerBridge";
 import { keyImageService } from "../../services/KeyImageService";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
@@ -245,6 +245,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
+          const nonScout = res.data.series.find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || ""));
+          const defaultSeries = nonScout || res.data.series[0];
+          const defaultId = defaultSeries.series_id || defaultSeries.series_instance_uid || defaultSeries.orthanc_series_id;
+          setSelectedSeriesId(defaultId);
+          setActiveSeriesId(defaultId);
           setTargetSliceNumber("1");
         }
       })
@@ -358,6 +363,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     // 1-CLICK CAPTURE - NO MODAL
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
+    const iframeEl = findDicomViewerIframe();
+    if (iframeEl) injectOHIFBridge(iframeEl);
+
     const liveDataUrl = captureActiveViewportCanvas();
     const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 

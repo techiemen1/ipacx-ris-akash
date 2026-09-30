@@ -29,7 +29,7 @@ import {
   QrCode
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas, injectOHIFBridge } from "../../utils/ViewerBridge";
 import { keyImageService } from "../../services/KeyImageService";
 import { toast } from "react-hot-toast";
 import "./ReportStudio.css";
@@ -591,6 +591,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
+          const nonScout = res.data.series.find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || ""));
+          const defaultSeries = nonScout || res.data.series[0];
+          const defaultId = defaultSeries.series_id || defaultSeries.series_instance_uid || defaultSeries.orthanc_series_id;
+          setSelectedSeriesId(defaultId);
+          setActiveSeriesId(defaultId);
           setTargetSliceNumber("1");
         }
       })
@@ -947,6 +952,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   };
 
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null, forceModal = false) => {
+    const iframeEl = findDicomViewerIframe();
+    if (iframeEl) injectOHIFBridge(iframeEl);
+
     // 1. Live DOM overlay detection from OHIF iframe
     const domDetected = detectViewportSliceInfoFromDOM(studySeriesList);
     // Prioritize explicit user UI selection (overrideSeriesId || selectedSeriesId) over DOM detection or background activeSeriesId
@@ -974,7 +982,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     }
 
     if (!seriesObj) {
-      seriesObj = (studySeriesList || [])[0];
+      seriesObj = (studySeriesList || []).find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || "")) || (studySeriesList || [])[0];
     }
 
     if (!seriesObj) {

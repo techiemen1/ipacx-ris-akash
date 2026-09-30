@@ -84,7 +84,7 @@ export default function KeyImageGallery({
     String(s.series_id) === String(selectedSeriesId) || 
     String(s.series_instance_uid) === String(selectedSeriesId) || 
     String(s.orthanc_series_id) === String(selectedSeriesId)
-  ) || (studySeriesList || [])[0];
+  ) || (studySeriesList || []).find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || "")) || (studySeriesList || [])[0];
 
   const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 1;
 

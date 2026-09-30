@@ -33,6 +33,9 @@ const PUBLIC_PREFIX_PATTERNS = [
   /^\/api\/v1\/public\//,
   /^\/api\/public\//,
   /^\/public\//,
+  /^\/api\/pacs\/instance-preview\//,
+  /^\/api\/pacs\/thumbnail\//,
+  /^\/api\/pacs\/wado\//,
 ];
 
 /**
@@ -90,9 +93,12 @@ module.exports = function requireAuth(req, res, next) {
     });
   }
 
-  // Attempt to extract token from Authorization header (Bearer scheme)
+  // Attempt to extract token from Authorization header (Bearer scheme) or query string
   const header = req.headers.authorization || "";
   let token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({ 

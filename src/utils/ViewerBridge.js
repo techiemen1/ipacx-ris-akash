@@ -240,11 +240,35 @@ export function captureActiveViewportCanvas() {
     const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
     if (!iframeDoc) return null;
 
+    // Strict search order for active/focused viewport canvas
     const activeCanvas = iframeDoc.querySelector(
-      ".viewport-wrapper.active canvas, div[class*=\"active\"] canvas, div[class*=\"selected\"] canvas, .cornerstone-viewport-element canvas, .viewport-element canvas, canvas"
+      "div[data-cy=\"viewport-pane\"].active canvas, " +
+      "div[data-cy=\"viewport-pane\"][class*=\"active\"] canvas, " +
+      "div[class*=\"active\"] canvas, " +
+      "div[class*=\"border-primary\"] canvas, " +
+      "div[class*=\"ring-primary\"] canvas, " +
+      "div[class*=\"selected\"] canvas, " +
+      ".viewport-wrapper.active canvas, " +
+      ".cornerstone-viewport-element.active canvas, " +
+      ".viewport-element.active canvas"
     );
+
     if (activeCanvas && activeCanvas.width > 50 && activeCanvas.height > 50) {
       return activeCanvas.toDataURL("image/jpeg", 0.92);
+    }
+
+    // Fallback: If multiple canvases exist (e.g. split view), search for canvas inside non-scout active cell
+    const allCanvases = Array.from(iframeDoc.querySelectorAll("canvas")).filter(c => c.width > 50 && c.height > 50);
+    if (allCanvases.length > 0) {
+      // Find canvas inside container marked with active/focused or largest canvas
+      const activeParentCanvas = allCanvases.find(c => {
+        const parentCls = String(c.closest('div[class*="viewport"], div[class*="grid"], div[class*="pane"]')?.className || '');
+        return /active|selected|border-primary|ring-primary/i.test(parentCls);
+      });
+      const targetCanvas = activeParentCanvas || allCanvases[allCanvases.length - 1] || allCanvases[0];
+      if (targetCanvas) {
+        return targetCanvas.toDataURL("image/jpeg", 0.92);
+      }
     }
   } catch (e) {
     console.warn("Canvas capture notice:", e.message);
@@ -278,7 +302,17 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
     const texts = [];
 
     const activeEls = Array.from(iframeDoc.querySelectorAll(
-      ".viewport-wrapper.active, .viewport-element.active, [data-cy=\"viewport-overlay\"], .cornerstone-viewport-element.active, .active-viewport, div[class*=\"active\"], div[class*=\"selected\"], div[class*=\"border-primary\"], div[class*=\"ring-primary\"]"
+      "div[data-cy=\"viewport-pane\"].active, " +
+      "div[data-cy=\"viewport-pane\"][class*=\"active\"], " +
+      ".viewport-wrapper.active, " +
+      ".viewport-element.active, " +
+      "[data-cy=\"viewport-overlay\"], " +
+      ".cornerstone-viewport-element.active, " +
+      ".active-viewport, " +
+      "div[class*=\"active\"], " +
+      "div[class*=\"selected\"], " +
+      "div[class*=\"border-primary\"], " +
+      "div[class*=\"ring-primary\"]"
     ));
     
     const filteredActiveEls = activeEls.filter(el => !isSidebarOrThumbnail(el));
@@ -286,7 +320,6 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
     if (filteredActiveEls.length > 0) {
       filteredActiveEls.forEach(el => texts.push(el.innerText || el.textContent || ""));
     } else {
-      // If no explicit active container class is found, look for overlay divs in main viewport area only
       const overlayDivs = Array.from(iframeDoc.querySelectorAll("div[class*=\"overlay\"]"));
       const filteredOverlays = overlayDivs.filter(el => !isSidebarOrThumbnail(el));
       filteredOverlays.forEach(el => texts.push(el.innerText || el.textContent || ""));
@@ -765,3 +798,92 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
     }, 2000);
   });
 }
+
+/**
+ * Injects active viewport response listener directly into OHIF iframe window.
+ * Ensures instant postMessage response for active series, slice number, and canvas image data.
+ */
+export function injectOHIFBridge(iframeEl) {
+  try {
+    if (!iframeEl || !iframeEl.contentWindow) return false;
+    const win = iframeEl.contentWindow;
+    const doc = iframeEl.contentDocument || win.document;
+    if (!doc) return false;
+
+    if (win.__OHIF_BRIDGE_INJECTED__) return true;
+    win.__OHIF_BRIDGE_INJECTED__ = true;
+
+    const bridgeScriptStr = `
+      (function() {
+        console.log("⚡ [OHIF BRIDGE INJECTED] Active viewport listener ready");
+
+        window.addEventListener("message", function(event) {
+          if (!event.data || typeof event.data !== "object") return;
+
+          if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT") {
+            try {
+              var sm = window.OHIF && window.OHIF.servicesManager;
+              var vpgs = sm && sm.services && sm.services.viewportGridService;
+              var cvps = sm && sm.services && sm.services.cornerstoneViewportService;
+              var dss = sm && sm.services && sm.services.displaySetService;
+
+              var activeVpId = vpgs && typeof vpgs.getState === "function" ? vpgs.getState().activeViewportId : null;
+              var activeVp = null;
+              if (vpgs && activeVpId && typeof vpgs.getViewport === "function") {
+                try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
+              }
+
+              var csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;
+              var sliceIdx = 0;
+              var totalSlices = 1;
+              var imageIds = [];
+
+              if (csvp) {
+                if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
+                else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
+                imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
+                totalSlices = imageIds.length || 1;
+              }
+
+              var dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
+              var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
+
+              var seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+              var seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : "Diagnostic Viewport";
+              var modality = ds ? (ds.Modality || ds.modality) : "CT";
+              var sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
+
+              var canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
+              var dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;
+
+              var responsePayload = {
+                type: "OHIF_VIEWPORT_STATE",
+                seriesInstanceUID: seriesUID,
+                seriesDescription: seriesDesc,
+                sliceNumber: sliceIdx + 1,
+                totalSlices: totalSlices,
+                sopInstanceUid: sopUid,
+                modality: modality,
+                dataUrl: dataUrl,
+                timestamp: Date.now()
+              };
+
+              event.source.postMessage(responsePayload, "*");
+            } catch(err) {
+              console.warn("⚠️ OHIF Bridge processing error:", err);
+            }
+          }
+        });
+      })();
+    `;
+
+    const scriptEl = doc.createElement("script");
+    scriptEl.textContent = bridgeScriptStr;
+    doc.head ? doc.head.appendChild(scriptEl) : doc.body.appendChild(scriptEl);
+    return true;
+  } catch (e) {
+    console.warn("Could not inject OHIF bridge into iframe:", e.message);
+    return false;
+  }
+}
+
