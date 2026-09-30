@@ -624,6 +624,16 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
           const fNum = vpState.frameNumber || vpState.sliceIndex || vpState.instanceNumber;
           const sUid = vpState.seriesInstanceUid || vpState.series_instance_uid;
           const sDesc = vpState.seriesDescription || vpState.SeriesDescription;
+          const instId = vpState.sopInstanceUid || vpState.SOPInstanceUID || vpState.instanceId;
+
+          setActiveViewportInfo({
+            seriesInstanceUid: sUid,
+            seriesDescription: sDesc,
+            frameNumber: fNum,
+            totalSlices: vpState.totalSlices,
+            sopInstanceUid: instId,
+            dataUrl: vpState.dataUrl
+          });
 
           if ((sUid || sDesc) && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
             const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices, activeSeriesId);

@@ -366,12 +366,23 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const iframeEl = findDicomViewerIframe();
     if (iframeEl) injectOHIFBridge(iframeEl);
 
-    const liveDataUrl = captureActiveViewportCanvas();
+    let snapshotResult = null;
+    try {
+      snapshotResult = await requestViewerSnapshot(iframeEl, studySeriesList);
+    } catch (e) {
+      console.warn("Viewer snapshot query notice:", e);
+    }
+
+    const liveDataUrl = snapshotResult?.dataUrl || captureActiveViewportCanvas() || activeViewportInfo?.dataUrl || null;
     const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 
+    const liveSeriesUid = snapshotResult?.seriesInstanceUid || activeViewportInfo?.seriesInstanceUid;
+    const liveSeriesDesc = snapshotResult?.seriesDescription || activeViewportInfo?.seriesDescription;
+    const liveSliceNum = snapshotResult?.sliceNumber || activeViewportInfo?.frameNumber;
+
     let activeSeriesFromBridge = null;
-    if (activeViewportInfo?.seriesInstanceUid || activeViewportInfo?.seriesDescription) {
-      activeSeriesFromBridge = findSeriesInList(studySeriesList, activeViewportInfo.seriesInstanceUid || activeViewportInfo.seriesDescription);
+    if (liveSeriesUid || liveSeriesDesc) {
+      activeSeriesFromBridge = findSeriesInList(studySeriesList, liveSeriesUid || liveSeriesDesc);
     }
 
     const detectedSeriesObj = detected?.series || activeSeriesFromBridge || null;
@@ -388,19 +399,17 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       return;
     }
 
-    const activeFrameNumber = (detected && detected.sliceNumber) 
-      ? detected.sliceNumber 
-      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : (targetSliceNumber ? parseInt(targetSliceNumber, 10) : 1));
+    const activeFrameNumber = liveSliceNum || (detected && detected.sliceNumber) || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : 1);
 
-    const totalSlices = targetSeriesObj.total_slices || targetSeriesObj.instances?.length || 1;
+    const totalSlices = targetSeriesObj.total_slices || targetSeriesObj.instances?.length || snapshotResult?.totalSlices || 1;
     const targetSliceNum = Math.min(Math.max(1, overrideSliceNum || activeFrameNumber), totalSlices);
 
     const instance = targetSeriesObj.instances?.find(inst => 
       parseInt(inst.slice_number || inst.instance_number || 0, 10) === targetSliceNum
     ) || targetSeriesObj.instances?.[Math.min(targetSliceNum - 1, totalSlices - 1)] || targetSeriesObj.instances?.[0];
 
-    const instanceId = instance?.instance_id || instance?.sop_instance_uid || activeViewportInfo?.sopInstanceUid || `inst_${Date.now()}`;
-    const sDesc = targetSeriesObj.series_description || activeViewportInfo?.seriesDescription || "Diagnostic Series";
+    const instanceId = instance?.instance_id || instance?.sop_instance_uid || snapshotResult?.sopInstanceUid || activeViewportInfo?.sopInstanceUid || `inst_${Date.now()}`;
+    const sDesc = targetSeriesObj.series_description || liveSeriesDesc || "Diagnostic Series";
 
     const payload = {
       reportId: study?.report_id || study?.reportId || null,
@@ -410,7 +419,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       sliceNumber: targetSliceNum,
       seriesDescription: sDesc,
       modality: targetSeriesObj.modality || "CT",
-      dataUrl: liveDataUrl || activeViewportInfo?.dataUrl || null,
+      dataUrl: liveDataUrl,
       caption: `${sDesc} | Slice ${targetSliceNum}/${totalSlices}`
     };
 

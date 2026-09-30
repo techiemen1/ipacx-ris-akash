@@ -780,6 +780,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
           totalSlices: ohifData.totalSlices || 1,
           sopInstanceUid: ohifData.sopInstanceUid || null,
           modality: ohifData.modality || "CT",
+          dataUrl: ohifData.dataUrl || null,
           timestamp: Date.now()
         };
         console.log("✅ [ViewerBridge] Resolved snapshot result:", result);
@@ -793,18 +794,18 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
       // Use explicit targetOrigin (iframe's origin) for security
       iframeEl.contentWindow.postMessage(
         { type: 'OHIF_GET_ACTIVE_VIEWPORT' }, 
-        iframeEl.src ? new URL(iframeEl.src).origin : window.location.origin
+        iframeEl.src ? new URL(iframeEl.src, window.location.origin).origin : window.location.origin
       );
     } catch (e) {
       console.warn("⚠️ [ViewerBridge] postMessage failed:", e);
     }
 
-    // Timeout after 2 seconds
+    // Timeout after 500ms
     setTimeout(() => {
       window.removeEventListener('message', listener);
-      console.warn("⏱️ [ViewerBridge] OHIF postMessage timeout after 2000ms");
+      console.warn("⏱️ [ViewerBridge] OHIF postMessage timeout after 500ms");
       resolve({ status: "failed", reason: "OHIF timeout" });
-    }, 2000);
+    }, 500);
   });
 }
 
