@@ -53,7 +53,19 @@ export function validateOrigin(event, allowedOrigins = []) {
     // Ignore invalid origin URL format
   }
 
-  // 3. Explicit whitelist match
+  // 3. Explicit whitelist match & configured OHIF URL
+  try {
+    const customOhifUrl = typeof localStorage !== 'undefined' ? localStorage.getItem("OHIF_VIEWER_URL") : null;
+    if (customOhifUrl) {
+      const customOrigin = new URL(customOhifUrl.startsWith("http") ? customOhifUrl : `http://${customOhifUrl}`).origin;
+      if (event.origin === customOrigin) {
+        return true;
+      }
+    }
+  } catch (e) {
+    /* ignore */
+  }
+
   if (Array.isArray(allowedOrigins) && allowedOrigins.length > 0) {
     if (allowedOrigins.includes(event.origin)) {
       return true;
