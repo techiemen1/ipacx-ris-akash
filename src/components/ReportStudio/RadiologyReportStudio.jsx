@@ -4,9 +4,7 @@ import DOMPurify from "dompurify";
 import api from "../../api/axios";
 import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
-import VoiceDictationManager from "../dictation/VoiceDictationManager";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
-import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import KeyImageGallery from "./KeyImageGallery";
 import {
   Sparkles,
@@ -31,7 +29,7 @@ import {
   QrCode
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas } from "../../utils/ViewerBridge";
 import { keyImageService } from "../../services/KeyImageService";
 import { toast } from "react-hot-toast";
 import "./ReportStudio.css";
@@ -228,7 +226,20 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       api.get(`/api/pacs/v1/studies/${encodeURIComponent(studyUID)}/key-images`)
         .then((res) => {
           if (res.data?.success && Array.isArray(res.data.data)) {
-            setAttachedSnapshots(res.data.data);
+            setAttachedSnapshots(prev => {
+              if (prev.length === 0) return res.data.data;
+              const merged = [...prev];
+              for (const item of res.data.data) {
+                if (!merged.some(m => 
+                  (m.id && item.id && String(m.id) === String(item.id)) || 
+                  (m.instance_id && item.instance_id && String(m.instance_id) === String(item.instance_id)) ||
+                  (m.preview_url && item.preview_url && m.preview_url === item.preview_url)
+                )) {
+                  merged.push(item);
+                }
+              }
+              return merged;
+            });
           }
         })
         .catch(() => {});
@@ -562,6 +573,8 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const [studySeriesList, setStudySeriesList] = useState([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
   const [activeSeriesId, setActiveSeriesId] = useState(null);
+  const [activeSeriesDesc, setActiveSeriesDesc] = useState("");
+  const [activeSeriesSliceNum, setActiveSeriesSliceNum] = useState(1);
   const [targetSliceNumber, setTargetSliceNumber] = useState("1");
   const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
   const [pickerSliceNum, setPickerSliceNum] = useState(1);
@@ -578,22 +591,13 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
-          const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s.series_description || s.seriesDescription || '');
-          const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
-          
-          const sortedAll = [...res.data.series].sort((a, b) => getSliceCount(b) - getSliceCount(a));
-          const diagSeries = sortedAll.filter(s => !isScout(s));
-          const mainSeries = diagSeries.length > 0 ? diagSeries[0] : sortedAll[0];
-          
-          const mainId = String(mainSeries.series_id || mainSeries.series_instance_uid || '');
-          setSelectedSeriesId(mainId);
-          setActiveSeriesId(mainId);
-          setPickerSliceNum(1);
           setTargetSliceNumber("1");
         }
       })
       .catch((err) => console.error("Failed to load study series:", err));
   }, [studyUID]);
+
+
 
   // Live Viewer postMessage Listener via ViewerBridge
   useEffect(() => {
@@ -615,30 +619,64 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       (vpState) => {
         if (vpState) {
           const fNum = vpState.frameNumber || vpState.sliceIndex || vpState.instanceNumber;
-          if (fNum) setTargetSliceNumber(String(fNum));
           const sUid = vpState.seriesInstanceUid || vpState.series_instance_uid;
           const sDesc = vpState.seriesDescription || vpState.SeriesDescription;
 
-          if (sUid || sDesc) {
-            setActiveViewportInfo({
-              seriesInstanceUid: sUid,
-              seriesDescription: sDesc,
-              frameNumber: fNum,
-              totalSlices: vpState.totalSlices || vpState.totalFrames
-            });
+          if ((sUid || sDesc) && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
+            const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices, activeSeriesId);
+            if (matchedSeries && matchedSeries.series_id) {
+              const matchedId = String(matchedSeries.series_id);
+              setSelectedSeriesId(matchedId);
+              setActiveSeriesId(matchedId);
+            }
           }
 
-          if ((sUid || sDesc) && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
-            const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices);
-            if (matchedSeries && matchedSeries.series_id) {
-              setSelectedSeriesId(String(matchedSeries.series_id));
-            }
+          if (fNum) {
+            setTargetSliceNumber(String(fNum));
           }
         }
       }
     );
     return () => unsubscribe();
-  }, [study, studySeriesList]);
+  }, [study, studySeriesList, activeSeriesId]);
+
+  // Live listener attached to OHIF iframe to track active series & slice on user clicks/scrolls
+  useEffect(() => {
+    const iframe = document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
+    if (!iframe) return;
+
+    const handleInteraction = () => {
+      const detected = detectViewportSliceInfoFromDOM(studySeriesList);
+      if (detected && detected.series) {
+        const detectedId = String(detected.series.series_id || detected.series.series_instance_uid || '');
+        setSelectedSeriesId(detectedId);
+        setActiveSeriesId(detectedId);
+        if (detected.sliceNumber) {
+          setTargetSliceNumber(String(detected.sliceNumber));
+        }
+      }
+    };
+
+    const attachListeners = () => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc) {
+          iframeDoc.addEventListener('click', handleInteraction, true);
+          iframeDoc.addEventListener('mouseup', handleInteraction, true);
+          iframeDoc.addEventListener('wheel', handleInteraction, { capture: true, passive: true });
+        }
+      } catch (e) {
+        // Cross-origin fallback
+      }
+    };
+
+    iframe.addEventListener('load', attachListeners);
+    attachListeners();
+
+    return () => {
+      iframe.removeEventListener('load', attachListeners);
+    };
+  }, [studySeriesList]);
 
 
 
@@ -908,83 +946,79 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     return document.querySelector(".rs-viewer-iframe, .dws-iframe, iframe");
   };
 
-  const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null) => {
-    console.log("🚨 [KEY IMAGE] Button clicked. Using React sidebar state.");
-    
-    // 1. Get the series ID from React state (NOT OHIF)
-    const targetSeriesId = overrideSeriesId || activeSeriesId || selectedSeriesId;
-    
-    if (!targetSeriesId) {
-      console.error("🚨 [KEY IMAGE] No active series selected in sidebar!");
-      return;
-    }
+  const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null, forceModal = false) => {
+    // 1. Live DOM overlay detection from OHIF iframe
+    const domDetected = detectViewportSliceInfoFromDOM(studySeriesList);
+    // Prioritize selectedSeriesId (user's explicit selection in UI) over stale activeSeriesId
+    const targetSeriesId = overrideSeriesId || (domDetected?.series?.series_id || domDetected?.series?.series_instance_uid) || selectedSeriesId || activeSeriesId || null;
 
-    // 2. Find the series object from the list we already fetched from backend
-    const seriesObj = studySeriesList.find(s => 
-      String(s.series_id) === String(targetSeriesId) || 
-      String(s.series_instance_uid) === String(targetSeriesId) ||
-      String(s.orthanc_series_id) === String(targetSeriesId)
-    ) || studySeriesList[0];
+    let seriesObj = null;
+    if (targetSeriesId) {
+      seriesObj = (studySeriesList || []).find(s => 
+        String(s.series_id) === String(targetSeriesId) || 
+        String(s.series_instance_uid) === String(targetSeriesId) ||
+        String(s.orthanc_series_id) === String(targetSeriesId)
+      );
+    }
 
     if (!seriesObj) {
-      console.error("🚨 [KEY IMAGE] Could not find series object for ID:", targetSeriesId);
+      seriesObj = (studySeriesList || [])[0];
+    }
+
+    if (!seriesObj) {
+      if (forceModal) setShowSlicePickerModal(true);
       return;
     }
 
-    console.log("🚨 [KEY IMAGE] Capturing from series:", seriesObj.series_description);
-
-    // 3. Determine slice number (Simple fallback: use slice 1 or read from iframe if available)
-    let sliceNumber = overrideSliceNum || 1;
-    if (!overrideSliceNum) {
-      try {
-        const iframe = document.querySelector('.rs-viewer-iframe') || document.querySelector('iframe');
-        if (iframe && iframe.contentDocument) {
-          const text = iframe.contentDocument.body.innerText || '';
-          const match = text.match(/(\d+)\s*\/\s*(\d+)/); // Looks for "14/223"
-          if (match) sliceNumber = parseInt(match[1], 10);
-        }
-      } catch (e) {
-        console.warn("🚨 [KEY IMAGE] Could not read slice number from iframe, defaulting to 1");
-      }
-    }
-
-    // Clamp slice number
+    const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
+    const sliceNumber = domDetected?.sliceNumber || fallbackSliceNum;
     const totalSlices = seriesObj.total_slices || seriesObj.instances?.length || 1;
-    sliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
-
-    // 4. Find the instance ID for this slice
-    const instance = seriesObj.instances?.find(inst => 
-      parseInt(inst.slice_number || inst.instance_number || 0, 10) === sliceNumber
-    ) || seriesObj.instances?.[Math.min(sliceNumber - 1, (seriesObj.instances?.length || 1) - 1)] || seriesObj.instances?.[0];
+    const validSliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
+    const instance = seriesObj.instances?.find(inst => parseInt(inst.slice_number || inst.instance_number || 0, 10) === validSliceNumber) || seriesObj.instances?.[Math.min(validSliceNumber - 1, totalSlices - 1)] || seriesObj.instances?.[0];
 
     if (!instance) {
-      console.error("🚨 [KEY IMAGE] No instance found for slice:", sliceNumber);
+      console.error("🚨 [KEY IMAGE] No instance found for slice:", validSliceNumber);
       return;
     }
 
-    // 5. Build payload and send to backend
+    const instanceId = instance.instance_id || instance.sop_instance_uid || instance.id;
+    if (!instanceId) {
+      console.error("🚨 [KEY IMAGE] No valid instance identifier found.");
+      return;
+    }
+
+    const liveDataUrl = captureActiveViewportCanvas();
     const payload = {
       reportId: study?.report_id || null,
       studyUID: studyUID,
       seriesUID: seriesObj.series_id || seriesObj.series_instance_uid,
-      instanceId: instance.instance_id || instance.sop_instance_uid,
+      instanceId: instanceId,
       sliceNumber: sliceNumber,
       seriesDescription: seriesObj.series_description,
-      modality: seriesObj.modality || "CT"
+      modality: seriesObj.modality || "CT",
+      dataUrl: liveDataUrl || null
     };
 
-    console.log("🚨 [KEY IMAGE] Sending payload:", payload);
+    console.log("🚨 [KEY IMAGE 1-CLICK FLASH] Direct save payload:", payload);
 
     try {
       const res = await api.post("/api/pacs/v2/key-images/save", payload);
-      if (res.data?.success) {
-        // Update UI
-        setAttachedSnapshots(prev => [...prev, res.data.data]);
-        setToastMessage(`Key Image (${seriesObj.series_description} | ${sliceNumber}) attached!`);
+      if (res.data?.success && res.data?.data) {
+        setAttachedSnapshots(prev => {
+          const newImg = res.data.data;
+          if (prev.some(s => 
+            (s.id && newImg.id && String(s.id) === String(newImg.id)) ||
+            (s.instance_id && newImg.instance_id && String(s.instance_id) === String(newImg.instance_id)) ||
+            (s.sop_instance_uid && newImg.sop_instance_uid && String(s.sop_instance_uid) === String(newImg.sop_instance_uid)) ||
+            (s.preview_url && newImg.preview_url && String(s.preview_url) === String(newImg.preview_url))
+          )) return prev;
+          return [...prev, newImg];
+        });
+        setToastMessage(`📸 Key Image (${seriesObj.series_description} | Slice ${sliceNumber}) Attached!`);
         setTimeout(() => setToastMessage(""), 3000);
       }
     } catch (err) {
-      console.error("🚨 [KEY IMAGE] Save failed:", err);
+      console.error("🚨 [KEY IMAGE 1-CLICK FLASH] Save failed:", err);
     }
   };
 
@@ -2029,21 +2063,6 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         </div>
       )}
 
-      {/* VISUAL DICOM KEY IMAGE PICKER MODAL */}
-      <DicomKeyImagePickerModal
-        isOpen={showSlicePickerModal}
-        onClose={() => setShowSlicePickerModal(false)}
-        studyUID={studyUID}
-        attachedSnapshots={attachedSnapshots}
-        onSelectImage={(snapObj) => {
-          setAttachedSnapshots(prev => {
-            if (prev.some(s => s.preview_url === snapObj.preview_url || String(s.instance_id) === String(snapObj.instance_id))) {
-              return prev;
-            }
-            return [...prev, snapObj];
-          });
-        }}
-      />
     </div>
   );
 }

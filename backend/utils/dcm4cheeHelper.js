@@ -272,12 +272,12 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
     const port = node.port;
     const aet = node.ae_title;
 
-    const seriesUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series?includefield=all`;
+    const seriesUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series?includefield=all&limit=9999`;
     try {
       const sRes = await axios.get(seriesUrl, {
         ...authConfig,
         headers: { Accept: "application/dicom+json" },
-        timeout: 5000
+        timeout: 8000
       });
 
       const parseDcmStr = (val, fallback = "") => {
@@ -300,11 +300,11 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
 
           if (!seriesUid) continue;
 
-          const instUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUid}/instances?includefield=all`;
+          const instUrl = `http://${host}:${port}/dcm4chee-arc/aets/${aet}/rs/studies/${studyUID}/series/${seriesUid}/instances?includefield=all&limit=9999`;
           const iRes = await axios.get(instUrl, {
             ...authConfig,
             headers: { Accept: "application/dicom+json" },
-            timeout: 5000
+            timeout: 8000
           }).catch(() => ({ data: [] }));
 
           let instances = [];
@@ -341,6 +341,7 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
             seriesId: seriesUid,
             series_id: seriesUid,
             series_instance_uid: seriesUid,
+            orthanc_series_id: seriesUid,
             seriesDescription: seriesDesc,
             series_description: seriesDesc,
             seriesNumber: seriesNum,

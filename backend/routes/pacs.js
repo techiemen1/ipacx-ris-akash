@@ -377,8 +377,20 @@ router.get("/dicom-tags/:studyUID", async (req, res) => {
 router.get("/instance-preview/:instanceId", asyncHandler(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "*");
-  const instanceId = extractCleanInstanceId(req.params.instanceId);
-  const frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
+
+  const rawId = req.params.instanceId || "";
+  let frame = req.query.frame !== undefined ? req.query.frame : (req.query.frameIndex !== undefined ? req.query.frameIndex : null);
+
+  let cleanId = rawId;
+  if (cleanId.includes("?")) {
+    const parts = cleanId.split("?");
+    cleanId = parts[0];
+    const params = new URLSearchParams(parts[1]);
+    if (params.get("frame") !== null && frame === null) {
+      frame = params.get("frame");
+    }
+  }
+  const instanceId = extractCleanInstanceId(cleanId);
   let studyUID = req.query.studyUID || req.query.study;
   let seriesUID = req.query.seriesUID || req.query.series;
 
@@ -645,13 +657,27 @@ async function resolveInstanceIdForSlice(studyUID, seriesUID, sliceNumber) {
         String(s.series_number) === numTarget ||
         (s.series_description && (
           String(s.series_description).toLowerCase().trim() === cleanTarget.toLowerCase() ||
-          cleanTarget.toLowerCase().includes(String(s.series_description).toLowerCase().trim())
+          cleanTarget.toLowerCase().includes(String(s.series_description).toLowerCase().trim()) ||
+          String(s.series_description).toLowerCase().includes(cleanTarget.toLowerCase())
         ))
       );
     }
-    if (!seriesObj) {
-      const nonScout = seriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ''));
+
+    if (!seriesObj && !seriesUID) {
+      const nonScout = seriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ""));
       seriesObj = nonScout.length > 0 ? nonScout[0] : seriesList[0];
+    }
+
+    if (!seriesObj && seriesUID) {
+      const cleanTarget = String(seriesUID).trim().toLowerCase();
+      seriesObj = seriesList.find(s => {
+        const sDesc = String(s.series_description || "").toLowerCase();
+        return sDesc && (sDesc.includes(cleanTarget) || cleanTarget.includes(sDesc));
+      });
+      if (!seriesObj) {
+        const nonScout = seriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ""));
+        seriesObj = nonScout.length > 0 ? nonScout[0] : seriesList[0];
+      }
     }
 
     if (seriesObj && Array.isArray(seriesObj.instances) && seriesObj.instances.length > 0) {
@@ -1617,11 +1643,12 @@ if (seriesCacheCleanup.unref) seriesCacheCleanup.unref();
 router.get("/study-series-instances/:studyUID", async (req, res) => {
   try {
     const { studyUID } = req.params;
+    const forceRefresh = req.query.refresh === 'true' || req.query.nocache === 'true';
     const now = Date.now();
     const cached = studySeriesCache.get(String(studyUID));
-    console.log("🚨 [STUDY-SERIES] Fetching for studyUID:", studyUID, "Cache hit:", (cached && cached.expiresAt > now) ? "YES" : "NO");
+    console.log("🚨 [STUDY-SERIES] Fetching for studyUID:", studyUID, "Cache hit:", (!forceRefresh && cached && cached.expiresAt > now) ? "YES" : "NO");
     let seriesList = [];
-    if (cached && cached.expiresAt > now) {
+    if (!forceRefresh && cached && cached.expiresAt > now) {
       seriesList = cached.series;
     } else {
       seriesList = await fetchStudySeriesAndInstancesAcrossPacs(studyUID);
@@ -1630,7 +1657,7 @@ router.get("/study-series-instances/:studyUID", async (req, res) => {
           const oldestKey = studySeriesCache.keys().next().value;
           if (oldestKey) studySeriesCache.delete(oldestKey);
         }
-        studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 60000 });
+        studySeriesCache.set(String(studyUID), { series: seriesList, expiresAt: now + 5000 });
       }
     }
 

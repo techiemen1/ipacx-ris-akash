@@ -233,74 +233,86 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
  * 2. Cornerstone3D JavaScript API (fallback for direct CS3D usage)
  * 3. DOM text overlay parsing (last resort, least reliable)
  */
-export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], hintSeriesId = null) {
-  if (!iframeDoc) return null;
+export function captureActiveViewportCanvas() {
+  try {
+    const iframe = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
+    if (!iframe) return null;
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return null;
+
+    const activeCanvas = iframeDoc.querySelector(
+      ".viewport-wrapper.active canvas, div[class*=\"active\"] canvas, div[class*=\"selected\"] canvas, .cornerstone-viewport-element canvas, .viewport-element canvas, canvas"
+    );
+    if (activeCanvas && activeCanvas.width > 50 && activeCanvas.height > 50) {
+      return activeCanvas.toDataURL("image/jpeg", 0.92);
+    }
+  } catch (e) {
+    console.warn("Canvas capture notice:", e.message);
+  }
+  return null;
+}
+
+export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
+  if (!Array.isArray(studySeriesList) || studySeriesList.length === 0) return null;
 
   try {
-    const bodyEl = iframeDoc.body || iframeDoc;
-    const iframeWin = iframeDoc.defaultView || iframeDoc.parentWindow;
+    const iframe = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
+    if (!iframe) return null;
 
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) return null;
+
+    const iframeWin = iframe.contentWindow;
+    const sm = iframeWin?.OHIF?.servicesManager || iframeWin?.servicesManager || window?.OHIF?.servicesManager || null;
+    const ohifActiveVpId = sm?.services?.viewportGridService?.getState()?.activeViewportId || null;
     const isSidebarOrThumbnail = (el) => {
+      const parentClass = String(el?.closest('[class*="sidebar"], [class*="thumbnail"], [class*="browser"], [class*="panel"], [class*="study"]')?.className || '');
+      return /sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
+    };
+    const isElementActive = (el) => {
       if (!el) return false;
-      try {
-        return !!(el.closest && el.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, nav, header, aside, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"]'));
-      } catch(e) {
-        return false;
-      }
+      const cls = String(el.className || '') + ' ' + String(el.parentElement?.className || '');
+      return /active|selected|border-primary/i.test(cls);
     };
 
-    // Attach interaction listeners to track active clicked/scrolled viewport
-    if (!iframeDoc._hasInteractionListeners) {
-      iframeDoc._hasInteractionListeners = true;
-      const markActive = (ev) => {
-        try {
-          const target = ev.target;
-          if (!target) return;
-          const cv = target.tagName === 'CANVAS' ? target : (target.querySelector ? target.querySelector('canvas') : null);
-          if (cv && !isSidebarOrThumbnail(cv)) iframeDoc._lastActiveCanvas = cv;
-          const vpEl = target.closest ? target.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]') : null;
-          if (vpEl && !isSidebarOrThumbnail(vpEl)) iframeDoc._lastActiveViewport = vpEl;
-        } catch (e) {
-          /* ignore interaction tracking error */
+    const texts = [];
+
+    const activeEls = Array.from(iframeDoc.querySelectorAll(
+      ".viewport-wrapper.active, .viewport-element.active, [data-cy=\"viewport-overlay\"], .cornerstone-viewport-element, .active-viewport, div[class*=\"active\"], div[class*=\"selected\"], div[class*=\"border-primary\"]"
+    ));
+    
+    const filteredActiveEls = activeEls.filter(el => {
+      const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"], [class*=\"browser\"], [class*=\"panel\"], [class*=\"study\"]")?.className || "");
+      return !/sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
+    });
+
+    filteredActiveEls.forEach(el => texts.push(el.innerText || el.textContent || ""));
+
+    const overlayDivs = Array.from(iframeDoc.querySelectorAll("div[class*=\"overlay\"], div[class*=\"Viewport\"], div[class*=\"viewport\"]"));
+    const filteredOverlays = overlayDivs.filter(el => {
+      const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"], [class*=\"browser\"], [class*=\"panel\"]")?.className || "");
+      return !/sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
+    });
+    filteredOverlays.forEach(el => texts.push(el.innerText || el.textContent || ""));
+
+    if (texts.length === 0) {
+      const mainViewports = Array.from(iframeDoc.querySelectorAll(".viewport-element, .cornerstone-canvas, div[class*=\"viewport\"]"));
+      mainViewports.forEach(el => {
+        const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"]")?.className || "");
+        if (!/sidebar|thumbnail|browser/i.test(parentClass)) {
+          texts.push(el.innerText || el.textContent || "");
         }
-      };
-      iframeDoc.addEventListener('pointerdown', markActive, true);
-      iframeDoc.addEventListener('mousedown', markActive, true);
-      iframeDoc.addEventListener('wheel', markActive, true);
-      iframeDoc.addEventListener('focusin', markActive, true);
+      });
     }
 
-    // Identify OHIF v3 Active Viewport ID from Services Manager if available
-    let ohifActiveVpId = null;
-    let sm = null;
-    try {
-      sm = iframeWin && (iframeWin.servicesManager || (iframeWin.ohif && iframeWin.ohif.servicesManager) || (iframeWin.ohifApp && iframeWin.ohifApp.servicesManager));
-      if (sm && sm.services && sm.services.viewportGridService) {
-        const vpgs = sm.services.viewportGridService;
-        const gridState = typeof vpgs.getState === 'function' ? vpgs.getState() : null;
-        ohifActiveVpId = (gridState && gridState.activeViewportId) || (typeof vpgs.getActiveViewportId === 'function' ? vpgs.getActiveViewportId() : null);
-      }
-    } catch (e) { /* ignore */ }
+    const fullText = texts.join(" ");
+    console.log("🔍 [DOM SCRAPE VIEWPORT TEXT]:", fullText);
 
-    // Helper: Determine if a DOM element is the active viewport
-    const isElementActive = (el) => {
-      if (!el || isSidebarOrThumbnail(el)) return false;
-      if (el === iframeDoc._lastActiveViewport || el === iframeDoc._lastActiveCanvas || (iframeDoc._lastActiveCanvas && el.contains(iframeDoc._lastActiveCanvas))) return true;
-      if (iframeDoc.activeElement && (el === iframeDoc.activeElement || el.contains(iframeDoc.activeElement))) return true;
-      if (ohifActiveVpId && (el.getAttribute('data-viewport-uid') === ohifActiveVpId || el.id === ohifActiveVpId || el.getAttribute('data-cy')?.includes(ohifActiveVpId))) return true;
-
-      if (el.classList.contains('active') || el.classList.contains('focused') || el.classList.contains('selected') || el.classList.contains('active-viewport') || el.classList.contains('border-primary')) return true;
-
-      try {
-        const style = iframeWin.getComputedStyle ? iframeWin.getComputedStyle(el) : null;
-        if (style && style.borderColor) {
-          const bc = style.borderColor.toLowerCase();
-          if (bc.includes('0, 132, 199') || bc.includes('2, 132, 199') || bc.includes('56, 189, 248') || bc.includes('#0284c7') || bc.includes('#0084c7') || bc.includes('#38bdf8')) return true;
-        }
-      } catch (e) { /* ignore style check */ }
-
-      return false;
-    };
+    let detectedSlice = 1;
+    const sliceMatch = 
+      fullText.match(/\b(\d+)\s*\/\s*(\d+)\b/) ||
+      fullText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i) ||
+      fullText.match(/\((\d+)\s*\/\s*(\d+)\)/);
 
     // STRATEGY 0: OHIF v3 Services Manager (PRIMARY for OHIF Viewer)
     try {
@@ -508,156 +520,62 @@ export function detectViewportSliceInfoFromDOM(iframeDoc, studySeriesList = [], 
       }
     } catch (e) { /* ignore CS3D */ }
 
-    // STRATEGY 2: DOM Text Overlay Inspection strictly inside ACTIVE viewport container
-    let activeContainer = null;
-    if (iframeDoc._lastActiveViewport && !isSidebarOrThumbnail(iframeDoc._lastActiveViewport)) {
-      activeContainer = iframeDoc._lastActiveViewport;
-    } else if (iframeDoc._lastActiveCanvas && !isSidebarOrThumbnail(iframeDoc._lastActiveCanvas)) {
-      activeContainer = iframeDoc._lastActiveCanvas.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]');
-    }
-
-    if (!activeContainer) {
-      const allViewportContainers = Array.from(iframeDoc.querySelectorAll(
-        '.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"], div[class*="viewport"], div[class*="Viewport"]'
-      )).filter(el => !isSidebarOrThumbnail(el) && (el.querySelector('canvas') || el.clientHeight > 100));
-
-      const activeCandidate = allViewportContainers.find(el => isElementActive(el));
-      if (activeCandidate) activeContainer = activeCandidate;
-      else if (allViewportContainers.length > 0) activeContainer = allViewportContainers[0];
-    }
-
-    if (activeContainer && activeContainer.tagName === 'CANVAS') {
-      activeContainer = activeContainer.closest('.viewport-element, .viewport-wrapper, [data-viewport-uid], .viewport-grid-item, .viewport-container, [data-cy="viewport-container"]');
-    }
-
-    if (!activeContainer || isSidebarOrThumbnail(activeContainer)) return null;
-
-    // Collect text ONLY from the activeContainer (DO NOT search bodyEl / sidebar!)
-    const activeTexts = [];
-    const isDemographicOrDate = (str) => {
-      if (!str) return true;
-      const s = str.trim();
-      if (/^\d{1,2}[Yy]\s*\/\s*[MFmf]$/.test(s)) return true;
-      if (/^\d{1,2}\s*[A-Za-z]{3}\s*\d{4}$/.test(s)) return true;
-      if (/^(ID|ACC|PID|Patient)\s*:\s*/i.test(s)) return true;
-      if (/\bkey image\b/i.test(s) || /attached to report/i.test(s) || /cite in report/i.test(s)) return true;
-      return false;
-    };
-
-    const tw = iframeDoc.createTreeWalker(activeContainer, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        if (!node || !node.parentElement) return NodeFilter.FILTER_REJECT;
-        const val = node.nodeValue ? node.nodeValue.trim() : '';
-        if (isDemographicOrDate(val)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    }, false);
-
-    let tn;
-    while ((tn = tw.nextNode())) {
-      const v = tn.nodeValue && tn.nodeValue.trim();
-      if (v && v.length > 0 && v.length <= 150) activeTexts.push(v);
-    }
-
-    // 1. Direct Series Description Matching from active viewport visible text nodes
-    let matchedSeriesObj = null;
-    if (Array.isArray(studySeriesList) && studySeriesList.length > 0) {
-      for (const s of studySeriesList) {
-        if (!s.series_description) continue;
-        const cleanDesc = String(s.series_description).trim().toLowerCase();
-        if (!cleanDesc) continue;
-        const matchesActive = activeTexts.some(txt => {
-          const tNorm = String(txt).trim().toLowerCase();
-          return tNorm === cleanDesc || (cleanDesc.length >= 3 && tNorm.includes(cleanDesc));
-        });
-        if (matchesActive) {
-          matchedSeriesObj = s;
-          break;
-        }
-      }
-    }
-
-    // Dynamic Series Description regex extraction if studySeriesList match wasn't found
-    let dynamicSeriesDesc = null;
-    if (!matchedSeriesObj) {
-      for (const txt of activeTexts) {
-        const clean = txt.trim();
-        if (/^[A-Za-z0-9][A-Za-z0-9\s._\-/\\]{2,60}$/.test(clean) && !/^(CT|MR|US|CR|DX|XA|W:|L:|I:|\d+)/i.test(clean)) {
-          dynamicSeriesDesc = clean;
-          break;
-        }
-      }
-    }
-
-    // 2. Parse Slice Number and Total Slices strictly from activeTexts or activeContainer.textContent
-    const containerText = activeContainer.textContent || activeContainer.innerText || '';
-    const searchStrings = [...activeTexts, containerText];
-    let sliceNumber = null;
-    let totalSlices = null;
-    let instanceNumber = null;
-
-    for (const val of searchStrings) {
-      if (isDemographicOrDate(val)) continue;
-
-      // Pattern 0A: "I: 134 190/223", "I:173 (51/223)", "Im: 134 190/223", "I: 134 (190/223)"
-      let m = val.match(/(?:I|Im|Instance|Image)\s*:?\s*(\d+)\s*\(?\s*(\d+)\s*\/\s*(\d+)\s*\)?/i);
-      if (m) {
-        instanceNumber = parseInt(m[1], 10);
-        sliceNumber = parseInt(m[2], 10);
-        totalSlices = parseInt(m[3], 10);
-        break;
+    // STRATEGY 2: DOM Overlay Text Scraping Fallback
+    try {
+      if (sliceMatch) {
+        detectedSlice = parseInt(sliceMatch[1], 10) || 1;
       }
 
-      // Pattern 0B: "(39/245)", " ( 190 / 223 ) "
-      m = val.match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
-      if (m) {
-        sliceNumber = parseInt(m[1], 10);
-        totalSlices = parseInt(m[2], 10);
-        break;
-      }
-
-      // Pattern 1: "Slice 39 of 245", "Image 190 of 223"
-      m = val.match(/(?:slice|image|im|frame|sl)\s*:?\s*(\d+)\s*(?:\/|of)\s*(\d+)/i);
-      if (m) {
-        sliceNumber = parseInt(m[1], 10);
-        totalSlices = parseInt(m[2], 10);
-        break;
-      }
-
-      // Pattern 2: Standalone "190/223" or "1/1"
-      m = val.match(/(\d+)\s*\/\s*(\d+)/);
-      if (m) {
-        sliceNumber = parseInt(m[1], 10);
-        totalSlices = parseInt(m[2], 10);
-        break;
-      }
-    }
-
-    if (!matchedSeriesObj && totalSlices && Array.isArray(studySeriesList)) {
-      const countCandidates = studySeriesList.filter(s =>
-        parseInt(s.total_slices, 10) === totalSlices ||
-        (Array.isArray(s.instances) && s.instances.length === totalSlices)
+      // Sort series by description length descending to match longest description first
+      const sortedSeries = [...studySeriesList].sort((a, b) => 
+        ((b.series_description || b.seriesDescription || "").length) - ((a.series_description || a.seriesDescription || "").length)
       );
-      if (countCandidates.length === 1) {
-        matchedSeriesObj = countCandidates[0];
+
+      const normFullText = fullText.toLowerCase().replace(/[^a-z0-9]/g, " ");
+
+      for (const s of sortedSeries) {
+        const desc = (s.series_description || s.seriesDescription || "").trim();
+        if (desc.length > 1) {
+          const normDesc = desc.toLowerCase().replace(/[^a-z0-9]/g, " ");
+          const tokens = normDesc.split(/\s+/).filter(t => t.length >= 2 && !["series", "image", "slice"].includes(t));
+
+          // Exact substring match OR token overlap match
+          const exactMatch = normFullText.includes(normDesc);
+          const tokenMatch = tokens.length > 0 && tokens.every(t => normFullText.includes(t));
+
+          if (exactMatch || tokenMatch) {
+            console.log("🎯 [DOM DETECT SUCCESS] Active viewport series:", desc, "| Slice:", detectedSlice);
+            return { series: s, sliceNumber: detectedSlice };
+          }
+        }
       }
-    }
 
-    if (sliceNumber || matchedSeriesObj || dynamicSeriesDesc) {
-      console.log("✅ [VIEWERBRIDGE] Strategy 2 (Active DOM Overlay) -> Matched active series:", matchedSeriesObj?.series_description || dynamicSeriesDesc || "NONE", "slice:", sliceNumber);
-      return {
-        instanceNumber: instanceNumber || sliceNumber || 1,
-        sliceNumber: sliceNumber || 1,
-        totalSlices: totalSlices || matchedSeriesObj?.total_slices || 1,
-        matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : null,
-        seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : (dynamicSeriesDesc || "Diagnostic Viewport"),
-        activeCanvas: activeContainer.querySelector('canvas') || iframeDoc._lastActiveCanvas || null
-      };
-    }
+      // Fallback if no exact text description matched: check if active series has token match in viewport
+      for (const s of sortedSeries) {
+        const desc = (s.series_description || s.seriesDescription || "").trim();
+        if (desc.length > 1) {
+          const tokens = desc.toLowerCase().replace(/[^a-z0-9]/g, " ").split(/\s+/).filter(t => t.length >= 3);
+          if (tokens.some(t => normFullText.includes(t))) {
+            console.log("🎯 [DOM DETECT PARTIAL SUCCESS] Series:", desc, "| Slice:", detectedSlice);
+            return { series: s, sliceNumber: detectedSlice };
+          }
+        }
+      }
 
-  } catch (e) {
-    console.warn('[ViewerBridge] detectViewportSliceInfoFromDOM exception:', e);
+      // Ultimate fallback: return first non-scout series with detectedSlice
+      if (studySeriesList.length > 0) {
+        const nonScout = studySeriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || ""));
+        const fallbackSeries = nonScout.length > 0 ? nonScout[0] : studySeriesList[0];
+        console.log("🎯 [DOM DETECT FALLBACK] Non-scout series:", fallbackSeries.series_description, "| Slice:", detectedSlice);
+        return { series: fallbackSeries, sliceNumber: detectedSlice };
+      }
+    } catch (err) {
+      console.warn("⚠️ [DOM DETECT] Notice:", err.message);
+    }
+  } catch (outerErr) {
+    console.warn("⚠️ [DOM DETECT OUTER] Error:", outerErr?.message);
   }
+
   return null;
 }
 

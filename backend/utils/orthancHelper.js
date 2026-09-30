@@ -50,14 +50,14 @@ function clearOrthancAuthCache() {
   lastAuthCacheTime = 0;
 }
 
-function orthancAuthConfig() {
+function orthancAuthConfig(overrideTimeout = 12000) {
   let user = process.env.ORTHANC_USER || "orthanc";
   let pass = process.env.ORTHANC_PASSWORD || process.env.ORTHANC_PASS || "orthanc";
   if (cachedAuthConfig && cachedAuthConfig.username) {
     user = cachedAuthConfig.username;
     pass = cachedAuthConfig.password;
   }
-  return { auth: { username: String(user).trim(), password: String(pass) } };
+  return { auth: { username: String(user).trim(), password: String(pass) }, timeout: overrideTimeout };
 }
 
 function getOrthancAuthHeader() {

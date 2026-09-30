@@ -20,32 +20,32 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
     if (isOpen && seriesList.length > 0) {
       const preSelectId = window.preSelectKeyImageSeries;
       const preSelectDesc = window.preSelectKeyImageDesc;
-      const preSelectSliceNum = window.preSelectKeyImageSliceNum;
-
-      let found = seriesList.find(s => 
-        String(s.series_id) === String(preSelectId) ||
-        String(s.series_instance_uid) === String(preSelectId) ||
-        String(s.orthanc_series_id) === String(preSelectId)
-      );
-
-      if (!found && preSelectDesc) {
+      
+      let found = null;
+      
+      // 1. Try ID match first
+      if (preSelectId) {
         found = seriesList.find(s => 
-          s.series_description && String(s.series_description).trim().toLowerCase() === String(preSelectDesc).trim().toLowerCase()
+          String(s.series_id) === String(preSelectId) || 
+          String(s.series_instance_uid) === String(preSelectId) ||
+          String(s.orthanc_series_id) === String(preSelectId)
+        );
+      }
+      
+      // 2. Try Description match second (normalize whitespace)
+      if (!found && preSelectDesc) {
+        const cleanDesc = String(preSelectDesc).replace(/\s+/g, ' ').trim().toLowerCase();
+        found = seriesList.find(s => 
+          s.series_description && String(s.series_description).replace(/\s+/g, ' ').trim().toLowerCase() === cleanDesc
         );
       }
 
+      // NO AUTO-FALLBACK TO [0]. Force doctor to select manually if no match.
       if (found) {
         setSelectedSeries(found);
-        console.log("🚨 [MODAL] Auto-selected series:", found.series_description, "ID:", found.series_id);
-        if (preSelectSliceNum && found.instances?.length > 0) {
-          const matchedIdx = found.instances.findIndex(inst => 
-            parseInt(inst.slice_number || inst.instance_number || 0, 10) === parseInt(preSelectSliceNum, 10)
-          );
-          if (matchedIdx >= 0) setSelectedSliceIndex(matchedIdx);
-          else setSelectedSliceIndex(0);
-        } else {
-          setSelectedSliceIndex(0);
-        }
+      } else {
+        const nonScout = seriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || ""));
+        setSelectedSeries(nonScout.length > 0 ? nonScout[0] : seriesList[0]);
       }
     }
   }, [isOpen, seriesList]);
@@ -72,11 +72,6 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
       if (res.data?.success && Array.isArray(res.data.series)) {
         setSeriesList(res.data.series);
         console.log("🔍 [TRACE 3: FRONTEND STATE] Received series list:", res.data.series.map(s => ({ id: s.series_id, desc: s.series_description, slices: s.total_slices })));
-        if (res.data.series.length > 0 && !window.preSelectKeyImageSeries && !window.preSelectKeyImageDesc) {
-          const defaultSeries = res.data.series.find(s => s.total_slices > 1) || res.data.series[0];
-          setSelectedSeries(defaultSeries);
-          setSelectedSliceIndex(0);
-        }
       }
     } catch (err) {
       console.error("Failed loading series:", err);
@@ -100,28 +95,33 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
         throw new Error("No instance at selected index");
       }
 
+      const instanceId = instance.instance_id || instance.sop_instance_uid || instance.id;
+      if (!instanceId) {
+        throw new Error("Missing SOP instance identifier");
+      }
+
       const sliceNum = instance.slice_number || instance.instance_number || (idxToUse + 1);
-      const caption = `${selectedSeries.series_description} | ${sliceNum}/${selectedSeries.total_slices || selectedSeries.instances.length}`;
+      const totalSlices = selectedSeries.total_slices || selectedSeries.instances?.length || 1;
+      const caption = `${selectedSeries.series_description || "Series"} | Slice ${sliceNum}/${totalSlices}`;
 
       const payload = {
         reportId: null, // Will be set by parent
         studyUID: studyUID,
         seriesUID: selectedSeries.series_id || selectedSeries.series_instance_uid,
-        instanceId: instance.instance_id,
+        instanceId: instanceId,
         sliceNumber: sliceNum,
         seriesDescription: selectedSeries.series_description || "Unknown",
         modality: selectedSeries.modality || "CT"
       };
 
-      console.log("🔍 [TRACE 4: CAPTURE PAYLOAD] Sending to backend:", JSON.stringify({ studyUID, seriesUID: selectedSeries?.series_id, seriesDesc: selectedSeries?.series_description, instanceId: instance?.instance_id, slice: idxToUse }, null, 2));
-      console.log("🚨 [MODAL] About to send capture. Current selectedSeries:", selectedSeries?.series_description, "ID:", selectedSeries?.series_id);
+      console.log("🔍 [TRACE 4: CAPTURE PAYLOAD] Sending to backend:", JSON.stringify({ studyUID, seriesUID: selectedSeries?.series_id, seriesDesc: selectedSeries?.series_description, instanceId: instanceId, slice: idxToUse }, null, 2));
 
       const res = await api.post("/api/pacs/v2/key-images/save", payload);
       
       if (res.data?.success && res.data?.data) {
         const savedImage = res.data.data;
         onSelectImage(savedImage);
-        setAddedIds(prev => new Set(prev).add(String(instance.instance_id)));
+        setAddedIds(prev => new Set(prev).add(String(instanceId)));
         setToastMsg(`✅ Captured: ${caption}`);
         setTimeout(() => setToastMsg(""), 3000);
       } else {
@@ -198,30 +198,6 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              onClick={() => {
-                console.log("🚨 [TEST BUTTON CLICKED] Current selectedSeries:", selectedSeries?.series_description, "ID:", selectedSeries?.series_id);
-                alert(`Current Selected Series: ${selectedSeries?.series_description || "None"}\nID: ${selectedSeries?.series_id || "None"}`);
-              }}
-              style={{ background: "#8b5cf6", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
-            >
-              🧪 TEST STATE
-            </button>
-
-            <button
-              onClick={() => {
-                localStorage.clear();
-                sessionStorage.clear();
-                if ('serviceWorker' in navigator) {
-                  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
-                }
-                window.location.reload(true);
-              }}
-              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
-            >
-              🗑️ CLEAR CACHE & RELOAD
-            </button>
-
             {toastMsg && (
               <div style={{ 
                 background: toastMsg.includes("✅") ? "#10b981" : "#ef4444", 
@@ -244,7 +220,11 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
         {seriesList.length > 0 && (
           <div style={{ display: "flex", gap: 8, padding: "12px 20px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", overflowX: "auto" }}>
             {seriesList.map((s) => {
-              const isSelected = selectedSeries && String(s.series_id) === String(selectedSeries.series_id);
+              const isSelected = selectedSeries && (
+                String(s.series_id) === String(selectedSeries.series_id) ||
+                String(s.series_instance_uid) === String(selectedSeries.series_instance_uid) ||
+                (s.orthanc_series_id && String(s.orthanc_series_id) === String(selectedSeries.orthanc_series_id))
+              );
               return (
                 <button
                   key={s.series_id}
@@ -279,35 +259,35 @@ export default function DicomKeyImagePickerModal({ isOpen, onClose, studyUID, on
 
         {/* Visual Active Viewport Capture Banner */}
         <div style={{ 
-          background: selectedSeries ? "#dcfce7" : "#fef3c7", 
-          padding: "12px 20px", 
+          background: selectedSeries ? "#dcfce7" : "#fee2e2", 
+          padding: "16px", 
           borderRadius: "8px", 
           margin: "12px 20px 0 20px",
           border: "2px solid",
-          borderColor: selectedSeries ? "#22c55e" : "#f59e0b",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between"
+          borderColor: selectedSeries ? "#22c55e" : "#ef4444",
+          textAlign: "center"
         }}>
-          <strong style={{ fontSize: "14px", color: selectedSeries ? "#15803d" : "#b45309" }}>
-            {selectedSeries ? `✓ Capturing from: ${selectedSeries.series_description}` : "⚠️ Select a series below"}
-          </strong>
+          <h3 style={{ margin: 0, color: selectedSeries ? "#15803d" : "#b91c1c", fontSize: "18px" }}>
+            {selectedSeries ? `✓ Capturing from: ${selectedSeries.series_description}` : "⚠️ No Series Detected - Please Select Below"}
+          </h3>
           {selectedSeries && (
-            <button
-              onClick={() => handleCaptureSelectedSlice()}
-              style={{
-                background: "#16a34a",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                padding: "6px 14px",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer"
-              }}
-            >
-              ⚡ Confirm Capture Slice #{selectedSliceIndex + 1}
-            </button>
+            <div style={{ marginTop: "10px" }}>
+              <button
+                onClick={() => handleCaptureSelectedSlice(selectedSliceIndex)}
+                style={{
+                  background: "#16a34a",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 18px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer"
+                }}
+              >
+                ⚡ Confirm Capture Slice #{selectedSliceIndex + 1}
+              </button>
+            </div>
           )}
         </div>
 

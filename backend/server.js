@@ -144,177 +144,9 @@ try {
     }
   };
 
-  const ohifBridgeScript = `
-<script id="ohif-ris-bridge-script">
-(function() {
-  var lastActiveViewportId = null;
 
-  function trackActiveViewport(e) {
-    try {
-      var target = e.target;
-      if (!target) return;
-      if (target.closest && target.closest('.study-browser, .thumbnail-list, .sidebar, .study-list, .series-quick-switch, [class*="thumbnail"], [class*="Thumbnail"], [class*="SeriesItem"]')) {
-        return;
-      }
-      var vpElement = target.closest ? target.closest('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .cornerstone-viewport-element, .viewport-grid-item') : null;
-      if (vpElement) {
-        var uid = vpElement.getAttribute('data-viewport-uid') || vpElement.id || vpElement.getAttribute('data-cy');
-        if (uid) {
-          lastActiveViewportId = uid;
-        }
-      }
-    } catch (err) {}
-  }
 
-  document.addEventListener('mousedown', trackActiveViewport, true);
-  document.addEventListener('pointerdown', trackActiveViewport, true);
-  document.addEventListener('click', trackActiveViewport, true);
-  document.addEventListener('wheel', trackActiveViewport, true);
 
-  window.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'OHIF_GET_ACTIVE_VIEWPORT') {
-      try {
-        var servicesManager = window.servicesManager || (window.ohif && window.ohif.servicesManager) || (window.ohifApp && window.ohifApp.servicesManager);
-        var vgs = servicesManager ? servicesManager.services.viewportGridService : null;
-        var dss = servicesManager ? servicesManager.services.displaySetService : null;
-        var cvs = servicesManager ? servicesManager.services.cornerstoneViewportService : null;
-
-        var activeViewportId = lastActiveViewportId;
-
-        if (!activeViewportId && vgs) {
-          try {
-            var gridState = typeof vgs.getState === 'function' ? vgs.getState() : null;
-            activeViewportId = (gridState && gridState.activeViewportId) || (typeof vgs.getActiveViewportId === 'function' ? vgs.getActiveViewportId() : null);
-          } catch(e) {}
-        }
-
-        if (!activeViewportId) {
-          try {
-            var candidates = Array.from(document.querySelectorAll('[data-viewport-uid], [data-cy="viewport-container"], .viewport-element, .viewport-wrapper, .viewport-grid-item'));
-            for (var i = 0; i < candidates.length; i++) {
-              var el = candidates[i];
-              var uid = el.getAttribute('data-viewport-uid') || el.id;
-              if (!uid) continue;
-              if (el.classList.contains('active') || el.classList.contains('border-primary') || el.getAttribute('data-active') === 'true') {
-                activeViewportId = uid;
-                break;
-              }
-            }
-          } catch(e) {}
-        }
-
-        console.log('[OHIF Bridge] Active Viewport ID:', activeViewportId);
-
-        var viewport = null;
-        if (vgs && activeViewportId) {
-          if (typeof vgs.getViewport === 'function') {
-            try { viewport = vgs.getViewport(activeViewportId); } catch(e) {}
-          }
-          if (!viewport && typeof vgs.getState === 'function') {
-            try {
-              var st = vgs.getState();
-              if (st && st.viewports) {
-                if (typeof st.viewports.get === 'function') viewport = st.viewports.get(activeViewportId);
-                else if (typeof st.viewports === 'object') viewport = st.viewports[activeViewportId];
-              }
-            } catch(e) {}
-          }
-        }
-
-        var displaySetInstanceUID = viewport ? (viewport.displaySetInstanceUID || (Array.isArray(viewport.displaySetInstanceUIDs) ? viewport.displaySetInstanceUIDs[0] : null)) : null;
-        var displaySet = (dss && displaySetInstanceUID && typeof dss.getDisplaySetByUID === 'function') ? dss.getDisplaySetByUID(displaySetInstanceUID) : null;
-        var cornerstoneViewport = (cvs && activeViewportId && typeof cvs.getCornerstoneViewport === 'function') ? cvs.getCornerstoneViewport(activeViewportId) : null;
-
-        var sliceNumber = 1;
-        var totalSlices = 1;
-        var sopInstanceUid = null;
-        var seriesInstanceUID = displaySet ? (displaySet.SeriesInstanceUID || displaySet.seriesInstanceUid) : null;
-        var seriesDescription = displaySet ? (displaySet.SeriesDescription || displaySet.seriesDescription) : null;
-        var modality = displaySet ? (displaySet.Modality || displaySet.modality) : 'CT';
-
-        if (cornerstoneViewport) {
-          try {
-            if (typeof cornerstoneViewport.getCurrentImageIdIndex === 'function') {
-              sliceNumber = cornerstoneViewport.getCurrentImageIdIndex() + 1;
-            } else if (typeof cornerstoneViewport.getSliceIndex === 'function') {
-              sliceNumber = cornerstoneViewport.getSliceIndex() + 1;
-            }
-          } catch(e) {}
-
-          try {
-            var imageIds = cornerstoneViewport.getImageIds ? cornerstoneViewport.getImageIds() : [];
-            totalSlices = imageIds.length || 1;
-            if (imageIds.length > 0 && sliceNumber > 0) {
-              var currentImageId = imageIds[sliceNumber - 1] || imageIds[0];
-            }
-          } catch(e) {}
-        }
-
-        if (displaySet && displaySet.images && displaySet.images[sliceNumber - 1]) {
-          sopInstanceUid = displaySet.images[sliceNumber - 1].SOPInstanceUID || displaySet.images[sliceNumber - 1].sopInstanceUid;
-        } else if (displaySet && displaySet.images && displaySet.images[0]) {
-          sopInstanceUid = displaySet.images[0].SOPInstanceUID || displaySet.images[0].sopInstanceUid;
-        }
-
-        window.parent.postMessage({
-          type: 'OHIF_VIEWPORT_STATE',
-          success: true,
-          viewportId: activeViewportId,
-          seriesInstanceUID: seriesInstanceUID,
-          seriesDescription: seriesDescription,
-          modality: modality,
-          sopInstanceUid: sopInstanceUid,
-          sliceNumber: sliceNumber,
-          totalSlices: totalSlices
-        }, '*');
-      } catch (err) {
-        console.error('[OHIF Bridge] Error:', err);
-        window.parent.postMessage({ type: 'OHIF_VIEWPORT_STATE', error: err.message }, '*');
-      }
-    }
-  });
-})();
-</script>
-`;
-
-  const handleOhifHtmlInterceptor = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
-    const contentType = proxyRes.headers["content-type"] || "";
-    const contentEncoding = proxyRes.headers["content-encoding"] || "";
-    const isHtml = contentType.toLowerCase().includes("text/html");
-
-    if (isHtml) {
-      let body = "";
-      let isGzipped = contentEncoding.includes("gzip");
-
-      try {
-        if (isGzipped) {
-          body = zlib.gunzipSync(responseBuffer).toString("utf8");
-        } else {
-          body = responseBuffer.toString("utf8");
-        }
-
-        if (body && !body.includes("ohif-ris-bridge-script")) {
-          if (body.includes("</head>")) {
-            body = body.replace("</head>", `${ohifBridgeScript}</head>`);
-          } else if (body.includes("</body>")) {
-            body = body.replace("</body>", `${ohifBridgeScript}</body>`);
-          } else {
-            body = body + ohifBridgeScript;
-          }
-
-          if (isGzipped) {
-            res.setHeader("content-encoding", "gzip");
-            return zlib.gzipSync(body);
-          } else {
-            return body;
-          }
-        }
-      } catch (err) {
-        logger.warn("OHIF bridge script injection notice: " + err.message);
-      }
-    }
-    return responseBuffer;
-  });
 
   const dcm4cheeHelper = require("./utils/dcm4cheeHelper");
   const getDynamicDcm4cheeTarget = async () => {
@@ -350,13 +182,50 @@ try {
       target: "http://Orthanc:8042",
       router: getDynamicTarget,
       changeOrigin: true,
-      selfHandleResponse: true,
       on: {
-        proxyRes: handleOhifHtmlInterceptor,
         proxyReq: handleProxyReqAuth
       }
     })
   );
+
+  const autoTrackScript = `
+<script>
+  // Track ALL user interactions in OHIF viewer
+  let lastActiveSeries = null;
+  
+  function broadcastSeries(seriesUid, seriesDesc, sliceNum) {
+    lastActiveSeries = { seriesUid, seriesDesc, sliceNum };
+    window.parent.postMessage({
+      type: 'OHIF_ACTIVE_SERIES',
+      seriesId: seriesUid,
+      seriesDescription: seriesDesc,
+      sliceNumber: sliceNum || 1
+    }, '*');
+  }
+  
+  // Track thumbnail clicks
+  document.addEventListener('click', (e) => {
+    const seriesItem = e.target.closest('[data-series-uid], .series-thumbnail, .series-item, [class*="thumbnail"], [class*="series"]');
+    if (seriesItem) {
+      const uid = seriesItem.getAttribute('data-series-uid') || seriesItem.dataset?.seriesUid;
+      const desc = seriesItem.getAttribute('data-series-desc') || seriesItem.dataset?.seriesDesc || seriesItem.textContent.trim();
+      if (uid) broadcastSeries(uid, desc, 1);
+    }
+  }, true);
+  
+  // Track viewport changes (scroll, keyboard)
+  document.addEventListener('wheel', () => {
+    if (lastActiveSeries) broadcastSeries(lastActiveSeries.seriesUid, lastActiveSeries.seriesDesc, lastActiveSeries.sliceNum);
+  }, true);
+  
+  // Initial broadcast on load
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      if (lastActiveSeries) broadcastSeries(lastActiveSeries.seriesUid, lastActiveSeries.seriesDesc, lastActiveSeries.sliceNum);
+    }, 2000);
+  });
+</script>
+`;
 
   app.use(
     "/viewer",
@@ -373,7 +242,14 @@ try {
       },
       selfHandleResponse: true,
       on: {
-        proxyRes: handleOhifHtmlInterceptor,
+        proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
+          const contentType = proxyRes.headers["content-type"] || "";
+          if (contentType.includes("html")) {
+            const body = responseBuffer.toString("utf8");
+            return body.replace("</head>", `${autoTrackScript}\n</head>`);
+          }
+          return responseBuffer;
+        }),
         proxyReq: handleProxyReqAuth
       }
     })
@@ -392,7 +268,14 @@ try {
       },
       selfHandleResponse: true,
       on: {
-        proxyRes: handleOhifHtmlInterceptor,
+        proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
+          const contentType = proxyRes.headers["content-type"] || "";
+          if (contentType.includes("html")) {
+            const body = responseBuffer.toString("utf8");
+            return body.replace("</head>", `${autoTrackScript}\n</head>`);
+          }
+          return responseBuffer;
+        }),
         proxyReq: handleProxyReqAuth
       }
     })

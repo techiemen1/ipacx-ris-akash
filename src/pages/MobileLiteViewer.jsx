@@ -20,6 +20,53 @@ import {
 } from "lucide-react";
 import "./MobileLiteViewer.css";
 
+// Utility: Compress Base64 image to prevent mobile heap OOM (max 512px, 0.7 quality)
+const compressImage = (dataUrl, maxWidth = 512, quality = 0.7) => {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image")) {
+      return resolve(dataUrl);
+    }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const aspect = img.width / img.height;
+      let w = img.width;
+      let h = img.height;
+      if (w > maxWidth) {
+        w = maxWidth;
+        h = Math.round(maxWidth / aspect);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(dataUrl);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+};
+
+// Utility: API call with exponential backoff retries (3 retries, base delay 1000ms)
+const fetchWithRetry = async (fn, maxRetries = 3, baseDelay = 1000) => {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxRetries) throw err;
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.warn(`⚠️ [RETRY] Network request attempt ${attempt}/${maxRetries} failed. Retrying in ${delay}ms...`, err.message);
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+};
+
 const MobileLiteViewer = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -74,6 +121,62 @@ const MobileLiteViewer = () => {
   const lastTapTime = useRef(0);
   const isDragging = useRef(false);
 
+  // REFS FOR FRESH STATE IN ASYNC HANDLERS (PREVENT STALE CLOSURES)
+  const currentIndexRef = useRef(currentIndex);
+  const activeSeriesRef = useRef(activeSeries);
+  const currentInstanceRef = useRef(currentInstance);
+  const studyMetaRef = useRef(studyMeta);
+
+  // UPDATE REFS WHEN STATE CHANGES
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
+
+  useEffect(() => {
+    activeSeriesRef.current = activeSeries;
+  }, [activeSeries]);
+
+  useEffect(() => {
+    currentInstanceRef.current = currentInstance;
+  }, [currentInstance]);
+
+  useEffect(() => {
+    studyMetaRef.current = studyMeta;
+  }, [studyMeta]);
+
+  // UPGRADE #3: Offline Key Image Queue Flushing on Network Reconnection
+  useEffect(() => {
+    const flushPendingQueue = async () => {
+      const pendingStr = localStorage.getItem("pending_key_image_uploads");
+      if (!pendingStr) return;
+      try {
+        const queue = JSON.parse(pendingStr);
+        if (!Array.isArray(queue) || queue.length === 0) return;
+        console.log(`📡 [OFFLINE SYNC] Connectivity restored! Flushing ${queue.length} pending key images...`);
+        const remaining = [];
+        for (const item of queue) {
+          try {
+            await fetchWithRetry(() => api.post("/api/pacs/v2/key-images/save", item), 2, 800);
+          } catch (e) {
+            remaining.push(item);
+          }
+        }
+        if (remaining.length > 0) {
+          localStorage.setItem("pending_key_image_uploads", JSON.stringify(remaining));
+        } else {
+          localStorage.removeItem("pending_key_image_uploads");
+          console.log("✅ [OFFLINE SYNC] All pending key images successfully uploaded!");
+        }
+      } catch (e) {
+        console.warn("Failed flushing offline key image queue:", e);
+      }
+    };
+
+    window.addEventListener("online", flushPendingQueue);
+    flushPendingQueue();
+    return () => window.removeEventListener("online", flushPendingQueue);
+  }, []);
+
   // Save active series & slice state to sessionStorage and localStorage whenever it changes
   useEffect(() => {
     if (studyUID) {
@@ -103,30 +206,65 @@ const MobileLiteViewer = () => {
           studyDescription: res.data.studyDescription
         });
         fetchedSeries = res.data.series;
-        setSeriesList(fetchedSeries);
 
-        // Default touch mode: CR/DX -> PAN/ZOOM, CT/MR -> SCROLL
-        const mod = String(res.data.modality || "").toUpperCase();
-        if (mod === "CT" || mod === "MR") {
-          setTouchMode("SCROLL");
-        } else {
-          setTouchMode("PAN");
+        // 🔍 DEBUG LOGS FOR STUDY DATA
+        console.log('📊 STUDY DATA LOADED:');
+        console.log('- Total series:', fetchedSeries.length);
+        fetchedSeries.forEach((s, idx) => {
+          console.log(`  Series ${idx + 1}: ${s.seriesDescription || s.series_description} - ${s.instances?.length || s.totalSlices || s.total_slices || 0} slices`);
+        });
+
+        // Check if MR series have instances
+        const mrSeries = fetchedSeries.filter(s =>
+          String(s.modality || res.data.modality || '').toUpperCase() === 'MR'
+        );
+        if (mrSeries.length > 0) {
+          console.log('🔍 MR SERIES DEBUG:');
+          mrSeries.forEach((s, idx) => {
+            console.log(`  MR Series ${idx + 1}:`, {
+              description: s.seriesDescription || s.series_description,
+              instanceCount: s.instances?.length,
+              totalSlices: s.totalSlices || s.total_slices,
+              seriesId: s.seriesId || s.series_id,
+              hasInstances: !!s.instances,
+              firstInstance: s.instances?.[0]
+            });
+          });
         }
-      } else {
-        const resFallback = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
-        if (resFallback.data?.success && Array.isArray(resFallback.data.series)) {
-          fetchedSeries = resFallback.data.series.map(s => ({
-            seriesId: s.series_id,
-            seriesDescription: s.series_description,
-            totalSlices: s.total_slices,
+      }
+
+      // Step 3: Frontend fallback if API returns incomplete instances (e.g. MR series missing instances)
+      if (
+        fetchedSeries.length === 0 ||
+        fetchedSeries.some(s => (s.totalSlices || s.total_slices || 0) > 1 && (!s.instances || s.instances.length <= 1))
+      ) {
+        console.warn('⚠️ Mobile endpoint returned incomplete data or missing instances for series, trying full fallback...');
+        const fallbackRes = await api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`);
+        if (fallbackRes.data?.success && Array.isArray(fallbackRes.data.series)) {
+          fetchedSeries = fallbackRes.data.series.map(s => ({
+            seriesId: s.series_id || s.seriesId,
+            seriesDescription: s.series_description || s.seriesDescription,
+            modality: s.modality,
+            totalSlices: s.total_slices || s.totalSlices || (s.instances?.length || 0),
             instances: (s.instances || []).map((inst, i) => ({
-              id: inst.instance_id,
-              instanceNumber: inst.slice_number || i + 1,
-              previewUrl: inst.preview_url
+              id: inst.instance_id || inst.id,
+              instanceNumber: inst.slice_number || inst.instanceNumber || i + 1,
+              previewUrl: inst.preview_url || inst.previewUrl || `/api/pacs/instance-preview/${inst.instance_id || inst.id}`,
+              sopInstanceUid: inst.sop_instance_uid || inst.sopInstanceUid || inst.instance_id || inst.id
             }))
           }));
-          setSeriesList(fetchedSeries);
+          console.log('✅ Fallback loaded:', fetchedSeries.length, 'series with instances');
         }
+      }
+
+      setSeriesList(fetchedSeries);
+
+      // Default touch mode: CR/DX -> PAN/ZOOM, CT/MR -> SCROLL
+      const mod = String(studyMeta?.modality || res?.data?.modality || "").toUpperCase();
+      if (mod === "CT" || mod === "MR") {
+        setTouchMode("SCROLL");
+      } else {
+        setTouchMode("PAN");
       }
 
       // Restore active series and slice state if available
@@ -372,19 +510,28 @@ const MobileLiteViewer = () => {
       if (data.type === "REQUEST_SNAPSHOT" || data.type === "OHIF_CAPTURE_VIEWPORT") {
         try {
           const canvas = mainCanvasRef.current;
-          const canvasDataUrl = canvas ? canvas.toDataURL("image/jpeg", 0.95) : null;
+          const canvasDataUrl = canvas ? canvas.toDataURL("image/jpeg", 0.92) : null;
+          const seriesUID = activeSeries?.seriesId || activeSeries?.series_id || activeSeries?.series_instance_uid;
+          const seriesDesc = activeSeries?.seriesDescription || activeSeries?.series_description || "Series";
+          const instId = currentInstance?.id || currentInstance?.instance_id;
+          const sliceNum = currentIndex + 1;
+          const totSlices = currentInstances.length || activeSeries?.totalSlices || 1;
+
           const snapshotPayload = {
             type: "SNAPSHOT_CAPTURED",
             payload: {
               dataUrl: canvasDataUrl || imageUrl,
-              sopInstanceUid: currentInstance?.id || currentInstance?.instance_id,
-              seriesInstanceUid: activeSeries?.seriesId,
+              sopInstanceUid: instId,
+              instanceId: instId,
+              seriesUID: seriesUID,
+              seriesInstanceUid: seriesUID,
               studyInstanceUid: studyUID,
-              frameNumber: currentIndex + 1,
-              sliceNumber: currentIndex + 1,
-              totalSlices: currentInstances.length || 1,
-              seriesDescription: activeSeries?.seriesDescription || "Series",
-              caption: `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`,
+              studyUID: studyUID,
+              frameNumber: sliceNum,
+              sliceNumber: sliceNum,
+              totalSlices: totSlices,
+              seriesDescription: seriesDesc,
+              caption: `${seriesDesc} | Slice ${sliceNum}`,
               brightness,
               contrast,
               zoom,
@@ -405,92 +552,134 @@ const MobileLiteViewer = () => {
   }, [imageUrl, activeSeries, currentInstance, currentIndex, currentInstances.length, studyUID, brightness, contrast, zoom, rotation, flipH]);
 
   const captureSnapshot = async () => {
-    if (!imageUrl) return;
-    const snapId = `snap_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const fullCaption = `${activeSeries?.seriesDescription || "Series"} | Slice ${currentIndex + 1}/${currentInstances.length || 1}`;
-
-    const canvas = mainCanvasRef.current;
-    let canvasDataUrl = null;
     try {
-      if (canvas) canvasDataUrl = canvas.toDataURL("image/jpeg", 0.95);
-    } catch (e) {
-      console.warn("Canvas toDataURL failed:", e);
-    }
+      // USE REFS (always fresh, no stale closure)
+      const currentSlice = currentIndexRef.current;
+      const series = activeSeriesRef.current;
+      const instance = currentInstanceRef.current;
+      const meta = studyMetaRef.current;
 
-    let snapshotObj = null;
-    try {
-      const capturePayload = {
+      if (!series || !instance) {
+        alert("Error: No active series or instance");
+        return;
+      }
+
+      // Capture canvas - ensure it's the CURRENT rendered frame
+      const canvas = mainCanvasRef.current;
+      if (!canvas) {
+        alert("Error: Canvas not ready");
+        return;
+      }
+
+      // Force canvas to finish rendering before capture
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      let rawCanvasDataUrl = null;
+      try {
+        rawCanvasDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+      } catch (e) {
+        console.error("Canvas export failed:", e);
+        rawCanvasDataUrl = imageUrl;
+      }
+
+      // UPGRADE #1: Compress Base64 string to 512px max & 0.7 quality to prevent mobile OOM
+      const compressedDataUrl = await compressImage(rawCanvasDataUrl, 512, 0.7);
+
+      const seriesDesc = series.seriesDescription || series.series_description || "Series";
+      const totalCount = currentInstances.length || series.totalSlices || series.total_slices || 1;
+      const fullCaption = `${seriesDesc} | Slice ${currentSlice + 1}/${totalCount}`;
+
+      const payload = {
+        reportId: null,
         studyUID: studyUID,
-        seriesUID: activeSeries?.seriesId,
-        sopInstanceUid: currentInstance?.id || currentInstance?.instance_id,
-        sliceNumber: currentIndex + 1,
-        totalSlices: currentInstances.length || 1,
-        seriesDescription: activeSeries?.seriesDescription || "Series",
-        instanceId: currentInstance?.id || currentInstance?.instance_id,
+        seriesUID: series.seriesId || series.series_id || series.series_instance_uid,
+        seriesDescription: seriesDesc,
+        sliceNumber: currentSlice + 1, // ← NOW ALWAYS ACCURATE FRESH SLICE!
+        totalSlices: totalCount,
+        instanceId: instance.id || instance.instance_id,
+        sopInstanceUid: instance.id || instance.instance_id,
+        modality: meta?.modality || "CT",
         caption: fullCaption,
-        dataUrl: canvasDataUrl || imageUrl,
+        dataUrl: compressedDataUrl,
+        brightness,
         windowCenter: brightness,
+        contrast,
         windowWidth: contrast,
         zoom,
         rotation,
         flipHorizontal: flipH,
-        measurementData: { measurements }
-      };
-      const res = await api.post("/api/pacs/capture-key-image", capturePayload);
-      if (res.data?.success && res.data?.data) {
-        snapshotObj = res.data.data;
-      }
-    } catch (e) {
-      console.warn("capture-key-image microservice call failed:", e);
-    }
-
-    if (!snapshotObj) {
-      snapshotObj = {
-        id: snapId,
-        instance_id: currentInstance?.id || snapId,
-        previewUrl: canvasDataUrl || imageUrl,
-        preview_url: canvasDataUrl || imageUrl,
-        url: canvasDataUrl || imageUrl,
-        dataUrl: canvasDataUrl || imageUrl,
-        sliceNumber: currentIndex + 1,
-        slice_number: currentIndex + 1,
-        seriesDesc: activeSeries?.seriesDescription || "Series",
-        series_desc: activeSeries?.seriesDescription || "Series",
-        caption: fullCaption,
-        studyUID: studyUID,
+        measurementData: { measurements },
         capturedAt: new Date().toISOString()
       };
-    }
 
-    if (window.parent && window.parent !== window) {
+      console.log("📸 CAPTURING KEY IMAGE:", payload);
+
+      let snapshotObj = null;
+
+      // UPGRADE #2 & #3: POST with Exponential Backoff Retry + Offline Fallback Queue
       try {
-        window.parent.postMessage({
-          type: "ADD_KEY_IMAGE",
-          payload: snapshotObj
-        }, "*");
+        const res = await fetchWithRetry(() => api.post("/api/pacs/v2/key-images/save", payload), 3, 1000);
+        if (res?.data?.success && res?.data?.data) {
+          snapshotObj = res.data.data;
+        }
       } catch (e) {
-        console.warn("PostMessage to parent failed:", e);
+        console.warn("⚠️ POST /v2/key-images/save failed after retries. Adding to offline queue:", e);
+        try {
+          const pendingQueueStr = localStorage.getItem("pending_key_image_uploads") || "[]";
+          let pendingQueue = [];
+          try { pendingQueue = JSON.parse(pendingQueueStr); } catch (err) { pendingQueue = []; }
+          pendingQueue.push(payload);
+          localStorage.setItem("pending_key_image_uploads", JSON.stringify(pendingQueue));
+        } catch (queueErr) {
+          console.error("Failed to queue key image offline:", queueErr);
+        }
       }
-    }
 
-    if (studyUID) {
-      const savedStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
-      let saved = [];
-      try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
-      const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url)) !== snapshotObj.preview_url)];
-      localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
-    }
+      // Also try microservice endpoint with retry
+      try {
+        const resMicro = await fetchWithRetry(() => api.post("/api/pacs/capture-key-image", payload), 2, 800).catch(() => null);
+        if (!snapshotObj && resMicro?.data?.success && resMicro?.data?.data) {
+          snapshotObj = resMicro.data.data;
+        }
+      } catch (e) {
+        /* ignore optional microservice fallback error */
+      }
 
-    try {
-      await api.post(`/api/studies/${encodeURIComponent(studyUID)}/key-images`, {
-        keyImages: [snapshotObj],
-        snapshots: [snapshotObj]
-      });
-    } catch (e) {
-      console.warn("Could not sync key image to backend:", e);
-    }
+      if (!snapshotObj) {
+        snapshotObj = payload;
+      }
 
-    alert(`📸 Key Image Captured (${activeSeries?.seriesDescription || "Series"} - Slice ${currentIndex + 1})! Attached to Report Studio.`);
+      // Post to parent window (Report Studio integration)
+      if (window.parent && window.parent !== window) {
+        try {
+          window.parent.postMessage({
+            type: "ADD_KEY_IMAGE",
+            payload: snapshotObj
+          }, "*");
+        } catch (e) {
+          console.warn("PostMessage to parent failed:", e);
+        }
+      }
+
+      // Save to localStorage (offline backup)
+      if (studyUID) {
+        try {
+          const savedStr = localStorage.getItem(`key_images_${studyUID}`) || "[]";
+          let saved = [];
+          try { saved = JSON.parse(savedStr); } catch (e) { saved = []; }
+          const updated = [snapshotObj, ...saved.filter(s => (typeof s === "string" ? s : (s.previewUrl || s.preview_url || s.dataUrl)) !== (snapshotObj.preview_url || snapshotObj.dataUrl))];
+          localStorage.setItem(`key_images_${studyUID}`, JSON.stringify(updated));
+        } catch (e) {
+          console.warn("LocalStorage key image update error:", e);
+        }
+      }
+
+      alert(`✅ Key Image Captured!\n${fullCaption}`);
+
+    } catch (error) {
+      console.error("Key image capture failed:", error);
+      alert("Capture failed: " + error.message);
+    }
   };
 
   if (!studyUID) {

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Image as ImageIcon, Trash2, Plus, FileText, Maximize2, X, Edit2, Check } from "lucide-react";
 import api from "../../api/axios";
+import { captureActiveViewportCanvas, detectViewportSliceInfoFromDOM } from "../../utils/ViewerBridge";
 
 export default function KeyImageGallery({
   studyUID,
@@ -85,47 +86,59 @@ export default function KeyImageGallery({
     String(s.orthanc_series_id) === String(selectedSeriesId)
   ) || (studySeriesList || [])[0];
 
-  const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 999;
+  const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 1;
 
   const handleDirectAttachSlice = async () => {
-    if (!studyUID || !selectedSeriesId) {
-      console.warn("🚨 KeyImageGallery: Cannot attach. Missing studyUID or selectedSeriesId.");
-      return;
-    }
+    // 1. Try to capture live pixels & series info from active viewport overlay
+    const liveDataUrl = captureActiveViewportCanvas();
+    const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 
-    const seriesObj = (studySeriesList || []).find(s => 
+    const effectiveSeriesObj = (detected && detected.series) ? detected.series : ((studySeriesList || []).find(s => 
       String(s.series_id) === String(selectedSeriesId) || 
       String(s.series_instance_uid) === String(selectedSeriesId) || 
       String(s.orthanc_series_id) === String(selectedSeriesId)
-    );
+    ) || currentSeries);
 
-    if (!seriesObj) {
-      console.warn("🚨 KeyImageGallery: No series found for explicit capture ID:", selectedSeriesId);
+    if (!studyUID || !effectiveSeriesObj) {
+      console.warn("🚨 KeyImageGallery: Cannot attach. Missing studyUID or series.");
       return;
     }
 
-    const clampedSlice = Math.max(1, Math.min(maxSlices, parseInt(sliceInput, 10) || 1));
+    const maxSlicesForSeries = effectiveSeriesObj?.total_slices || effectiveSeriesObj?.instances?.length || 1;
+    const targetSlice = (detected && detected.sliceNumber) 
+      ? detected.sliceNumber 
+      : Math.max(1, Math.min(maxSlicesForSeries, parseInt(sliceInput, 10) || 1));
+
     let targetInst = null;
-    if (Array.isArray(seriesObj.instances) && seriesObj.instances.length > 0) {
-      targetInst = seriesObj.instances.find(inst => 
-        parseInt(inst.slice_number || inst.instance_number || 0, 10) === clampedSlice
-      ) || seriesObj.instances[Math.min(clampedSlice - 1, seriesObj.instances.length - 1)];
+    if (Array.isArray(effectiveSeriesObj.instances) && effectiveSeriesObj.instances.length > 0) {
+      targetInst = effectiveSeriesObj.instances.find(inst => 
+        parseInt(inst.slice_number || inst.instance_number || 0, 10) === targetSlice
+      ) || effectiveSeriesObj.instances[Math.min(targetSlice - 1, effectiveSeriesObj.instances.length - 1)];
     }
 
-    const seriesUID = seriesObj.series_id || seriesObj.series_instance_uid;
-    const instanceId = targetInst?.instance_id || targetInst?.sop_instance_uid;
+    const seriesUID = effectiveSeriesObj.series_id || effectiveSeriesObj.series_instance_uid;
+    const instanceId = targetInst?.instance_id || targetInst?.sop_instance_uid || targetInst?.id;
+    if (!instanceId) {
+      console.warn("🚨 KeyImageGallery: Cannot attach. Missing instance identifier.");
+      return;
+    }
+
+    const sDesc = effectiveSeriesObj.series_description || "Diagnostic Series";
+    const totSlices = effectiveSeriesObj.total_slices || effectiveSeriesObj.instances?.length || 1;
 
     const payload = {
       reportId: null,
       studyUID,
       seriesUID,
       instanceId,
-      sliceNumber: clampedSlice,
-      seriesDescription: seriesObj.series_description || "Unknown",
-      modality: seriesObj.modality || "CT"
+      sliceNumber: targetSlice,
+      seriesDescription: sDesc,
+      modality: effectiveSeriesObj.modality || "CT",
+      dataUrl: liveDataUrl || null,
+      caption: `${sDesc} | Slice ${targetSlice}/${totSlices}`
     };
 
-    console.log("🚨 KeyImageGallery explicit capture payload:", payload);
+    console.log("🚨 KeyImageGallery live capture payload:", payload);
 
     try {
       const res = await api.post("/api/pacs/v2/key-images/save", payload);
@@ -133,7 +146,12 @@ export default function KeyImageGallery({
         if (setAttachedSnapshots) {
           setAttachedSnapshots(prev => {
             const newImg = res.data.data;
-            if (prev.some(s => (s.id || s.instance_id) === (newImg.id || newImg.instance_id))) return prev;
+            if (prev.some(s => 
+              (s.id && newImg.id && String(s.id) === String(newImg.id)) ||
+              (s.instance_id && newImg.instance_id && String(s.instance_id) === String(newImg.instance_id)) ||
+              (s.sop_instance_uid && newImg.sop_instance_uid && String(s.sop_instance_uid) === String(newImg.sop_instance_uid)) ||
+              (s.preview_url && newImg.preview_url && String(s.preview_url) === String(newImg.preview_url))
+            )) return prev;
             return [...prev, newImg];
           });
         }
@@ -141,7 +159,7 @@ export default function KeyImageGallery({
     } catch (err) {
       console.error("🚨 KeyImageGallery capture error:", err.message);
       if (onAttachActiveSlice) {
-        onAttachActiveSlice(clampedSlice, seriesUID);
+        onAttachActiveSlice(targetSlice, seriesUID);
       }
     }
   };
@@ -178,16 +196,11 @@ export default function KeyImageGallery({
                   }}
                   title="Select Active Diagnostic Series"
                 >
-                  {studySeriesList
-                    .filter(s => {
-                      const d = String(s.series_description || "").toLowerCase();
-                      return !d.includes("topogram") && !d.includes("localizer") && !d.includes("scout") && !d.includes("survey") && !d.includes("plan");
-                    })
-                    .map(s => (
-                      <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
-                        S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
-                      </option>
-                    ))}
+                  {studySeriesList.map(s => (
+                    <option key={s.series_id || s.series_instance_uid} value={s.series_id || s.series_instance_uid}>
+                      S:{s.series_number || 1} - {s.series_description || `Series ${s.series_number || 1}`} ({s.total_slices || s.instances?.length || 1})
+                    </option>
+                  ))}
                 </select>
               )}
 

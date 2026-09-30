@@ -4,7 +4,6 @@ import api from "../../api/axios";
 import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import VoiceDictationManager from "../dictation/VoiceDictationManager";
-import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import {
   Sparkles,
   Zap,
@@ -26,7 +25,7 @@ import {
   Image as ImageIcon
 } from "lucide-react";
 import { getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList } from "../../utils/ViewerBridge";
+import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas } from "../../utils/ViewerBridge";
 import { keyImageService } from "../../services/KeyImageService";
 import "./WorkstationModal.css";
 import "./ReportStudio.css";
@@ -167,11 +166,27 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
   const [activeViewportInfo, setActiveViewportInfo] = useState(null);
   const [studySeriesList, setStudySeriesList] = useState([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState("");
+  const [activeSeriesId, setActiveSeriesId] = useState(null);
+  const [activeSeriesDesc, setActiveSeriesDesc] = useState(null);
+  const [activeSliceNum, setActiveSliceNum] = useState(1);
   const [targetSliceNumber, setTargetSliceNumber] = useState("1");
-  const [showSlicePickerModal, setShowSlicePickerModal] = useState(false);
-  const [pickerSliceNum, setPickerSliceNum] = useState(1);
   const [sessionLockInfo, setSessionLockInfo] = useState(null);
   const [toastMsg, setToastMsg] = useState("");
+
+  // Listen for OHIF broadcast postMessage events
+  useEffect(() => {
+    const handleOHIFMessage = (event) => {
+      if (event.data && (event.data.type === 'OHIF_ACTIVE_SERIES' || event.data.type === 'OHIF_VIEWPORT_CHANGE')) {
+        console.log("🚨 [OHIF BROADCAST] Active series:", event.data.seriesDescription || event.data.seriesId);
+        if (event.data.seriesId) setActiveSeriesId(String(event.data.seriesId));
+        if (event.data.seriesDescription) setActiveSeriesDesc(event.data.seriesDescription);
+        if (event.data.sliceNumber || event.data.frameNumber) setActiveSliceNum(event.data.sliceNumber || event.data.frameNumber || 1);
+      }
+    };
+
+    window.addEventListener('message', handleOHIFMessage);
+    return () => window.removeEventListener('message', handleOHIFMessage);
+  }, []);
 
   // Real-time Concurrent Doctor Reporting Lock (Online / LAN)
   useEffect(() => {
@@ -223,24 +238,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     if (!studyUID) return;
     setStudySeriesList([]);
     setSelectedSeriesId("");
+    setActiveSeriesId("");
     setTargetSliceNumber("1");
 
     api.get(`/api/pacs/study-series-instances/${encodeURIComponent(studyUID)}`)
       .then((res) => {
         if (res.data?.success && Array.isArray(res.data.series) && res.data.series.length > 0) {
           setStudySeriesList(res.data.series);
-          const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s.series_description || s.seriesDescription || '');
-          const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
-          
-          const sortedAll = [...res.data.series].sort((a, b) => {
-            const aScout = isScout(a) ? 1 : 0;
-            const bScout = isScout(b) ? 1 : 0;
-            if (aScout !== bScout) return aScout - bScout;
-            return getSliceCount(b) - getSliceCount(a);
-          });
-          const mainSeries = sortedAll[0];
-          setSelectedSeriesId(String(mainSeries.series_id || mainSeries.series_instance_uid || ''));
-          setPickerSliceNum(1);
           setTargetSliceNumber("1");
         }
       })
@@ -284,9 +288,11 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           }
 
           if ((sUid || sDesc) && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
-            const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices);
+            const matchedSeries = findSeriesInList(studySeriesList, sUid || sDesc, fNum, vpState.totalSlices, activeSeriesId);
             if (matchedSeries && matchedSeries.series_id) {
-              setSelectedSeriesId(String(matchedSeries.series_id));
+              const matchedId = String(matchedSeries.series_id);
+              setSelectedSeriesId(matchedId);
+              setActiveSeriesId(matchedId);
             }
           }
 
@@ -297,7 +303,43 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       }
     );
     return () => unsubscribe();
-  }, [study, studySeriesList]);
+  }, [study, studySeriesList, activeSeriesId]);
+  useEffect(() => {
+    const iframe = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
+    if (!iframe) return;
+
+    const handleInteraction = () => {
+      const detected = detectViewportSliceInfoFromDOM(studySeriesList);
+      if (detected && detected.series) {
+        const detectedId = String(detected.series.series_id || detected.series.series_instance_uid || '');
+        setSelectedSeriesId(detectedId);
+        setActiveSeriesId(detectedId);
+        if (detected.sliceNumber) {
+          setTargetSliceNumber(String(detected.sliceNumber));
+        }
+      }
+    };
+
+    const attachListeners = () => {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (iframeDoc) {
+          iframeDoc.addEventListener('click', handleInteraction, true);
+          iframeDoc.addEventListener('mouseup', handleInteraction, true);
+          iframeDoc.addEventListener('wheel', handleInteraction, { capture: true, passive: true });
+        }
+      } catch (e) {
+        // Cross-origin fallback
+      }
+    };
+
+    iframe.addEventListener('load', attachListeners);
+    attachListeners();
+
+    return () => {
+      iframe.removeEventListener('load', attachListeners);
+    };
+  }, [studySeriesList]);
 
   const findDicomViewerIframe = () => {
     const iframes = Array.from(document.querySelectorAll("iframe"));
@@ -314,87 +356,81 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     return document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
   };
 
-  // 1-CLICK DIRECT SNAPSHOTTER (NO SELECTION WINDOW)
+    // 1-CLICK CAPTURE - NO MODAL
   const handleAttachTargetSlice = async (overrideSliceNum = null, overrideSeriesId = null) => {
-    const reportId = study?.report_id || study?.reportId || null;
-    const iframeEl = findDicomViewerIframe();
+    const liveDataUrl = captureActiveViewportCanvas();
+    const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 
-    console.log("🚨 [WORKSTATION] Key image capture button clicked. Attempting requestViewerSnapshot...");
-    try {
-      const snapResult = await requestViewerSnapshot(iframeEl || ".dws-iframe, iframe", studySeriesList, null);
-      console.log("🚨 [WORKSTATION] requestViewerSnapshot result:", snapResult);
+    // Determine target series
+    let targetSeriesObj = null;
+    const effectiveSeriesId = overrideSeriesId || activeSeriesId || selectedSeriesId;
 
-      if (!overrideSeriesId && (snapResult?.status === "failed" || !snapResult?.matchedSeriesId)) {
-        console.warn("🚨 [DiagnosticWorkstationModal] Cross-origin or no metadata. Opening visual slice picker modal.");
-        setShowSlicePickerModal(true);
-        return;
-      }
-
-      const targetSeriesId = overrideSeriesId || snapResult?.matchedSeriesId;
-      let seriesObj = studySeriesList.find(s => 
-        String(s.series_id) === String(targetSeriesId) || 
-        String(s.series_instance_uid) === String(targetSeriesId) ||
-        String(s.orthanc_series_id) === String(targetSeriesId)
+    if (detected && detected.series) {
+      targetSeriesObj = detected.series;
+    } else if (effectiveSeriesId) {
+      targetSeriesObj = (studySeriesList || []).find(s => 
+        String(s.series_id) === String(effectiveSeriesId) || 
+        String(s.series_instance_uid) === String(effectiveSeriesId) ||
+        String(s.orthanc_series_id) === String(effectiveSeriesId)
       );
+    }
 
-      if (!seriesObj && snapResult?.seriesDescription) {
-        seriesObj = studySeriesList.find(s => 
-          s.series_description && String(s.series_description).trim().toLowerCase() === String(snapResult.seriesDescription).trim().toLowerCase()
-        );
+    if (!targetSeriesObj) {
+      targetSeriesObj = (studySeriesList || [])[0];
+    }
+
+    if (!targetSeriesObj) {
+      console.error("🚨 [1-CLICK] Series not found");
+      setToastMsg("❌ Active series not found");
+      setTimeout(() => setToastMsg(""), 3000);
+      return;
+    }
+
+    const totalSlices = targetSeriesObj.total_slices || targetSeriesObj.instances?.length || 1;
+    
+    // Determine target slice number accurately using all available fallbacks
+    const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
+    const targetSliceNum = (detected && detected.sliceNumber)
+      ? detected.sliceNumber
+      : Math.min(Math.max(1, fallbackSliceNum), totalSlices);
+
+    const instance = targetSeriesObj.instances?.find(inst => 
+      parseInt(inst.slice_number || inst.instance_number || 0, 10) === targetSliceNum
+    ) || targetSeriesObj.instances?.[Math.min(targetSliceNum - 1, totalSlices - 1)] || targetSeriesObj.instances?.[0];
+
+    if (!instance) {
+      console.error("🚨 [1-CLICK] Instance not found for slice:", targetSliceNum);
+      return;
+    }
+
+    const sDesc = targetSeriesObj.series_description || "Diagnostic Series";
+
+    const payload = {
+      reportId: study?.report_id || study?.reportId || null,
+      studyUID: studyUID,
+      seriesUID: targetSeriesObj.series_id || targetSeriesObj.series_instance_uid,
+      instanceId: instance.instance_id || instance.sop_instance_uid,
+      sliceNumber: targetSliceNum,
+      seriesDescription: sDesc,
+      modality: targetSeriesObj.modality || "CT",
+      dataUrl: liveDataUrl || null,
+      caption: `${sDesc} | Slice ${targetSliceNum}/${totalSlices}`
+    };
+
+    console.log("🚨 [1-CLICK CAPTURE SUCCESS] Live payload:", payload);
+
+    try {
+      const res = await api.post("/api/pacs/v2/key-images/save", payload);
+      if (res.data?.success && res.data?.data) {
+        setAttachedSnapshots(prev => {
+          if (prev.some(s => (s.id || s.instance_id) === (res.data.data.id || res.data.data.instance_id))) return prev;
+          return [...prev, res.data.data];
+        });
+        setToastMsg(`📸 Key Image (${sDesc} | Slice ${targetSliceNum}) Captured!`);
+        setTimeout(() => setToastMsg(""), 3000);
       }
-
-      if (!seriesObj) {
-        console.warn("🚨 [DiagnosticWorkstationModal] Could not resolve matching seriesObj for ID:", targetSeriesId, "Desc:", snapResult?.seriesDescription);
-        setShowSlicePickerModal(true);
-        return;
-      }
-
-      const detectedSlice = overrideSliceNum || snapResult?.sliceNumber || 1;
-      const totalSlices = seriesObj?.total_slices || seriesObj?.instances?.length || 1;
-      const clampedSlice = Math.min(Math.max(1, parseInt(detectedSlice, 10)), totalSlices);
-
-      let targetInst = null;
-      if (Array.isArray(seriesObj?.instances) && seriesObj.instances.length > 0) {
-        targetInst = seriesObj.instances.find(inst => 
-          parseInt(inst.slice_number || inst.instance_number || 0, 10) === clampedSlice
-        ) || seriesObj.instances[Math.min(clampedSlice - 1, seriesObj.instances.length - 1)];
-      }
-
-      const seriesDesc = seriesObj?.series_description || snapResult?.seriesDescription || "Diagnostic Series";
-      const caption = totalSlices > 1 ? `${seriesDesc} | ${clampedSlice}/${totalSlices}` : `${seriesDesc} | ${clampedSlice}`;
-
-      const capturePayload = {
-        studyUID: studyUID,
-        seriesUID: seriesObj?.series_id || seriesObj?.series_instance_uid,
-        sopInstanceUid: targetInst?.instance_id || snapResult?.sopInstanceUid,
-        instanceId: targetInst?.instance_id,
-        sliceNumber: clampedSlice,
-        totalSlices: totalSlices,
-        seriesNumber: seriesObj?.series_number || 1,
-        seriesDescription: seriesDesc,
-        modality: seriesObj?.modality || "CT",
-        caption: caption,
-        dataUrl: snapResult?.dataUrl || null,
-        windowCenter: snapResult?.windowCenter || null,
-        windowWidth: snapResult?.windowWidth || null
-      };
-
-      console.log("🚨 [DiagnosticWorkstationModal] STATE: Sending capture payload:", capturePayload);
-      const savedKeyImg = await keyImageService.addKeyImage(reportId, capturePayload);
-      const finalObj = savedKeyImg || capturePayload;
-
-      setAttachedSnapshots(prev => {
-        const idToCheck = finalObj.id || finalObj.instanceId || finalObj.sopInstanceUid;
-        if (idToCheck && prev.some(s => String(s.id || s.instance_id || s.sopInstanceUid) === String(idToCheck))) {
-          return prev;
-        }
-        return [...prev, finalObj];
-      });
-
-      setToastMsg(`✓ Key Image (${finalObj.caption || 'Captured'}) attached to report!`);
-      setTimeout(() => setToastMsg(""), 3500);
     } catch (err) {
-      console.error("[DiagnosticWorkstationModal] Key image capture failed:", err);
+      console.error("🚨 [1-CLICK] Capture failed:", err);
     }
   };
 
@@ -1371,7 +1407,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
             <button
               type="button"
-              onClick={() => setShowSlicePickerModal(true)}
+              onClick={() => handleAttachTargetSlice(null, null)}
               style={{
                 background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
                 color: "#ffffff",
@@ -1385,9 +1421,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 alignItems: "center",
                 gap: 5
               }}
-              title="Browse & Select Specific Study Slices"
+              title="1-Click Capture Active Image to Report"
             >
-              <ImageIcon size={14} /> + Select Key Images
+              <ImageIcon size={14} /> 📸 Capture Key Image
             </button>
 
             <button
@@ -2003,152 +2039,6 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* VISUAL DICOM SLICE BROWSER MODAL */}
-      {showSlicePickerModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999999, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ background: '#ffffff', borderRadius: 12, maxWidth: 720, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)', border: '1px solid #cbd5e1', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            
-            {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>🖼️ Visual DICOM Slice Browser</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>Select any series and slice number to instantly attach high-resolution preview to report</p>
-              </div>
-              <button type="button" onClick={() => setShowSlicePickerModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '50%', width: 28, height: 28, fontWeight: 800, cursor: 'pointer' }}>✕</button>
-            </div>
-
-            {/* Series Selection Tabs */}
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-              {studySeriesList.map(s => {
-                const isSel = String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId);
-                return (
-                  <button
-                    key={s.series_id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedSeriesId(s.series_id);
-                      setPickerSliceNum(1);
-                      setTargetSliceNumber("1");
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      borderRadius: 8,
-                      border: isSel ? '2px solid #0284c7' : '1px solid #cbd5e1',
-                      background: isSel ? '#0284c7' : '#f8fafc',
-                      color: isSel ? '#ffffff' : '#334155',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {s.series_description || `Series ${s.series_number}`} ({s.total_slices} Slices)
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Active Series & Slider Control */}
-            {(() => {
-              const sObj = studySeriesList.find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) || studySeriesList[0];
-              const maxS = sObj?.total_slices || 1;
-              const curSlice = Math.min(Math.max(1, pickerSliceNum), maxS);
-              const curInst = sObj?.instances ? sObj.instances[curSlice - 1] : null;
-
-              return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center' }}>
-                  {/* Live Preview Container */}
-                  <div style={{ width: '100%', height: 320, background: '#000000', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden', border: '2px solid #0284c7' }}>
-                    {curInst ? (
-                      <img
-                        src={`/api/pacs/instance-preview/${curInst.instance_id}`}
-                        alt={`Slice ${curSlice}`}
-                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-                      />
-                    ) : (
-                      <div style={{ color: '#94a3b8', fontSize: 13 }}>Preview Loading...</div>
-                    )}
-                    <div style={{ position: 'absolute', bottom: 10, right: 12, background: 'rgba(0,0,0,0.75)', color: '#00f2fe', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, border: '1px solid rgba(0,242,254,0.3)' }}>
-                      Slice {curSlice} / {maxS}
-                    </div>
-                  </div>
-
-                  {/* Slider Stepper */}
-                  <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() => setPickerSliceNum(prev => Math.max(1, prev - 1))}
-                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                    >
-                      -
-                    </button>
-                    <input
-                      type="range"
-                      min="1"
-                      max={maxS}
-                      value={curSlice}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 1;
-                        setPickerSliceNum(val);
-                        setTargetSliceNumber(String(val));
-                      }}
-                      style={{ flex: 1, accentColor: '#0284c7', height: 8, cursor: 'pointer' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPickerSliceNum(prev => Math.min(maxS, prev + 1))}
-                      style={{ padding: '6px 14px', fontSize: 14, fontWeight: 900, background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                    >
-                      +
-                    </button>
-                    <input
-                      type="number"
-                      min="1"
-                      max={maxS}
-                      value={curSlice}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 1;
-                        setPickerSliceNum(val);
-                        setTargetSliceNumber(String(val));
-                      }}
-                      style={{ width: 65, padding: '4px 6px', fontSize: 13, fontWeight: 800, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }}
-                    />
-                  </div>
-
-                  {/* Direct Action Attach Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleAttachTargetSlice(curSlice, sObj?.series_id);
-                      setTargetSliceNumber(String(curSlice));
-                      setShowSlicePickerModal(false);
-                    }}
-                    style={{
-                      width: '100%',
-                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 8,
-                      padding: '10px 16px',
-                      fontSize: 13,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 12px rgba(2, 132, 199, 0.35)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8
-                    }}
-                  >
-                    <Camera size={16} /> 📸 Attach Slice #{curSlice} of {sObj?.series_description || 'Series'} to Report
-                  </button>
-                </div>
-              );
-            })()}
           </div>
         </div>
       )}

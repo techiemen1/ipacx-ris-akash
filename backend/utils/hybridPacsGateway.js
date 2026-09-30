@@ -58,21 +58,13 @@ class HybridPacsGateway {
 
   /**
   /**
-   * Sorts series list so non-scout diagnostic series are prioritized first,
-   * sorted descending by total slice count. Topogram/Scout series are placed at the end.
+   * Sorts series list by DICOM SeriesNumber ascending (matching OHIF sidebar order: Series 1, Series 2, etc.)
    */
   sortSeriesList(seriesList) {
     if (!Array.isArray(seriesList)) return [];
-    const isScout = (s) => /topogram|localizer|scout|survey|plan|planner|positioning|loc/i.test(s?.series_description || s?.seriesDescription || '');
-    const getSliceCount = (s) => parseInt(s?.total_slices || s?.totalSlices || (Array.isArray(s?.instances) ? s.instances.length : 0) || 0, 10);
-
+    const getSeriesNum = (s) => parseInt(s?.series_number || s?.seriesNumber || 9999, 10);
     const sorted = [...seriesList];
-    sorted.sort((a, b) => {
-      const aScout = isScout(a) ? 1 : 0;
-      const bScout = isScout(b) ? 1 : 0;
-      if (aScout !== bScout) return aScout - bScout;
-      return getSliceCount(b) - getSliceCount(a);
-    });
+    sorted.sort((a, b) => getSeriesNum(a) - getSeriesNum(b));
     return sorted;
   }
 
@@ -262,10 +254,69 @@ class HybridPacsGateway {
           const sNum = parseInt(sData.MainDicomTags?.SeriesNumber || (sIdx + 1), 10);
           const sModality = sData.MainDicomTags?.Modality || "";
 
-          let orderedInstances = [];
-          
-          // Fast path: use sData.Instances directly (0ms execution time, 0 extra HTTP requests)
-          if (Array.isArray(sData.Instances) && sData.Instances.length > 0) {
+                    let orderedInstances = [];
+
+          // Strategy 1: Expand instances to sort strictly by InstanceNumber & spatial position
+          try {
+            const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 12000 });
+            if (Array.isArray(expInstances) && expInstances.length > 0) {
+              expInstances.sort((a, b) => {
+                const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
+                const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
+                if (numA !== numB) return numA - numB;
+                const posA = a.MainDicomTags?.ImagePositionPatient ? parseFloat(a.MainDicomTags.ImagePositionPatient.split("\\")[2] || 0) : 0;
+                const posB = b.MainDicomTags?.ImagePositionPatient ? parseFloat(b.MainDicomTags.ImagePositionPatient.split("\\")[2] || 0) : 0;
+                return posA - posB;
+              });
+              const tot = expInstances.length;
+              orderedInstances = expInstances.map((inst, iIdx) => {
+                const instId = extractCleanInstanceId(inst.ID || inst);
+                const instNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
+                const sopUid = inst.MainDicomTags?.SOPInstanceUID || instId;
+                return {
+                  id: instId,
+                  instance_id: instId,
+                  sop_instance_uid: sopUid,
+                  slice_number: instNum,
+                  instanceNumber: instNum,
+                  instance_number: instNum,
+                  slice_index: iIdx + 1,
+                  previewUrl: `/api/pacs/instance-preview/${instId}`,
+                  preview_url: `/api/pacs/instance-preview/${instId}`,
+                  caption: `${sDesc} | Slice ${instNum}/${tot}`
+                };
+              });
+            }
+          } catch (e) {}
+
+          // Strategy 2: Try Orthanc /ordered-slices if expand failed or timed out
+          if (orderedInstances.length === 0) {
+            try {
+              const { data: oSlicesData } = await axios.get(`${orthancUrl}series/${seriesId}/ordered-slices`, { ...config, timeout: 6000 });
+              if (oSlicesData && Array.isArray(oSlicesData.Slices) && oSlicesData.Slices.length > 0) {
+                const tot = oSlicesData.Slices.length;
+                orderedInstances = oSlicesData.Slices.map((item, iIdx) => {
+                  const rawPath = Array.isArray(item) ? item[0] : (typeof item === "string" ? item : (item?.Path || ""));
+                  const instId = extractCleanInstanceId(rawPath);
+                  return {
+                    id: instId,
+                    instance_id: instId,
+                    sop_instance_uid: instId,
+                    slice_number: iIdx + 1,
+                    instanceNumber: iIdx + 1,
+                    instance_number: iIdx + 1,
+                    slice_index: iIdx + 1,
+                    previewUrl: `/api/pacs/instance-preview/${instId}`,
+                    preview_url: `/api/pacs/instance-preview/${instId}`,
+                    caption: `${sDesc} | Slice ${iIdx + 1}/${tot}`
+                  };
+                });
+              }
+            } catch (e) {}
+          }
+
+          // Strategy 3: Fast fallback if both expand & ordered-slices fail
+          if (orderedInstances.length === 0 && Array.isArray(sData.Instances) && sData.Instances.length > 0) {
             const tot = sData.Instances.length;
             orderedInstances = sData.Instances.map((instItem, iIdx) => {
               const instId = extractCleanInstanceId(instItem);
@@ -285,34 +336,25 @@ class HybridPacsGateway {
             });
           }
 
-          // Optional expand for small series only (<30 instances) if instance numbers are needed
-          if (orderedInstances.length > 0 && orderedInstances.length <= 30) {
+          // Multi-frame DICOM slice expansion check
+          if (orderedInstances.length === 1) {
+            const singleInstId = orderedInstances[0].id;
             try {
-              const { data: expInstances } = await axios.get(`${orthancUrl}series/${seriesId}/instances?expand`, { ...config, timeout: 1500 });
-              if (Array.isArray(expInstances) && expInstances.length > 0) {
-                expInstances.sort((a, b) => {
-                  const numA = parseInt(a.MainDicomTags?.InstanceNumber || a.IndexInSeries || 0, 10);
-                  const numB = parseInt(b.MainDicomTags?.InstanceNumber || b.IndexInSeries || 0, 10);
-                  return numA - numB;
-                });
-                const tot = expInstances.length;
-                orderedInstances = expInstances.map((inst, iIdx) => {
-                  const instId = extractCleanInstanceId(inst.ID || inst);
-                  const instNum = parseInt(inst.MainDicomTags?.InstanceNumber || (iIdx + 1), 10);
-                  const sopUid = inst.MainDicomTags?.SOPInstanceUID || instId;
-                  return {
-                    id: instId,
-                    instance_id: instId,
-                    sop_instance_uid: sopUid,
-                    slice_number: instNum,
-                    instanceNumber: instNum,
-                    instance_number: instNum,
-                    slice_index: iIdx + 1,
-                    previewUrl: `/api/pacs/instance-preview/${instId}`,
-                    preview_url: `/api/pacs/instance-preview/${instId}`,
-                    caption: `${sDesc} | Slice ${instNum}/${tot}`
-                  };
-                });
+              const { data: frames } = await axios.get(`${orthancUrl}instances/${singleInstId}/frames`, { ...config, timeout: 5000 });
+              if (Array.isArray(frames) && frames.length > 1) {
+                orderedInstances = frames.map((fIdx) => ({
+                  id: `${singleInstId}?frame=${fIdx}`,
+                  instance_id: singleInstId,
+                  sop_instance_uid: singleInstId,
+                  frame_index: fIdx,
+                  slice_number: fIdx + 1,
+                  instanceNumber: fIdx + 1,
+                  instance_number: fIdx + 1,
+                  slice_index: fIdx + 1,
+                  previewUrl: `/api/pacs/instance-preview/${singleInstId}?frame=${fIdx}`,
+                  preview_url: `/api/pacs/instance-preview/${singleInstId}?frame=${fIdx}`,
+                  caption: `${sDesc} | Frame ${fIdx + 1}/${frames.length}`
+                }));
               }
             } catch (e) {}
           }
@@ -366,21 +408,10 @@ class HybridPacsGateway {
         } catch (e) {}
       }
 
-      // Priority 1A: Direct /rendered on instance (works for 99% single-frame DICOM instances in <5ms)
-      const directRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/rendered`, {
-        responseType: "arraybuffer",
-        ...orthancAuthConfig(),
-        timeout: 2500
-      }).catch(() => null);
-
-      if (directRes && directRes.data && directRes.data.byteLength > 500) {
-        return Buffer.from(directRes.data);
-      }
-
-      // Priority 1B: Multi-frame DICOM instance frame rendering (0-indexed for Orthanc)
+      // Priority 1A: Multi-frame DICOM instance frame rendering (0-indexed for Orthanc)
       if (frameNumber !== null && frameNumber !== undefined && frameNumber !== "") {
         const frameIdx = parseInt(frameNumber, 10);
-        const orthancFrame = (!isNaN(frameIdx) && frameIdx > 0) ? (frameIdx - 1) : 0;
+        const orthancFrame = (!isNaN(frameIdx) && frameIdx >= 0) ? (frameIdx > 0 ? frameIdx - 1 : frameIdx) : 0;
         const frameRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/frames/${orthancFrame}/rendered`, {
           responseType: "arraybuffer",
           ...orthancAuthConfig(),
@@ -389,6 +420,17 @@ class HybridPacsGateway {
         if (frameRes && frameRes.data && frameRes.data.byteLength > 500) {
           return Buffer.from(frameRes.data);
         }
+      }
+
+      // Priority 1B: Direct /rendered on instance for single-frame DICOM instances
+      const directRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/rendered`, {
+        responseType: "arraybuffer",
+        ...orthancAuthConfig(),
+        timeout: 2500
+      }).catch(() => null);
+
+      if (directRes && directRes.data && directRes.data.byteLength > 500) {
+        return Buffer.from(directRes.data);
       }
 
       // Priority 1C: /preview fallback

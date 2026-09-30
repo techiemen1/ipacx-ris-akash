@@ -94,21 +94,10 @@ module.exports = function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   let token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
-  // Fallback: Check query parameter (for iframe/embed scenarios)
-  // SECURITY NOTE: Query params are less secure (logged in URLs, browser history)
-  // Only used as fallback when Authorization header is unavailable
-  if (!token && req.query && req.query.token) {
-    token = String(req.query.token);
-    console.warn(`[Auth] Token extracted from query param for ${req.path} - consider using Authorization header`, {
-      ip: req.ip,
-      timestamp: new Date().toISOString()
-    });
-  }
-
   if (!token) {
     return res.status(401).json({ 
       message: "Authorization token missing",
-      detail: "Provide token in Authorization header (Bearer scheme) or ?token query param",
+      detail: "Provide token in Authorization header (Bearer scheme)",
       timestamp: new Date().toISOString()
     });
   }
