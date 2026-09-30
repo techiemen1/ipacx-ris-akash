@@ -407,7 +407,8 @@ CREATE TABLE IF NOT EXISTS audit_log_archives (
 CREATE TABLE IF NOT EXISTS privacy_requests (
     id SERIAL PRIMARY KEY,
     request_type VARCHAR(50) NOT NULL,
-    patient_id VARCHAR(64) NOT NULL,
+    patient_id VARCHAR(64),
+    patient_identifier VARCHAR(64),
     requester_name VARCHAR(100),
     requester_email VARCHAR(100),
     status VARCHAR(20) DEFAULT 'PENDING',

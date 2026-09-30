@@ -572,6 +572,7 @@ pool
   })
   .catch((err) => {
     logger.error("🔴 Failed to connect to PostgreSQL database", { error: err.message });
+    process.exit(1);
   });
 
 process.on("unhandledRejection", (reason, promise) => {

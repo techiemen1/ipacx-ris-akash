@@ -10,6 +10,11 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./schema_docker_init.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./master_data.sql:/docker-entrypoint-initdb.d/02_master_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ris"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
     networks:
       - ipacx-network
     restart: always
@@ -50,8 +55,10 @@ services:
     ports:
       - "3015:3015"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - ipacx-network
     volumes:
@@ -94,7 +101,8 @@ services:
       - MWL_SCP_PORT=11118
       - HL7_PORT=6060
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - ipacx-network
     restart: always
