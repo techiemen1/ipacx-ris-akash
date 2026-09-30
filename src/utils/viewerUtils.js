@@ -44,7 +44,9 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
       if (parsed.origin !== window.location.origin) {
         customOhifUrl = "/ohif/viewer";
       }
-    } catch(e) {}
+    } catch(e) {
+      // Ignore invalid URL parse
+    }
   }
 
   // Clean index.html from path if present
