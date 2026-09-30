@@ -660,12 +660,13 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
 
     const handleInteraction = () => {
       const detected = detectViewportSliceInfoFromDOM(studySeriesList);
-      if (detected && detected.series) {
-        const detectedId = String(detected.series.series_id || detected.series.series_instance_uid || '');
+      const targetSeries = detected?.series || (detected?.matchedSeriesId ? findSeriesInList(studySeriesList, detected.matchedSeriesId) : null);
+      if (targetSeries) {
+        const detectedId = String(targetSeries.series_id || targetSeries.series_instance_uid || '');
         setSelectedSeriesId(detectedId);
         setActiveSeriesId(detectedId);
-        if (detected.sliceNumber) {
-          setTargetSliceNumber(String(detected.sliceNumber));
+        if (detected.sliceNumber || detected.instanceNumber) {
+          setTargetSliceNumber(String(detected.sliceNumber || detected.instanceNumber));
         }
       }
     };
@@ -972,7 +973,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       activeSeriesFromBridge = findSeriesInList(studySeriesList, activeViewportInfo.seriesInstanceUid || activeViewportInfo.seriesDescription);
     }
 
-    const detectedSeriesObj = domDetected?.series || activeSeriesFromBridge || null;
+    const detectedSeriesObj = domDetected?.series || (domDetected?.matchedSeriesId ? findSeriesInList(studySeriesList, domDetected.matchedSeriesId) : null) || activeSeriesFromBridge || null;
 
     // Prioritize active series open in active viewport on screen unless overrideSeriesId is explicitly passed
     const seriesObj = overrideSeriesId

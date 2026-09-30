@@ -178,15 +178,27 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const handleOHIFMessage = (event) => {
       if (event.data && (event.data.type === 'OHIF_ACTIVE_SERIES' || event.data.type === 'OHIF_VIEWPORT_CHANGE')) {
         console.log("🚨 [OHIF BROADCAST] Active series:", event.data.seriesDescription || event.data.seriesId);
-        if (event.data.seriesId) setActiveSeriesId(String(event.data.seriesId));
-        if (event.data.seriesDescription) setActiveSeriesDesc(event.data.seriesDescription);
-        if (event.data.sliceNumber || event.data.frameNumber) setActiveSliceNum(event.data.sliceNumber || event.data.frameNumber || 1);
+        const targetQuery = event.data.seriesId || event.data.seriesDescription;
+        if (targetQuery && Array.isArray(studySeriesList) && studySeriesList.length > 0) {
+          const matched = findSeriesInList(studySeriesList, targetQuery);
+          if (matched) {
+            const matchedId = String(matched.series_id || matched.series_instance_uid || '');
+            setSelectedSeriesId(matchedId);
+            setActiveSeriesId(matchedId);
+            if (matched.series_description) setActiveSeriesDesc(matched.series_description);
+          }
+        }
+        if (event.data.sliceNumber || event.data.frameNumber) {
+          const sl = event.data.sliceNumber || event.data.frameNumber || 1;
+          setActiveSliceNum(sl);
+          setTargetSliceNumber(String(sl));
+        }
       }
     };
 
     window.addEventListener('message', handleOHIFMessage);
     return () => window.removeEventListener('message', handleOHIFMessage);
-  }, []);
+  }, [studySeriesList]);
 
   // Real-time Concurrent Doctor Reporting Lock (Online / LAN)
   useEffect(() => {
@@ -315,12 +327,13 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     const handleInteraction = () => {
       const detected = detectViewportSliceInfoFromDOM(studySeriesList);
-      if (detected && detected.series) {
-        const detectedId = String(detected.series.series_id || detected.series.series_instance_uid || '');
+      const targetSeries = detected?.series || (detected?.matchedSeriesId ? findSeriesInList(studySeriesList, detected.matchedSeriesId) : null);
+      if (targetSeries) {
+        const detectedId = String(targetSeries.series_id || targetSeries.series_instance_uid || '');
         setSelectedSeriesId(detectedId);
         setActiveSeriesId(detectedId);
-        if (detected.sliceNumber) {
-          setTargetSliceNumber(String(detected.sliceNumber));
+        if (detected.sliceNumber || detected.instanceNumber) {
+          setTargetSliceNumber(String(detected.sliceNumber || detected.instanceNumber));
         }
       }
     };
@@ -385,7 +398,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       activeSeriesFromBridge = findSeriesInList(studySeriesList, liveSeriesUid || liveSeriesDesc);
     }
 
-    const detectedSeriesObj = detected?.series || activeSeriesFromBridge || null;
+    const detectedSeriesObj = snapshotResult?.series || detected?.series || (detected?.matchedSeriesId ? findSeriesInList(studySeriesList, detected.matchedSeriesId) : null) || activeSeriesFromBridge || null;
 
     // Prioritize active series open in active viewport on screen unless overrideSeriesId is explicitly passed
     const targetSeriesObj = overrideSeriesId

@@ -459,6 +459,7 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
         if (csSlice || seriesUid || seriesDesc) {
           console.log("✅ [VIEWERBRIDGE] Strategy 0 (OHIF Services) -> Matched active series:", matchedSeriesObj?.series_description || seriesDesc, "slice:", csSlice, "/", csTotal);
           return {
+            series: matchedSeriesObj || null,
             instanceNumber: csSlice || null,
             sliceNumber: csSlice || 1,
             totalSlices: csTotal || ds?.numImageFrames || matchedSeriesObj?.total_slices || 1,
@@ -552,6 +553,7 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
                   highestScore = score;
                   const targetSop = (foundSeries && foundSeries.instances && foundSeries.instances[idx]) ? (foundSeries.instances[idx].sop_instance_uid || foundSeries.instances[idx].instance_id) : null;
                   bestCSResult = {
+                    series: foundSeries || null,
                     instanceNumber: idx + 1,
                     sliceNumber: idx + 1,
                     totalSlices: imageIds.length || (foundSeries?.total_slices) || null,
@@ -805,6 +807,7 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
 
         const result = {
           status: "success",
+          series: matchedSeriesObj || null,
           matchedSeriesId: matchedSeriesObj ? (matchedSeriesObj.series_id || matchedSeriesObj.orthanc_series_id || matchedSeriesObj.series_instance_uid) : ohifData.seriesInstanceUID,
           seriesInstanceUid: ohifData.seriesInstanceUID || (matchedSeriesObj ? matchedSeriesObj.series_instance_uid : null),
           seriesDescription: matchedSeriesObj ? matchedSeriesObj.series_description : ohifData.seriesDescription,
@@ -991,6 +994,22 @@ export function injectOHIFBridge(iframeEl) {
             return null;
           }
         }
+
+        function broadcastActiveSeries() {
+          var state = getActiveState();
+          if (state && (state.seriesInstanceUID || state.seriesDescription)) {
+            window.parent.postMessage({
+              type: "OHIF_ACTIVE_SERIES",
+              seriesId: state.seriesInstanceUID,
+              seriesDescription: state.seriesDescription,
+              sliceNumber: state.sliceNumber,
+              totalSlices: state.totalSlices
+            }, "*");
+          }
+        }
+
+        window.addEventListener("click", function() { setTimeout(broadcastActiveSeries, 100); }, true);
+        window.addEventListener("mouseup", function() { setTimeout(broadcastActiveSeries, 100); }, true);
 
         window.addEventListener("message", function(event) {
           if (!event.data || typeof event.data !== "object") return;
