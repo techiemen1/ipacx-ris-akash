@@ -16,6 +16,12 @@
 
   /* 2. Collapse all top-level modal overlays and workstation background wrappers */
   #root,
+  .create-report-layout,
+  .reporting-root-modern,
+  .reporting-main-content,
+  .reporting-editor-viewport,
+  #createReportPanel,
+  .report-work-area,
   .rs-container,
   .rs-main,
   .dws-overlay,
@@ -30,6 +36,7 @@
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
+    max-width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
@@ -41,39 +48,32 @@
     backdrop-filter: none !important;
   }
 
-  /* 3. Hide all non-printable UI elements */
-  body * {
-    visibility: hidden !important;
-  }
-
-  /* 4. Display printable report document container in flow */
-  #rs-printable-document,
-  #rs-printable-document *,
-  .rs-printable-document,
-  .rs-printable-document * {
-    visibility: visible !important;
-  }
-
-  #rs-printable-document,
-  .rs-printable-document {
-    display: block !important;
-    position: relative !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    overflow: visible !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    font-size: 11pt !important;
-    line-height: 1.5 !important;
-  }
-
-  /* 5. Hide buttons, setup bars, toolbars, and header navigation */
+  /* 3. Hard hide all on-screen mockups, sidebars, preview cards, toolbars, and viewers */
+  .left-preview-pane,
+  .print-preview-sidebar,
+  .preview-page-card,
+  .preview-hidden-measure,
+  .preview-measure-container,
+  .preview-sheet-clone,
+  .preview-page-box,
+  .preview-page-shift,
+  .preview-page-translate,
+  .preview-page-header,
+  .preview-page-content-window,
+  .preview-page-footer,
+  .reporting-header-toolbar,
+  .toolbar-info-row,
+  .toolbar-pills-row,
+  .reporting-image-viewer,
+  .reporting-app-footer,
+  #createViewerPanel,
+  .create-report-arrows,
+  .addendum-overlay,
+  .report-toolbar-wrapper,
+  .top-row,
+  .editor-toolbar,
+  .status-buttons,
+  .buttons,
   .no-print,
   .no-print *,
   .rs-header,
@@ -92,12 +92,49 @@
   textarea {
     display: none !important;
     height: 0 !important;
+    width: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
   }
 
-  /* 6. Page Break Rules for Print */
+  /* 4. Display printable report document container in flow */
+  #rs-printable-document,
+  #rs-printable-document *,
+  .rs-printable-document,
+  .rs-printable-document *,
+  .clinical-print-wrapper,
+  .clinical-print-wrapper *,
+  .editor-paper-sheet,
+  .editor-paper-sheet * {
+    visibility: visible !important;
+  }
+
+  #rs-printable-document,
+  .rs-printable-document,
+  .editor-paper-sheet {
+    display: block !important;
+    position: static !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+  }
+
+  /* 5. Page Break Rules for Print */
   @page {
     size: A4 portrait;
     margin: 12mm 12mm 12mm 12mm;
@@ -105,6 +142,7 @@
 
   #rs-printable-document table,
   .rs-printable-document table,
+  .clinical-print-wrapper,
   .rs-print-header,
   .rs-print-key-images,
   .rs-print-signature-block,
