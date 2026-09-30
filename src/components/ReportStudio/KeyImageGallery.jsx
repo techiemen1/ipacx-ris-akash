@@ -393,20 +393,30 @@ export default function KeyImageGallery({
                           fontWeight: 600,
                           color: "#334155",
                           marginBottom: 6,
-                          lineHeight: 1.3,
+                          lineHeight: 1.35,
                           display: "flex",
                           alignItems: "flex-start",
                           justifyContent: "space-between"
                         }}
                       >
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                        <span 
+                          title={snap.caption || `Key Image ${idx + 1}`}
+                          style={{ 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis", 
+                            display: "-webkit-box", 
+                            WebkitLineClamp: 3, 
+                            WebkitBoxOrient: "vertical",
+                            wordBreak: "break-word"
+                          }}
+                        >
                           {snap.caption || `Key Image ${idx + 1}`}
                         </span>
                         <button
                           type="button"
                           onClick={() => startEditCaption(snap)}
                           title="Edit Caption"
-                          style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 0, marginLeft: 4 }}
+                          style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 0, marginLeft: 4, flexShrink: 0 }}
                         >
                           <Edit2 size={10} />
                         </button>

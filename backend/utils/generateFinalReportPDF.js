@@ -296,9 +296,11 @@ module.exports = async function generateFinalReportPDF(
             try {
               doc.rect(xPos - 2, currentY - 2, imgWidth + 4, imgHeight + 4).lineWidth(0.5).strokeColor("#cbd5e1").stroke();
               doc.image(imgSource, xPos, currentY, { width: imgWidth, height: imgHeight, fit: [imgWidth, imgHeight], align: 'center', valign: 'center' });
+              
+              const titleHeight = doc.font("Helvetica-Bold").fontSize(8).heightOfString(title, { width: imgWidth });
               doc.font("Helvetica-Bold").fontSize(8).fillColor("#1e293b").text(title, xPos, currentY + imgHeight + 4, { width: imgWidth, align: "center" });
               if (metaLines.length > 0) {
-                doc.font("Helvetica").fontSize(7).fillColor("#64748b").text(metaLines.join(" • "), xPos, currentY + imgHeight + 16, { width: imgWidth, align: "center" });
+                doc.font("Helvetica").fontSize(7).fillColor("#64748b").text(metaLines.join(" • "), xPos, currentY + imgHeight + 4 + titleHeight + 2, { width: imgWidth, align: "center" });
               }
             } catch (e) {
               console.warn("PDF Image draw notice:", e.message);

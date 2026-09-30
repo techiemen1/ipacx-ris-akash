@@ -239,10 +239,12 @@ class HybridPacsGateway {
               const tagRes = await axios.get(`${orthancUrl}instances/${firstInstId}/simplified-tags`, { ...config, timeout: 1500 }).catch(() => null);
               if (tagRes && tagRes.data) {
                 const st = tagRes.data;
-                const alt = st.FilmAnnotationCharacterString1 || 
-                            (Array.isArray(st.PerformedProtocolCodeSequence) && st.PerformedProtocolCodeSequence[0]?.CodeMeaning) || 
-                            st.SeriesDescription || 
+                const alt = st.SeriesDescription ||
                             st.ProtocolName || 
+                            st.SequenceName || 
+                            st.ScanningSequence ||
+                            st.FilmAnnotationCharacterString1 || 
+                            (Array.isArray(st.PerformedProtocolCodeSequence) && st.PerformedProtocolCodeSequence[0]?.CodeMeaning) || 
                             st.AcquisitionDeviceProcessingDescription || 
                             st.BodyPartExamined;
                 if (alt && String(alt).trim()) sDesc = String(alt).trim();
