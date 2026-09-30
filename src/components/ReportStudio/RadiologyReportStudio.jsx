@@ -29,9 +29,7 @@ import {
   QrCode
 } from "lucide-react";
 import { openStudyViewer, getViewerUrl } from "../../utils/viewerUtils";
-import { subscribeToViewerMessages, requestViewerSnapshot, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas, injectOHIFBridge } from "../../utils/ViewerBridge";
-import { keyImageService } from "../../services/KeyImageService";
-import { toast } from "react-hot-toast";
+import { subscribeToViewerMessages, detectViewportSliceInfoFromDOM, findSeriesInList, captureActiveViewportCanvas, injectOHIFBridge } from "../../utils/ViewerBridge";
 import "./ReportStudio.css";
 
 export default function RadiologyReportStudio({ studyUIDOverride }) {
