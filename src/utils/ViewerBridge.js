@@ -300,8 +300,9 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
     const sm = iframeWin?.OHIF?.servicesManager || iframeWin?.servicesManager || window?.OHIF?.servicesManager || null;
     const ohifActiveVpId = sm?.services?.viewportGridService?.getState()?.activeViewportId || null;
     const isSidebarOrThumbnail = (el) => {
-      const parentClass = String(el?.closest('[class*="sidebar"], [class*="thumbnail"], [class*="browser"], [class*="panel"], [class*="study"]')?.className || '');
-      return /sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
+      if (!el) return false;
+      const parentClass = String(el.closest('[data-cy="study-browser"], .study-browser, .series-quick-switch, .thumbnail-list, [class*="thumbnail-"]')?.className || '');
+      return /thumbnail|series-quick-switch|study-browser/i.test(parentClass);
     };
     const isElementActive = (el) => {
       if (!el) return false;
@@ -319,20 +320,14 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
       "[data-cy=\"viewport-overlay\"], " +
       ".cornerstone-viewport-element.active, " +
       ".active-viewport, " +
-      "div[class*=\"active\"], " +
-      "div[class*=\"selected\"], " +
-      "div[class*=\"border-primary\"], " +
-      "div[class*=\"ring-primary\"]"
+      "div[data-cy=\"viewport-pane\"], " +
+      "div[class*=\"overlay\"]"
     ));
     
     const filteredActiveEls = activeEls.filter(el => !isSidebarOrThumbnail(el));
 
     if (filteredActiveEls.length > 0) {
       filteredActiveEls.forEach(el => texts.push(el.innerText || el.textContent || ""));
-    } else {
-      const overlayDivs = Array.from(iframeDoc.querySelectorAll("div[class*=\"overlay\"]"));
-      const filteredOverlays = overlayDivs.filter(el => !isSidebarOrThumbnail(el));
-      filteredOverlays.forEach(el => texts.push(el.innerText || el.textContent || ""));
     }
 
     const fullText = texts.join(" ");

@@ -213,16 +213,26 @@ try {
 
         if (csvp) {
           try {
-            if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
-            else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
-            else if (typeof csvp.sliceIndex === "number") sliceIdx = csvp.sliceIndex;
-            else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
+            imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
+            totalSlices = (imageIds && imageIds.length > 0) ? imageIds.length : 1;
+
+            const currentImgId = typeof csvp.getCurrentImageId === "function" ? csvp.getCurrentImageId() : (typeof csvp.currentImageId === "string" ? csvp.currentImageId : null);
+            if (currentImgId && Array.isArray(imageIds) && imageIds.length > 0) {
+              const foundIdx = imageIds.indexOf(currentImgId);
+              if (foundIdx >= 0) {
+                sliceIdx = foundIdx;
+              }
+            } else if (typeof csvp.getCurrentImageIdIndex === "function") {
+              sliceIdx = csvp.getCurrentImageIdIndex();
+            } else if (typeof csvp.getSliceIndex === "function") {
+              sliceIdx = csvp.getSliceIndex();
+            } else if (typeof csvp.sliceIndex === "number") {
+              sliceIdx = csvp.sliceIndex;
+            } else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
               const sd = window.cornerstone3D.utilities.getImageSliceData(csvp);
               if (sd && typeof sd.imageIndex === "number") sliceIdx = sd.imageIndex;
             }
           } catch(e) {}
-          imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
-          totalSlices = imageIds.length || 1;
         }
 
         // DOM Overlay Text Scrape inside OHIF (100% accurate fallback for VolumeViewport & StackViewport)
