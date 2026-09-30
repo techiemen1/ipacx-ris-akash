@@ -915,8 +915,11 @@ export function injectOHIFBridge(iframeEl) {
               try {
                 var activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane'], div[class*='viewport']") || document.body;
                 var paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
+                /* eslint-disable-next-line no-useless-escape */
                 var regDate = new RegExp("^[0-9]{2}-[A-Za-z]{3}-[0-9]{4}");
+                /* eslint-disable-next-line no-useless-escape */
                 var regSlice = new RegExp("^[0-9]+\\s*[/\\(]\\s*[0-9]+");
+                /* eslint-disable-next-line no-useless-escape */
                 var regW = new RegExp("W:[0-9]+");
                 var textLines = paneText.split("\n").map(function(l) { return l.trim(); }).filter(function(l) {
                   return l.length > 1 && !regDate.test(l) && !regSlice.test(l) && !regW.test(l);

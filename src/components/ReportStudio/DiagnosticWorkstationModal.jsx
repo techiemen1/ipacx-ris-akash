@@ -1828,7 +1828,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
       {/* PRINT PREVIEW MODAL */}
       {showPrintModal && (
-        <div style={{
+        <div className="rs-modal-overlay no-print-backdrop" style={{
           position: 'fixed',
           top: 0,
           left: 0,
