@@ -212,11 +212,30 @@ try {
         let imageIds = [];
 
         if (csvp) {
-          if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
-          else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
+          try {
+            if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
+            else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
+            else if (typeof csvp.sliceIndex === "number") sliceIdx = csvp.sliceIndex;
+            else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
+              const sd = window.cornerstone3D.utilities.getImageSliceData(csvp);
+              if (sd && typeof sd.imageIndex === "number") sliceIdx = sd.imageIndex;
+            }
+          } catch(e) {}
           imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
           totalSlices = imageIds.length || 1;
         }
+
+        // DOM Overlay Text Scrape inside OHIF (100% accurate fallback for VolumeViewport & StackViewport)
+        try {
+          const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane']") || document.body;
+          const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
+          const match = paneText.match(/\b(\d+)\s*[\/\(]\s*(\d+)\b/) || paneText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i);
+          if (match && parseInt(match[1], 10) > 0) {
+            const parsedSlice = parseInt(match[1], 10) - 1;
+            if (parsedSlice >= 0) sliceIdx = parsedSlice;
+            if (match[2]) totalSlices = parseInt(match[2], 10);
+          }
+        } catch(e) {}
 
         const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
         const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;

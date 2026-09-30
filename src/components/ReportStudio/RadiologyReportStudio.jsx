@@ -989,7 +989,9 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     }
 
     const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
-    const sliceNumber = (domDetected?.series && (String(domDetected.series.series_id) === String(seriesObj.series_id) || String(domDetected.series.series_instance_uid) === String(seriesObj.series_instance_uid))) ? domDetected.sliceNumber : fallbackSliceNum;
+    const sliceNumber = (domDetected && domDetected.sliceNumber)
+      ? domDetected.sliceNumber
+      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : fallbackSliceNum);
     const totalSlices = seriesObj.total_slices || seriesObj.instances?.length || 1;
     const validSliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
     const instance = seriesObj.instances?.find(inst => parseInt(inst.slice_number || inst.instance_number || 0, 10) === validSliceNumber) || seriesObj.instances?.[Math.min(validSliceNumber - 1, totalSlices - 1)] || seriesObj.instances?.[0];

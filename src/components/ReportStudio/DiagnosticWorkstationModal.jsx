@@ -402,7 +402,7 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
     const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
     const targetSliceNum = (detected && detected.sliceNumber)
       ? detected.sliceNumber
-      : Math.min(Math.max(1, fallbackSliceNum), totalSlices);
+      : (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : Math.min(Math.max(1, fallbackSliceNum), totalSlices));
 
     const instance = targetSeriesObj.instances?.find(inst => 
       parseInt(inst.slice_number || inst.instance_number || 0, 10) === targetSliceNum

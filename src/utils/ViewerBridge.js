@@ -592,8 +592,12 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
         }
       }
 
-      // If no text description matched, return null so caller falls back to user dropdown selection
-      console.log("⚠️ [DOM DETECT] No matching active series found in DOM text.");
+      if (detectedSlice > 1) {
+        console.log("🎯 [DOM DETECT SLICE ONLY] Detected active viewport slice:", detectedSlice);
+        return { sliceNumber: detectedSlice };
+      }
+
+      console.log("⚠️ [DOM DETECT] No matching active series or slice found in DOM text.");
       return null;
     } catch (err) {
       console.warn("⚠️ [DOM DETECT] Notice:", err.message);
