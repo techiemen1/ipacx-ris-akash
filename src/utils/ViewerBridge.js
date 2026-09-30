@@ -827,60 +827,137 @@ export function injectOHIFBridge(iframeEl) {
       (function() {
         console.log("⚡ [OHIF BRIDGE INJECTED] Active viewport listener ready");
 
+        function getActiveState() {
+          try {
+            var sm = window.OHIF && window.OHIF.servicesManager;
+            var vpgs = sm && sm.services && sm.services.viewportGridService;
+            var cvps = sm && sm.services && sm.services.cornerstoneViewportService;
+            var dss = sm && sm.services && sm.services.displaySetService;
+
+            var activeVpId = vpgs && typeof vpgs.getState === "function" ? vpgs.getState().activeViewportId : null;
+            var activeVp = null;
+            if (vpgs && activeVpId && typeof vpgs.getViewport === "function") {
+              try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
+            }
+
+            var csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;
+            var sliceIdx = 0;
+            var totalSlices = 1;
+            var imageIds = [];
+
+            if (csvp) {
+              imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
+              totalSlices = (imageIds && imageIds.length > 0) ? imageIds.length : 1;
+
+              var currentImgId = typeof csvp.getCurrentImageId === "function" ? csvp.getCurrentImageId() : (typeof csvp.currentImageId === "string" ? csvp.currentImageId : null);
+              if (currentImgId && Array.isArray(imageIds) && imageIds.length > 0) {
+                var foundIdx = imageIds.indexOf(currentImgId);
+                if (foundIdx >= 0) {
+                  sliceIdx = foundIdx;
+                }
+              } else if (typeof csvp.getCurrentImageIdIndex === "function") {
+                sliceIdx = csvp.getCurrentImageIdIndex();
+              } else if (typeof csvp.getSliceIndex === "function") {
+                sliceIdx = csvp.getSliceIndex();
+              } else if (typeof csvp.sliceIndex === "number") {
+                sliceIdx = csvp.sliceIndex;
+              } else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
+                var sd = window.cornerstone3D.utilities.getImageSliceData(csvp);
+                if (sd && typeof sd.imageIndex === "number") sliceIdx = sd.imageIndex;
+              }
+            }
+
+            // Scrape DOM text inside iframe for exact overlay slice index (e.g., "223 (223/313)")
+            try {
+              var activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane'], div[class*='viewport']") || document.body;
+              var paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
+              var r1 = new RegExp("([0-9]+)\\s*\\(\\s*([0-9]+)\\s*[/\\(]\\s*([0-9]+)\\s*\\)");
+              var r2 = new RegExp("\\b([0-9]+)\\s*[/\\(]\\s*([0-9]+)\\b");
+              var r3 = new RegExp("(?:Slice|Im|Img|Image|Frame|F|I)\\s*[:#]?\\s*([0-9]+)", "i");
+              var match = paneText.match(r1) || paneText.match(r2) || paneText.match(r3);
+              if (match) {
+                var pNum = parseInt(match[1], 10);
+                if (pNum > 0) {
+                  sliceIdx = pNum - 1;
+                }
+                if (match[3]) {
+                  totalSlices = parseInt(match[3], 10);
+                } else if (match[2] && parseInt(match[2], 10) > pNum) {
+                  totalSlices = parseInt(match[2], 10);
+                }
+              }
+            } catch(e) {}
+
+            var dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
+            var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
+
+            var seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+            var seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
+            var modality = ds ? (ds.Modality || ds.modality) : "CT";
+
+            // Query Cornerstone3D MetaData provider directly
+            if (csvp && imageIds && imageIds.length > 0) {
+              var targetImgId = imageIds[sliceIdx] || imageIds[0];
+              if (targetImgId && window.cornerstone3D && window.cornerstone3D.metaData) {
+                try {
+                  var seriesMod = window.cornerstone3D.metaData.get("generalSeriesModule", targetImgId) || window.cornerstone3D.metaData.get("seriesModule", targetImgId);
+                  if (seriesMod) {
+                    if (!seriesUID) seriesUID = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid;
+                    if (!seriesDesc) seriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc;
+                    if (seriesMod.modality) modality = seriesMod.modality;
+                  }
+                } catch(e) {}
+              }
+            }
+
+            // Native DOM overlay series text scrape inside OHIF
+            if (!seriesDesc || seriesDesc === "Diagnostic Viewport") {
+              try {
+                var activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane'], div[class*='viewport']") || document.body;
+                var paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
+                var regDate = new RegExp("^[0-9]{2}-[A-Za-z]{3}-[0-9]{4}");
+                var regSlice = new RegExp("^[0-9]+\\s*[/\\(]\\s*[0-9]+");
+                var regW = new RegExp("W:[0-9]+");
+                var textLines = paneText.split("\n").map(function(l) { return l.trim(); }).filter(function(l) {
+                  return l.length > 1 && !regDate.test(l) && !regSlice.test(l) && !regW.test(l);
+                });
+                if (textLines.length > 0) {
+                  seriesDesc = textLines[0];
+                }
+              } catch(e) {}
+            }
+
+            if (!seriesDesc) seriesDesc = "Diagnostic Series";
+
+            var sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
+
+            var canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
+            var dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;
+
+            return {
+              type: "OHIF_VIEWPORT_STATE",
+              seriesInstanceUID: seriesUID,
+              seriesDescription: seriesDesc,
+              sliceNumber: sliceIdx + 1,
+              totalSlices: totalSlices,
+              sopInstanceUid: sopUid,
+              modality: modality,
+              dataUrl: dataUrl,
+              timestamp: Date.now()
+            };
+          } catch(err) {
+            console.warn("⚠️ OHIF Bridge processing error:", err);
+            return null;
+          }
+        }
+
         window.addEventListener("message", function(event) {
           if (!event.data || typeof event.data !== "object") return;
 
-          if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT") {
-            try {
-              var sm = window.OHIF && window.OHIF.servicesManager;
-              var vpgs = sm && sm.services && sm.services.viewportGridService;
-              var cvps = sm && sm.services && sm.services.cornerstoneViewportService;
-              var dss = sm && sm.services && sm.services.displaySetService;
-
-              var activeVpId = vpgs && typeof vpgs.getState === "function" ? vpgs.getState().activeViewportId : null;
-              var activeVp = null;
-              if (vpgs && activeVpId && typeof vpgs.getViewport === "function") {
-                try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
-              }
-
-              var csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;
-              var sliceIdx = 0;
-              var totalSlices = 1;
-              var imageIds = [];
-
-              if (csvp) {
-                if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
-                else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
-                imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
-                totalSlices = imageIds.length || 1;
-              }
-
-              var dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
-              var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
-
-              var seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
-              var seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : "Diagnostic Viewport";
-              var modality = ds ? (ds.Modality || ds.modality) : "CT";
-              var sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
-
-              var canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
-              var dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;
-
-              var responsePayload = {
-                type: "OHIF_VIEWPORT_STATE",
-                seriesInstanceUID: seriesUID,
-                seriesDescription: seriesDesc,
-                sliceNumber: sliceIdx + 1,
-                totalSlices: totalSlices,
-                sopInstanceUid: sopUid,
-                modality: modality,
-                dataUrl: dataUrl,
-                timestamp: Date.now()
-              };
-
-              event.source.postMessage(responsePayload, "*");
-            } catch(err) {
-              console.warn("⚠️ OHIF Bridge processing error:", err);
+          if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT" || event.data.type === "REQUEST_SNAPSHOT") {
+            var state = getActiveState();
+            if (state) {
+              event.source.postMessage(state, "*");
             }
           }
         });

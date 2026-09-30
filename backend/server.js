@@ -239,11 +239,12 @@ try {
         try {
           const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane']") || document.body;
           const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
-          const match = paneText.match(/\b(\d+)\s*[\/\(]\s*(\d+)\b/) || paneText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i);
+          const match = paneText.match(/(\d+)\s*\(\s*(\d+)\s*[\/\(]\s*(\d+)\s*\)/) || paneText.match(/\b(\d+)\s*[\/\(]\s*(\d+)\b/) || paneText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i);
           if (match && parseInt(match[1], 10) > 0) {
             const parsedSlice = parseInt(match[1], 10) - 1;
             if (parsedSlice >= 0) sliceIdx = parsedSlice;
-            if (match[2]) totalSlices = parseInt(match[2], 10);
+            if (match[3]) totalSlices = parseInt(match[3], 10);
+            else if (match[2] && parseInt(match[2], 10) > parsedSlice) totalSlices = parseInt(match[2], 10);
           }
         } catch(e) {}
 
