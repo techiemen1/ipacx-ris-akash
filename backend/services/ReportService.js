@@ -90,12 +90,25 @@ function formatStudyDateTime(date, time) {
 class ReportService {
   async getStudyReportByUid(req, uid) {
     const scope = getTenantScope(req);
-    const study = await reportRepository.findStudyWithTenant(uid, req);
-    if (!study) {
+    let study = await reportRepository.findStudyWithTenant(uid, req);
+    const report = await reportRepository.findLatestReport(uid, req);
+
+    if (!study && !report) {
       throw { statusCode: 404, message: "Study not found" };
     }
 
-    const report = await reportRepository.findLatestReport(uid, req);
+    if (!study && report) {
+      study = {
+        study_uid: uid,
+        patient_id: report.patient_id,
+        patient_name: report.patient_name,
+        patient_sex: report.patient_gender || "N/A",
+        patient_age: report.patient_age || "N/A",
+        accession_number: report.accession_number,
+        modality: report.modality,
+        body_part: report.body_part
+      };
+    }
     if (report) {
       report.addendum_reason = await reportRepository.findAddendumReason(report.id);
     }

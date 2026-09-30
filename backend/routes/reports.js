@@ -214,7 +214,15 @@ router.post("/api/addendum/save-reason", async (req, res) => {
 router.get("/api/reports/:id/pdf", async (req, res) => {
   try {
     const pdfPath = await reportService.generateReportPdf(req, req.params.id, false);
+    const reportData = await reportService.getStudyReportByUid(req, req.query.study_uid || "").catch(() => null);
+    const rawName = reportData?.study?.patient_name || reportData?.study?.PatientName || "Patient";
+    const rawAcc = reportData?.study?.accession_number || reportData?.study?.AccessionNumber || "Report";
+    const cleanPatientName = String(rawName).replace(/\^/g, " ").replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").trim() || "Patient";
+    const cleanAccession = String(rawAcc).replace(/[^A-Za-z0-9_-]/g, "_").trim() || "Report";
+    const filename = `Report_${cleanPatientName}_${cleanAccession}.pdf`;
+
     res.contentType("application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
     res.sendFile(path.resolve(pdfPath));
   } catch (err) {
     if (err.statusCode === 404) {
@@ -231,7 +239,16 @@ router.get("/api/reports/:id/pdf", async (req, res) => {
 router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
   try {
     const pdfPath = await reportService.generateStudyReportPdf(req, req.params.studyUid, req.query.type);
-    res.contentType("application/pdf").sendFile(path.resolve(pdfPath));
+    const studyReport = await reportService.getStudyReportByUid(req, req.params.studyUid).catch(() => null);
+    const rawName = studyReport?.report?.patient_name || studyReport?.study?.patient_name || studyReport?.study?.PatientName || "Patient";
+    const rawAcc = studyReport?.report?.accession_number || studyReport?.study?.accession_number || studyReport?.study?.AccessionNumber || "Report";
+    const cleanPatientName = String(rawName).replace(/\^/g, " ").replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").trim() || "Patient";
+    const cleanAccession = String(rawAcc).replace(/[^A-Za-z0-9_-]/g, "_").trim() || "Report";
+    const filename = `Report_${cleanPatientName}_${cleanAccession}.pdf`;
+
+    res.contentType("application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.sendFile(path.resolve(pdfPath));
   } catch (err) {
     if (err.statusCode === 404) {
       return res.status(404).json({ error: err.message });

@@ -1860,12 +1860,33 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
               </span>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
-                  onClick={() => {
-                    if (studyUID) {
+                  onClick={async () => {
+                    if (!studyUID) {
+                      alert("Please save report first to download PDF.");
+                      return;
+                    }
+                    const cleanPatient = String(study.PatientName || "Patient").replace(/\^/g, " ").replace(/[^A-Za-z0-9_-]/g, "_").replace(/_+/g, "_").trim();
+                    const cleanAcc = String(study.AccessionNumber || "Report").replace(/[^A-Za-z0-9_-]/g, "_").trim();
+                    const downloadFileName = `Report_${cleanPatient}_${cleanAcc}.pdf`;
+
+                    try {
+                      const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+                      const response = await api.get(`/api/reports/study/${encodeURIComponent(studyUID)}/pdf?token=${encodeURIComponent(token)}`, {
+                        responseType: 'blob'
+                      });
+                      const blob = new Blob([response.data], { type: 'application/pdf' });
+                      const url = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.setAttribute('download', downloadFileName);
+                      document.body.appendChild(link);
+                      link.click();
+                      link.remove();
+                      window.URL.revokeObjectURL(url);
+                    } catch (err) {
+                      console.error("PDF download error:", err);
                       const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
                       window.open(`/api/reports/study/${encodeURIComponent(studyUID)}/pdf?token=${encodeURIComponent(token)}`, '_blank');
-                    } else {
-                      alert("Please save report first to download PDF.");
                     }
                   }}
                   className="dws-btn"

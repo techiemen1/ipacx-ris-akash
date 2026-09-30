@@ -18,27 +18,48 @@
     margin: 12mm 12mm 12mm 12mm;
   }
 
-  /* 3. Hide all UI Chrome, Navbars, Workstation Containers, Editor Forms & Buttons */
+  /* 3. Hide ALL DOM elements by default during print */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* 4. Display ONLY the printable report document container and its descendants */
+  #rs-printable-document,
+  #rs-printable-document *,
+  .rs-printable-document,
+  .rs-printable-document * {
+    visibility: visible !important;
+  }
+
+  /* 5. Force printable report container to absolute top-left origin */
+  #rs-printable-document,
+  .rs-printable-document {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+  }
+
+  /* 6. Explicitly suppress control elements, action bars, and modal controls */
   .no-print,
+  .no-print *,
   .rs-header,
   .rs-viewmode-bar,
   .rs-header-actions,
   .rs-wysiwyg-toolbar,
   .rs-back-btn,
-  .rs-main-grid,
-  .rs-editor-canvas,
-  .rs-section-card,
-  .rs-split-layout,
-  .rs-viewer-pane,
-  .rs-studio-pane,
-  .rs-rich-editor,
   .dws-header,
-  .dws-main,
-  .dws-left-viewer,
-  .dws-right-studio,
-  .create-report-layout,
-  .create-report-arrows,
-  #createViewerPanel,
   header,
   nav,
   aside,
@@ -48,74 +69,12 @@
   select,
   textarea {
     display: none !important;
-  }
-
-  /* 4. Target exact printable document and hide its siblings in the DOM tree */
-  body > *:not(#root):not(.rs-printable-document):not(#rs-printable-document) {
-    display: none !important;
-  }
-
-  /* 5. Unconstrain Modal Backdrop & Modal Card Containers */
-  div[style*="position: fixed"],
-  div[style*="position: absolute"],
-  div[style*="backdropFilter"],
-  div[style*="maxHeight"],
-  div[style*="zIndex: 1000"],
-  div[style*="zIndex: 10000"] {
-    position: static !important;
-    top: auto !important;
-    left: auto !important;
-    right: auto !important;
-    bottom: auto !important;
-    background: transparent !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    max-height: none !important;
-    height: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    transform: none !important;
-  }
-
-  /* 6. Formatting for #rs-printable-document & #print-area */
-  #rs-printable-document,
-  .rs-printable-document,
-  #print-area,
-  .a4-page {
-    display: block !important;
-    position: relative !important;
-    left: auto !important;
-    top: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 auto !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    overflow: visible !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    visibility: visible !important;
-    font-size: 11pt !important;
-    line-height: 1.5 !important;
-  }
-
-  #rs-printable-document *,
-  .rs-printable-document *,
-  #print-area * {
-    visibility: visible !important;
+    visibility: hidden !important;
   }
 
   /* 7. Header & Section Page Break Protections */
   #rs-printable-document table,
   .rs-printable-document table,
-  #print-area table,
   .rs-print-header,
   .rs-print-key-images,
   .rs-print-signature-block,

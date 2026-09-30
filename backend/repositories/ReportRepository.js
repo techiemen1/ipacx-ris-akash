@@ -40,7 +40,7 @@ class ReportRepository {
 
   async findReportImages(reportId) {
     const imagesRes = await pool.query(
-      `SELECT image_path, caption, image_type, sort_order 
+      `SELECT image_path, COALESCE(caption, 'Key Diagnostic Image') AS caption, image_type, sort_order 
        FROM report_images 
        WHERE report_id=$1 
        ORDER BY sort_order`,
