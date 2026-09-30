@@ -949,8 +949,16 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null, forceModal = false) => {
     // 1. Live DOM overlay detection from OHIF iframe
     const domDetected = detectViewportSliceInfoFromDOM(studySeriesList);
-    // Prioritize selectedSeriesId (user's explicit selection in UI) over stale activeSeriesId
-    const targetSeriesId = overrideSeriesId || (domDetected?.series?.series_id || domDetected?.series?.series_instance_uid) || selectedSeriesId || activeSeriesId || null;
+    // Prioritize explicit user UI selection (overrideSeriesId || selectedSeriesId) over DOM detection or background activeSeriesId
+    const targetSeriesId = overrideSeriesId || selectedSeriesId || (domDetected?.series?.series_id || domDetected?.series?.series_instance_uid) || activeSeriesId || null;
+
+    console.log("🔍 [TRACE 3] SelectedSeriesId & Target:", {
+      overrideSeriesId,
+      selectedSeriesId,
+      domDetectedSeries: domDetected?.series?.series_description || domDetected?.series?.series_id || null,
+      activeSeriesId,
+      finalTargetSeriesId: targetSeriesId
+    });
 
     let seriesObj = null;
     if (targetSeriesId) {
@@ -959,6 +967,10 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
         String(s.series_instance_uid) === String(targetSeriesId) ||
         String(s.orthanc_series_id) === String(targetSeriesId)
       );
+    }
+
+    if (!seriesObj && domDetected?.series) {
+      seriesObj = domDetected.series;
     }
 
     if (!seriesObj) {
@@ -971,7 +983,7 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     }
 
     const fallbackSliceNum = overrideSliceNum || (targetSliceNumber ? parseInt(targetSliceNumber, 10) : null) || (activeViewportInfo?.frameNumber ? parseInt(activeViewportInfo.frameNumber, 10) : null) || 1;
-    const sliceNumber = domDetected?.sliceNumber || fallbackSliceNum;
+    const sliceNumber = (domDetected?.series && (String(domDetected.series.series_id) === String(seriesObj.series_id) || String(domDetected.series.series_instance_uid) === String(seriesObj.series_instance_uid))) ? domDetected.sliceNumber : fallbackSliceNum;
     const totalSlices = seriesObj.total_slices || seriesObj.instances?.length || 1;
     const validSliceNumber = Math.min(Math.max(1, sliceNumber), totalSlices);
     const instance = seriesObj.instances?.find(inst => parseInt(inst.slice_number || inst.instance_number || 0, 10) === validSliceNumber) || seriesObj.instances?.[Math.min(validSliceNumber - 1, totalSlices - 1)] || seriesObj.instances?.[0];
@@ -993,13 +1005,13 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
       studyUID: studyUID,
       seriesUID: seriesObj.series_id || seriesObj.series_instance_uid,
       instanceId: instanceId,
-      sliceNumber: sliceNumber,
+      sliceNumber: validSliceNumber,
       seriesDescription: seriesObj.series_description,
       modality: seriesObj.modality || "CT",
       dataUrl: liveDataUrl || null
     };
 
-    console.log("🚨 [KEY IMAGE 1-CLICK FLASH] Direct save payload:", payload);
+    console.log("🔍 [TRACE 4 VIEWER PAYLOAD] Key image payload sending to backend:", payload);
 
     try {
       const res = await api.post("/api/pacs/v2/key-images/save", payload);

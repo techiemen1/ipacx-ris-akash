@@ -278,31 +278,18 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
     const texts = [];
 
     const activeEls = Array.from(iframeDoc.querySelectorAll(
-      ".viewport-wrapper.active, .viewport-element.active, [data-cy=\"viewport-overlay\"], .cornerstone-viewport-element, .active-viewport, div[class*=\"active\"], div[class*=\"selected\"], div[class*=\"border-primary\"]"
+      ".viewport-wrapper.active, .viewport-element.active, [data-cy=\"viewport-overlay\"], .cornerstone-viewport-element.active, .active-viewport, div[class*=\"active\"], div[class*=\"selected\"], div[class*=\"border-primary\"], div[class*=\"ring-primary\"]"
     ));
     
-    const filteredActiveEls = activeEls.filter(el => {
-      const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"], [class*=\"browser\"], [class*=\"panel\"], [class*=\"study\"]")?.className || "");
-      return !/sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
-    });
+    const filteredActiveEls = activeEls.filter(el => !isSidebarOrThumbnail(el));
 
-    filteredActiveEls.forEach(el => texts.push(el.innerText || el.textContent || ""));
-
-    const overlayDivs = Array.from(iframeDoc.querySelectorAll("div[class*=\"overlay\"], div[class*=\"Viewport\"], div[class*=\"viewport\"]"));
-    const filteredOverlays = overlayDivs.filter(el => {
-      const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"], [class*=\"browser\"], [class*=\"panel\"]")?.className || "");
-      return !/sidebar|thumbnail|browser|panel|study-list/i.test(parentClass);
-    });
-    filteredOverlays.forEach(el => texts.push(el.innerText || el.textContent || ""));
-
-    if (texts.length === 0) {
-      const mainViewports = Array.from(iframeDoc.querySelectorAll(".viewport-element, .cornerstone-canvas, div[class*=\"viewport\"]"));
-      mainViewports.forEach(el => {
-        const parentClass = String(el.closest("[class*=\"sidebar\"], [class*=\"thumbnail\"]")?.className || "");
-        if (!/sidebar|thumbnail|browser/i.test(parentClass)) {
-          texts.push(el.innerText || el.textContent || "");
-        }
-      });
+    if (filteredActiveEls.length > 0) {
+      filteredActiveEls.forEach(el => texts.push(el.innerText || el.textContent || ""));
+    } else {
+      // If no explicit active container class is found, look for overlay divs in main viewport area only
+      const overlayDivs = Array.from(iframeDoc.querySelectorAll("div[class*=\"overlay\"]"));
+      const filteredOverlays = overlayDivs.filter(el => !isSidebarOrThumbnail(el));
+      filteredOverlays.forEach(el => texts.push(el.innerText || el.textContent || ""));
     }
 
     const fullText = texts.join(" ");
@@ -562,13 +549,9 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
         }
       }
 
-      // Ultimate fallback: return first non-scout series with detectedSlice
-      if (studySeriesList.length > 0) {
-        const nonScout = studySeriesList.filter(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || ""));
-        const fallbackSeries = nonScout.length > 0 ? nonScout[0] : studySeriesList[0];
-        console.log("🎯 [DOM DETECT FALLBACK] Non-scout series:", fallbackSeries.series_description, "| Slice:", detectedSlice);
-        return { series: fallbackSeries, sliceNumber: detectedSlice };
-      }
+      // If no text description matched, return null so caller falls back to user dropdown selection
+      console.log("⚠️ [DOM DETECT] No matching active series found in DOM text.");
+      return null;
     } catch (err) {
       console.warn("⚠️ [DOM DETECT] Notice:", err.message);
     }
