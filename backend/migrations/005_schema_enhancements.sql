@@ -15,6 +15,11 @@ ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCH
 ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32);
 ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256);
 
+CREATE TABLE IF NOT EXISTS appointments (
+    id SERIAL PRIMARY KEY,
+    patient_id VARCHAR(64),
+    created_at TIMESTAMP DEFAULT NOW()
+);
 ALTER TABLE appointments ADD COLUMN IF NOT EXISTS scheduled_station_aetitle text;
 
 ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS log_date DATE DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata')::date;
