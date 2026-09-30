@@ -121,6 +121,10 @@ const MobileLiteViewer = () => {
   const lastTapTime = useRef(0);
   const isDragging = useRef(false);
 
+  const activeSeries = seriesList[activeSeriesIndex] || { instances: [] };
+  const currentInstances = activeSeries.instances || [];
+  const currentInstance = currentInstances[currentIndex];
+
   // REFS FOR FRESH STATE IN ASYNC HANDLERS (PREVENT STALE CLOSURES)
   const currentIndexRef = useRef(currentIndex);
   const activeSeriesRef = useRef(activeSeries);
@@ -296,10 +300,6 @@ const MobileLiteViewer = () => {
   useEffect(() => {
     fetchStudyData();
   }, [fetchStudyData]);
-
-  const activeSeries = seriesList[activeSeriesIndex] || { instances: [] };
-  const currentInstances = activeSeries.instances || [];
-  const currentInstance = currentInstances[currentIndex];
 
   const imageUrl = currentInstance 
     ? (currentInstance.previewUrl || currentInstance.preview_url || `/api/pacs/instance-preview/${currentInstance.id || currentInstance.instance_id}`)
