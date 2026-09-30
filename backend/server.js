@@ -190,40 +190,100 @@ try {
 
   const autoTrackScript = `
 <script>
-  // Track ALL user interactions in OHIF viewer
-  let lastActiveSeries = null;
-  
-  function broadcastSeries(seriesUid, seriesDesc, sliceNum) {
-    lastActiveSeries = { seriesUid, seriesDesc, sliceNum };
-    window.parent.postMessage({
-      type: 'OHIF_ACTIVE_SERIES',
-      seriesId: seriesUid,
-      seriesDescription: seriesDesc,
-      sliceNumber: sliceNum || 1
-    }, '*');
-  }
-  
-  // Track thumbnail clicks
-  document.addEventListener('click', (e) => {
-    const seriesItem = e.target.closest('[data-series-uid], .series-thumbnail, .series-item, [class*="thumbnail"], [class*="series"]');
-    if (seriesItem) {
-      const uid = seriesItem.getAttribute('data-series-uid') || seriesItem.dataset?.seriesUid;
-      const desc = seriesItem.getAttribute('data-series-desc') || seriesItem.dataset?.seriesDesc || seriesItem.textContent.trim();
-      if (uid) broadcastSeries(uid, desc, 1);
+  (function() {
+    console.log("⚡ [OHIF AUTOTRACK INJECTED] Active viewport tracker initializing...");
+
+    function getActiveViewportState() {
+      try {
+        const sm = window.OHIF && window.OHIF.servicesManager;
+        const vpgs = sm && sm.services && sm.services.viewportGridService;
+        const cvps = sm && sm.services && sm.services.cornerstoneViewportService;
+        const dss = sm && sm.services && sm.services.displaySetService;
+
+        const activeVpId = vpgs && typeof vpgs.getState === "function" ? vpgs.getState().activeViewportId : null;
+        let activeVp = null;
+        if (vpgs && activeVpId && typeof vpgs.getViewport === "function") {
+          try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
+        }
+
+        const csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;
+        let sliceIdx = 0;
+        let totalSlices = 1;
+        let imageIds = [];
+
+        if (csvp) {
+          if (typeof csvp.getCurrentImageIdIndex === "function") sliceIdx = csvp.getCurrentImageIdIndex();
+          else if (typeof csvp.getSliceIndex === "function") sliceIdx = csvp.getSliceIndex();
+          imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
+          totalSlices = imageIds.length || 1;
+        }
+
+        const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
+        const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
+
+        const seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
+        const seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : "Diagnostic Viewport";
+        const modality = ds ? (ds.Modality || ds.modality) : "CT";
+        const sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
+
+        const canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
+        const dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;
+
+        return {
+          seriesInstanceUID: seriesUID,
+          seriesDescription: seriesDesc,
+          sliceNumber: Math.max(1, sliceIdx + 1),
+          totalSlices: totalSlices,
+          sopInstanceUid: sopUid,
+          modality: modality,
+          dataUrl: dataUrl
+        };
+      } catch(err) {
+        console.warn("⚠️ OHIF AutoTrack error:", err.message);
+        return null;
+      }
     }
-  }, true);
-  
-  // Track viewport changes (scroll, keyboard)
-  document.addEventListener('wheel', () => {
-    if (lastActiveSeries) broadcastSeries(lastActiveSeries.seriesUid, lastActiveSeries.seriesDesc, lastActiveSeries.sliceNum);
-  }, true);
-  
-  // Initial broadcast on load
-  window.addEventListener('load', () => {
-    setTimeout(() => {
-      if (lastActiveSeries) broadcastSeries(lastActiveSeries.seriesUid, lastActiveSeries.seriesDesc, lastActiveSeries.sliceNum);
-    }, 2000);
-  });
+
+    function broadcastState(eventType) {
+      const state = getActiveViewportState();
+      if (!state) return;
+      try {
+        window.parent.postMessage({
+          type: eventType || 'OHIF_VIEWPORT_CHANGE',
+          eventName: eventType || 'OHIF_VIEWPORT_CHANGE',
+          payload: state,
+          ...state
+        }, '*');
+      } catch(e) {}
+    }
+
+    // Listen for requests from RIS Parent Window
+    window.addEventListener("message", function(event) {
+      if (!event.data || typeof event.data !== "object") return;
+
+      if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT" || event.data.type === "REQUEST_SNAPSHOT") {
+        const state = getActiveViewportState();
+        const payload = state || { status: "failed" };
+        event.source.postMessage({
+          type: "OHIF_VIEWPORT_STATE",
+          status: state ? "success" : "failed",
+          payload: payload,
+          ...payload
+        }, "*");
+      }
+    });
+
+    // Track user clicks, scrolls, and key presses
+    document.addEventListener("click", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
+    document.addEventListener("wheel", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
+    document.addEventListener("keydown", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
+
+    // Initial broadcast on load
+    window.addEventListener("load", () => {
+      setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 1500);
+      setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 3000);
+    });
+  })();
 </script>
 `;
 
