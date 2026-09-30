@@ -216,28 +216,33 @@ try {
             imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
             totalSlices = (imageIds && imageIds.length > 0) ? imageIds.length : 1;
 
+            let foundIdx = -1;
             const currentImgId = typeof csvp.getCurrentImageId === "function" ? csvp.getCurrentImageId() : (typeof csvp.currentImageId === "string" ? csvp.currentImageId : null);
             if (currentImgId && Array.isArray(imageIds) && imageIds.length > 0) {
-              const foundIdx = imageIds.indexOf(currentImgId);
-              if (foundIdx >= 0) {
-                sliceIdx = foundIdx;
+              foundIdx = imageIds.indexOf(currentImgId);
+              if (foundIdx < 0) {
+                foundIdx = imageIds.findIndex(id => id.includes(currentImgId) || currentImgId.includes(id));
               }
-            } else if (typeof csvp.getCurrentImageIdIndex === "function") {
+            }
+            if (foundIdx >= 0) {
+              sliceIdx = foundIdx;
+            } else if (typeof csvp.getCurrentImageIdIndex === "function" && typeof csvp.getCurrentImageIdIndex() === "number" && csvp.getCurrentImageIdIndex() >= 0) {
               sliceIdx = csvp.getCurrentImageIdIndex();
-            } else if (typeof csvp.getSliceIndex === "function") {
+            } else if (typeof csvp.getSliceIndex === "function" && typeof csvp.getSliceIndex() === "number" && csvp.getSliceIndex() >= 0) {
               sliceIdx = csvp.getSliceIndex();
-            } else if (typeof csvp.sliceIndex === "number") {
+            } else if (typeof csvp.sliceIndex === "number" && csvp.sliceIndex >= 0) {
               sliceIdx = csvp.sliceIndex;
             } else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
               const sd = window.cornerstone3D.utilities.getImageSliceData(csvp);
-              if (sd && typeof sd.imageIndex === "number") sliceIdx = sd.imageIndex;
+              if (sd && typeof sd.imageIndex === "number" && sd.imageIndex >= 0) sliceIdx = sd.imageIndex;
+              if (sd && typeof sd.numberOfSlices === "number" && sd.numberOfSlices > 0) totalSlices = sd.numberOfSlices;
             }
           } catch(e) {}
         }
 
         // DOM Overlay Text Scrape inside OHIF (100% accurate fallback for VolumeViewport & StackViewport)
         try {
-          const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane']") || document.body;
+          const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[class*='border-primary'][data-cy='viewport-pane'], div[class*='ring-primary'][data-cy='viewport-pane'], div[data-cy='viewport-pane']") || document.body;
           const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
           const match = paneText.match(/(\d+)\s*\(\s*(\d+)\s*[\/\(]\s*(\d+)\s*\)/) || paneText.match(/\b(\d+)\s*[\/\(]\s*(\d+)\b/) || paneText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i);
           if (match && parseInt(match[1], 10) > 0) {

@@ -1645,7 +1645,7 @@ export default function CreateReport() {
         {/* SIDE IMAGE VIEWER */}
         <div className={`reporting-image-viewer ${showViewerPane ? "visible" : ""}`}>
           <iframe
-            src={studyUID ? getViewerUrl(studyUID) : ""}
+            src={studyUID ? getViewerUrl(studyUID, "iframe") : ""}
             title="DICOM Images"
           />
         </div>

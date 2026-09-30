@@ -38,6 +38,14 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     return getNativeViewerUrl(cleanUid);
   }
 
+  // For embedded iframe views in 50:50 workstation split modal:
+  // MUST ALWAYS route through relative same-origin /ohif/viewer (port 3010)
+  // to avoid cross-origin SOP errors, enable autoTrackScript injection,
+  // and guarantee 1:1 live slice tracking and canvas key image capture.
+  if (mode === "iframe" || mode === "embedded") {
+    return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(cleanUid)}`;
+  }
+
   // Clean index.html from path if present
   if (customOhifUrl.endsWith("/index.html")) {
     customOhifUrl = customOhifUrl.slice(0, -11);

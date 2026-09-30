@@ -235,6 +235,15 @@ export function subscribeToViewerMessages(onKeyImageReceived, onViewportStateCha
   };
 }
 
+function getSafeIframeDoc(iframe) {
+  try {
+    if (!iframe) return null;
+    return iframe.contentDocument || iframe.contentWindow?.document || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Detects active slice number, total slices, and series description.
  * 
@@ -247,7 +256,7 @@ export function captureActiveViewportCanvas() {
   try {
     const iframe = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
     if (!iframe) return null;
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    const iframeDoc = getSafeIframeDoc(iframe);
     if (!iframeDoc) return null;
 
     // Strict search order for active/focused viewport canvas
@@ -281,7 +290,7 @@ export function captureActiveViewportCanvas() {
       }
     }
   } catch (e) {
-    console.warn("Canvas capture notice:", e.message);
+    // Silent catch for cross-origin safety
   }
   return null;
 }
@@ -293,11 +302,22 @@ export function detectViewportSliceInfoFromDOM(studySeriesList = []) {
     const iframe = document.querySelector(".dws-iframe, .rs-viewer-iframe, iframe");
     if (!iframe) return null;
 
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    const iframeDoc = getSafeIframeDoc(iframe);
     if (!iframeDoc) return null;
 
-    const iframeWin = iframe.contentWindow;
-    const sm = iframeWin?.OHIF?.servicesManager || iframeWin?.servicesManager || window?.OHIF?.servicesManager || null;
+    let iframeWin = null;
+    try {
+      iframeWin = iframe.contentWindow;
+    } catch (e) {
+      /* ignore */
+    }
+
+    let sm = null;
+    try {
+      sm = iframeWin?.OHIF?.servicesManager || iframeWin?.servicesManager || window?.OHIF?.servicesManager || null;
+    } catch (e) {
+      /* ignore */
+    }
     const ohifActiveVpId = sm?.services?.viewportGridService?.getState()?.activeViewportId || null;
     const isSidebarOrThumbnail = (el) => {
       if (!el) return false;
@@ -815,10 +835,16 @@ export async function requestViewerSnapshot(iframeSelector = 'iframe', studySeri
  */
 export function injectOHIFBridge(iframeEl) {
   try {
-    if (!iframeEl || !iframeEl.contentWindow) return false;
-    const win = iframeEl.contentWindow;
-    const doc = iframeEl.contentDocument || win.document;
-    if (!doc) return false;
+    if (!iframeEl) return false;
+    let win = null;
+    let doc = null;
+    try {
+      win = iframeEl.contentWindow;
+      doc = iframeEl.contentDocument || win?.document;
+    } catch (e) {
+      return false; // Cross-origin iframe: DOM injection restricted by SOP
+    }
+    if (!doc || !win) return false;
 
     if (win.__OHIF_BRIDGE_INJECTED__) return true;
     win.__OHIF_BRIDGE_INJECTED__ = true;

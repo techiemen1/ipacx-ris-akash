@@ -1598,7 +1598,7 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
 >
  <iframe
           title="OHIF Viewer"
-          src={studyUID ? getViewerUrl(studyUID) : ""}
+          src={studyUID ? getViewerUrl(studyUID, "iframe") : ""}
           style={{ width: "100%", height: "100%", border: "none" }}
         />
       </div>
