@@ -22,31 +22,20 @@ export const getNativeViewerUrl = (studyUID) => {
 export const getViewerUrl = (studyUID, mode = "auto") => {
   if (!studyUID) return "#";
 
+  const cleanUid = String(studyUID).trim();
+
   if (mode === "native") {
-    return getNativeViewerUrl(studyUID);
+    return getNativeViewerUrl(cleanUid);
   }
 
   if (mode === "mobile" || (mode === "auto" && isMobileDevice())) {
-    return `/mobile-viewer?study=${encodeURIComponent(studyUID.trim())}`;
-  }
-
-  // For iframe/embedded views, FORCE same-origin relative path /ohif/viewer to eliminate SOP cross-origin blocks
-  if (mode === "iframe" || mode === "embedded") {
-    return `/ohif/viewer?StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+    return `/mobile-viewer?study=${encodeURIComponent(cleanUid)}`;
   }
 
   let customOhifUrl = (localStorage.getItem("OHIF_VIEWER_URL") || process.env.REACT_APP_OHIF_VIEWER_URL || "").trim();
 
-  // If stored URL points to external port/host, fallback to relative /ohif/viewer for same-origin safety
-  if (typeof window !== "undefined" && customOhifUrl) {
-    try {
-      const parsed = new URL(customOhifUrl, window.location.href);
-      if (parsed.origin !== window.location.origin) {
-        customOhifUrl = "/ohif/viewer";
-      }
-    } catch(e) {
-      // Ignore invalid URL parse
-    }
+  if (customOhifUrl.includes("/native-viewer")) {
+    return getNativeViewerUrl(cleanUid);
   }
 
   // Clean index.html from path if present
@@ -61,18 +50,14 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
 
-  // Default to relative same-origin /ohif/viewer
-  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#" || customOhifUrl === "/viewer") {
+  // Default to relative same-origin /ohif/viewer if empty
+  if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
     customOhifUrl = "/ohif/viewer";
-  } else {
-    if (!customOhifUrl.includes("/viewer") && !customOhifUrl.includes("/ohif")) {
-      customOhifUrl = customOhifUrl.replace(/\/+$/, "") + "/ohif/viewer";
-    }
   }
 
   const cleanBase = customOhifUrl.replace(/\/+$/, "");
   const separator = cleanBase.includes("?") ? "&" : "?";
-  return `${cleanBase}${separator}StudyInstanceUIDs=${encodeURIComponent(studyUID.trim())}`;
+  return `${cleanBase}${separator}StudyInstanceUIDs=${encodeURIComponent(cleanUid)}`;
 };
 
 export const openStudyViewer = (study, mode = "auto") => {
