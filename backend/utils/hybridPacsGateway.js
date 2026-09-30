@@ -152,13 +152,28 @@ class HybridPacsGateway {
             });
 
             if (Array.isArray(sRes.data) && sRes.data.length > 0) {
+              const parseDcmStr = (val, fallback = "") => {
+                if (!val) return fallback;
+                if (typeof val === "string") return val.trim();
+                if (typeof val === "number") return String(val);
+                if (Array.isArray(val)) return val.length > 0 ? parseDcmStr(val[0], fallback) : fallback;
+                if (typeof val === "object") {
+                  if (val.Alphabetic) return String(val.Alphabetic).trim();
+                  if (val.phonetic) return String(val.phonetic).trim();
+                  if (Array.isArray(val.Value)) return parseDcmStr(val.Value[0], fallback);
+                  if (val.Value !== undefined) return parseDcmStr(val.Value, fallback);
+                }
+                return String(val).trim() || fallback;
+              };
+
               const seriesList = [];
               for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
                 const serObj = sRes.data[sIdx];
-                const seriesUid = serObj["0020000E"]?.Value?.[0];
-                const seriesDesc = serObj["0008103E"]?.Value?.[0] || serObj["00081030"]?.Value?.[0] || `Series ${sIdx + 1}`;
-                const seriesNum = parseInt(serObj["00200011"]?.Value?.[0] || (sIdx + 1), 10);
-                const sModality = serObj["00080060"]?.Value?.[0] || "";
+                const seriesUid = parseDcmStr(serObj["0020000E"]) || parseDcmStr(serObj.SeriesInstanceUID) || parseDcmStr(serObj.seriesInstanceUid);
+                const rawSeriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || parseDcmStr(serObj.SeriesDescription) || parseDcmStr(serObj.seriesDescription);
+                const sModality = parseDcmStr(serObj["00080060"]) || parseDcmStr(serObj.Modality) || "CT";
+                const seriesDesc = (rawSeriesDesc && typeof rawSeriesDesc === "string" && rawSeriesDesc.trim() !== "") ? rawSeriesDesc.trim() : `${sModality || 'Series'} ${sIdx + 1}`;
+                const seriesNum = parseInt(parseDcmStr(serObj["00200011"]) || parseDcmStr(serObj.SeriesNumber) || (sIdx + 1), 10);
 
                 if (!seriesUid) continue;
 
@@ -172,14 +187,14 @@ class HybridPacsGateway {
                 let instances = [];
                 if (Array.isArray(iRes.data) && iRes.data.length > 0) {
                   iRes.data.sort((a, b) => {
-                    const numA = parseInt(a["00200013"]?.Value?.[0] || 0, 10);
-                    const numB = parseInt(b["00200013"]?.Value?.[0] || 0, 10);
+                    const numA = parseInt(parseDcmStr(a["00200013"]) || parseDcmStr(a.InstanceNumber) || 0, 10);
+                    const numB = parseInt(parseDcmStr(b["00200013"]) || parseDcmStr(b.InstanceNumber) || 0, 10);
                     return numA - numB;
                   });
 
                   instances = iRes.data.map((inst, iIdx) => {
-                    const sopUid = inst["00080018"]?.Value?.[0];
-                    const sliceNum = parseInt(inst["00200013"]?.Value?.[0] || (iIdx + 1), 10);
+                    const sopUid = parseDcmStr(inst["00080018"]) || parseDcmStr(inst.SOPInstanceUID) || parseDcmStr(inst.sopInstanceUid);
+                    const sliceNum = parseInt(parseDcmStr(inst["00200013"]) || parseDcmStr(inst.InstanceNumber) || (iIdx + 1), 10);
                     const pUrl = `/api/pacs/instance-preview/${sopUid}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUid)}&pacsId=${node.id}`;
                     return {
                       id: sopUid,

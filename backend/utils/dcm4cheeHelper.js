@@ -283,8 +283,14 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
       const parseDcmStr = (val, fallback = "") => {
         if (!val) return fallback;
         if (typeof val === "string") return val.trim();
+        if (typeof val === "number") return String(val);
         if (Array.isArray(val)) return val.length > 0 ? parseDcmStr(val[0], fallback) : fallback;
-        if (typeof val === "object") return val.Alphabetic || val.phonetic || (val.Value ? parseDcmStr(val.Value[0], fallback) : fallback);
+        if (typeof val === "object") {
+          if (val.Alphabetic) return String(val.Alphabetic).trim();
+          if (val.phonetic) return String(val.phonetic).trim();
+          if (Array.isArray(val.Value)) return parseDcmStr(val.Value[0], fallback);
+          if (val.Value !== undefined) return parseDcmStr(val.Value, fallback);
+        }
         return String(val).trim() || fallback;
       };
 
@@ -292,11 +298,12 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
         const seriesList = [];
         for (let sIdx = 0; sIdx < sRes.data.length; sIdx++) {
           const serObj = sRes.data[sIdx];
-          const seriesUid = parseDcmStr(serObj["0020000E"]);
-          const seriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || parseDcmStr(serObj["00080060"]) || `Series ${sIdx + 1}`;
-          const seriesNum = parseInt(parseDcmStr(serObj["00200011"]) || (sIdx + 1), 10);
-          const sModality = parseDcmStr(serObj["00080060"]);
-          const totSlicesCount = parseInt(parseDcmStr(serObj["00201209"]) || 0, 10);
+          const seriesUid = parseDcmStr(serObj["0020000E"]) || parseDcmStr(serObj.SeriesInstanceUID) || parseDcmStr(serObj.seriesInstanceUid);
+          const rawSeriesDesc = parseDcmStr(serObj["0008103E"]) || parseDcmStr(serObj["00081030"]) || parseDcmStr(serObj.SeriesDescription) || parseDcmStr(serObj.seriesDescription);
+          const sModality = parseDcmStr(serObj["00080060"]) || parseDcmStr(serObj.Modality) || "CT";
+          const seriesDesc = (rawSeriesDesc && typeof rawSeriesDesc === "string" && rawSeriesDesc.trim() !== "") ? rawSeriesDesc.trim() : `${sModality || 'Series'} ${sIdx + 1}`;
+          const seriesNum = parseInt(parseDcmStr(serObj["00200011"]) || parseDcmStr(serObj.SeriesNumber) || (sIdx + 1), 10);
+          const totSlicesCount = parseInt(parseDcmStr(serObj["00201209"]) || parseDcmStr(serObj.NumberOfSeriesRelatedInstances) || 0, 10);
 
           if (!seriesUid) continue;
 
@@ -310,15 +317,15 @@ async function searchDcm4cheeSeriesAndInstances(studyUID) {
           let instances = [];
           if (Array.isArray(iRes.data) && iRes.data.length > 0) {
             iRes.data.sort((a, b) => {
-              const numA = parseInt(parseDcmStr(a["00200013"]) || 0, 10);
-              const numB = parseInt(parseDcmStr(b["00200013"]) || 0, 10);
+              const numA = parseInt(parseDcmStr(a["00200013"]) || parseDcmStr(a.InstanceNumber) || 0, 10);
+              const numB = parseInt(parseDcmStr(b["00200013"]) || parseDcmStr(b.InstanceNumber) || 0, 10);
               return numA - numB;
             });
 
             const totalCount = iRes.data.length;
             instances = iRes.data.map((inst, iIdx) => {
-              const sopUid = parseDcmStr(inst["00080018"]);
-              const sliceNum = parseInt(parseDcmStr(inst["00200013"]) || (iIdx + 1), 10);
+              const sopUid = parseDcmStr(inst["00080018"]) || parseDcmStr(inst.SOPInstanceUID) || parseDcmStr(inst.sopInstanceUid);
+              const sliceNum = parseInt(parseDcmStr(inst["00200013"]) || parseDcmStr(inst.InstanceNumber) || (iIdx + 1), 10);
               const pUrl = `/api/pacs/instance-preview/${sopUid}?studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUid)}&pacsId=${node.id}`;
               return {
                 id: sopUid,
