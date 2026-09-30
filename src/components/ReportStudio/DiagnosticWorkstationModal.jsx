@@ -363,11 +363,9 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
 
     // Determine target series
     let targetSeriesObj = null;
-    const effectiveSeriesId = overrideSeriesId || activeSeriesId || selectedSeriesId;
+    const effectiveSeriesId = overrideSeriesId || selectedSeriesId || activeSeriesId;
 
-    if (detected && detected.series) {
-      targetSeriesObj = detected.series;
-    } else if (effectiveSeriesId) {
+    if (effectiveSeriesId) {
       targetSeriesObj = (studySeriesList || []).find(s => 
         String(s.series_id) === String(effectiveSeriesId) || 
         String(s.series_instance_uid) === String(effectiveSeriesId) ||
@@ -375,8 +373,12 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
       );
     }
 
+    if (!targetSeriesObj && detected && detected.series) {
+      targetSeriesObj = detected.series;
+    }
+
     if (!targetSeriesObj) {
-      targetSeriesObj = (studySeriesList || [])[0];
+      targetSeriesObj = (studySeriesList || []).find(s => !/topogram|localizer|scout|survey|plan/i.test(s.series_description || s.seriesDescription || "")) || (studySeriesList || [])[0];
     }
 
     if (!targetSeriesObj) {

@@ -89,15 +89,19 @@ export default function KeyImageGallery({
   const maxSlices = currentSeries?.total_slices || currentSeries?.instances?.length || 1;
 
   const handleDirectAttachSlice = async () => {
+    if (typeof onAttachActiveSlice === 'function') {
+      return onAttachActiveSlice(sliceInput, selectedSeriesId);
+    }
+
     // 1. Try to capture live pixels & series info from active viewport overlay
     const liveDataUrl = captureActiveViewportCanvas();
     const detected = detectViewportSliceInfoFromDOM(studySeriesList);
 
-    const effectiveSeriesObj = (detected && detected.series) ? detected.series : ((studySeriesList || []).find(s => 
+    const effectiveSeriesObj = ((studySeriesList || []).find(s => 
       String(s.series_id) === String(selectedSeriesId) || 
       String(s.series_instance_uid) === String(selectedSeriesId) || 
       String(s.orthanc_series_id) === String(selectedSeriesId)
-    ) || currentSeries);
+    )) || (detected && detected.series) || currentSeries;
 
     if (!studyUID || !effectiveSeriesObj) {
       console.warn("🚨 KeyImageGallery: Cannot attach. Missing studyUID or series.");
