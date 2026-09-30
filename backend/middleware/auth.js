@@ -27,7 +27,7 @@ const PUBLIC_EXACT_PATHS = new Set([
  * - /api/public/* (explicit public endpoints)
  * - /public/* (static public content)
  * 
- * REMOVED: /api/pacs/*, /api/reports/*/pdf - these require auth
+ * REMOVED: /api/pacs/*, /api/reports/:id/pdf - these require auth
  */
 const PUBLIC_PREFIX_PATTERNS = [
   /^\/api\/v1\/public\//,
