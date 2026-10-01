@@ -271,16 +271,21 @@ module.exports = async function generateFinalReportPDF(
           }
 
           let imgSource = null;
-          if (rawPath.startsWith("data:image/")) {
+          if (typeof img === "object" && img.image_path && fs.existsSync(img.image_path)) {
+            imgSource = img.image_path;
+          } else if (rawPath.startsWith("data:image/")) {
             const base64Data = rawPath.split(",")[1];
             if (base64Data) {
               imgSource = Buffer.from(base64Data, "base64");
             }
-          } else if (rawPath && rawPath.startsWith("/")) {
-            const absPath = path.join(__dirname, "..", rawPath);
-            if (fs.existsSync(absPath)) imgSource = absPath;
-          } else if (rawPath && fs.existsSync(rawPath)) {
-            imgSource = rawPath;
+          } else if (rawPath) {
+            const cleanRel = rawPath.replace(/^\/+/, "");
+            const absPath = path.join(__dirname, "..", cleanRel);
+            if (fs.existsSync(absPath)) {
+              imgSource = absPath;
+            } else if (fs.existsSync(rawPath)) {
+              imgSource = rawPath;
+            }
           }
 
           if (imgSource) {

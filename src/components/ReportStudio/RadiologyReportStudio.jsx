@@ -6,6 +6,7 @@ import { RADIOLOGY_TEMPLATES } from "./radiologyTemplates";
 import { expandClinicalMacros, CLINICAL_MACROS } from "../../utils/macroEngine";
 import DiagnosticWorkstationModal from "./DiagnosticWorkstationModal";
 import KeyImageGallery from "./KeyImageGallery";
+import DicomKeyImagePickerModal from "./DicomKeyImagePickerModal";
 import {
   Sparkles,
   Zap,
@@ -961,6 +962,11 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
   };
 
   const handleAttachKeyImage = async (overrideSliceNum = null, overrideSeriesId = null, forceModal = false) => {
+    if (forceModal) {
+      setShowSlicePickerModal(true);
+      return;
+    }
+
     const iframeEl = findDicomViewerIframe();
     if (iframeEl) injectOHIFBridge(iframeEl);
 
@@ -978,10 +984,16 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
     // Prioritize active series open in active viewport on screen unless overrideSeriesId is explicitly passed
     const seriesObj = overrideSeriesId
       ? (studySeriesList || []).find(s => String(s.series_id) === String(overrideSeriesId) || String(s.series_instance_uid) === String(overrideSeriesId))
-      : (detectedSeriesObj || (selectedSeriesId ? (studySeriesList || []).find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) : null) || (studySeriesList || [])[0]);
+      : (detectedSeriesObj || (selectedSeriesId ? (studySeriesList || []).find(s => String(s.series_id) === String(selectedSeriesId) || String(s.series_instance_uid) === String(selectedSeriesId)) : null));
 
-    if (!seriesObj) {
-      if (forceModal) setShowSlicePickerModal(true);
+    if (!seriesObj && !detectedSeriesObj && !overrideSeriesId) {
+      setShowSlicePickerModal(true);
+      return;
+    }
+
+    const effectiveSeriesObj = seriesObj || (studySeriesList || [])[0];
+    if (!effectiveSeriesObj) {
+      setShowSlicePickerModal(true);
       return;
     }
 
@@ -1614,6 +1626,26 @@ export default function RadiologyReportStudio({ studyUIDOverride }) {
               document.execCommand('insertHTML', false, chipHtml);
               setFindingsHtml(findingsRef.current.innerHTML);
             }
+          }}
+        />
+        <DicomKeyImagePickerModal
+          isOpen={showSlicePickerModal}
+          onClose={() => setShowSlicePickerModal(false)}
+          studyUID={studyUID}
+          attachedSnapshots={attachedSnapshots}
+          onSelectImage={(savedImage) => {
+            if (!savedImage) return;
+            setAttachedSnapshots(prev => {
+              const imgId = savedImage.id || savedImage.db_id;
+              const imgUrl = savedImage.preview_url || savedImage.previewUrl || savedImage.url;
+              if (prev.some(s => 
+                (s.id && imgId && String(s.id) === String(imgId)) || 
+                (s.preview_url && imgUrl && String(s.preview_url) === String(imgUrl))
+              )) {
+                return prev;
+              }
+              return [...prev, savedImage];
+            });
           }}
         />
       </div>

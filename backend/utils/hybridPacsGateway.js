@@ -425,7 +425,18 @@ class HybridPacsGateway {
         } catch (e) {}
       }
 
-      // Priority 1A: Multi-frame DICOM instance frame rendering (0-indexed for Orthanc)
+      // Priority 1A: Direct /rendered on target single-frame instance (most common for CT/MR series slices)
+      const directRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/rendered`, {
+        responseType: "arraybuffer",
+        ...orthancAuthConfig(),
+        timeout: 2500
+      }).catch(() => null);
+
+      if (directRes && directRes.data && directRes.data.byteLength > 500) {
+        return Buffer.from(directRes.data);
+      }
+
+      // Priority 1B: Multi-frame DICOM instance frame rendering (0-indexed for Orthanc)
       if (frameNumber !== null && frameNumber !== undefined && frameNumber !== "") {
         const frameIdx = parseInt(frameNumber, 10);
         const orthancFrame = (!isNaN(frameIdx) && frameIdx >= 0) ? (frameIdx > 0 ? frameIdx - 1 : frameIdx) : 0;
@@ -437,17 +448,6 @@ class HybridPacsGateway {
         if (frameRes && frameRes.data && frameRes.data.byteLength > 500) {
           return Buffer.from(frameRes.data);
         }
-      }
-
-      // Priority 1B: Direct /rendered on instance for single-frame DICOM instances
-      const directRes = await axios.get(`${orthancUrl}instances/${orthancInstId}/rendered`, {
-        responseType: "arraybuffer",
-        ...orthancAuthConfig(),
-        timeout: 2500
-      }).catch(() => null);
-
-      if (directRes && directRes.data && directRes.data.byteLength > 500) {
-        return Buffer.from(directRes.data);
       }
 
       // Priority 1C: /preview fallback

@@ -50,6 +50,13 @@ export const getViewerUrl = (studyUID, mode = "auto") => {
     customOhifUrl = customOhifUrl.split("StudyInstanceUIDs=")[0].replace(/[?&]$/, "");
   }
 
+  if (mode === "iframe") {
+    // For embedded iframe, force same-origin relative path /ohif/viewer so proxy auto-tracking script is injected
+    if (!customOhifUrl || customOhifUrl.includes(":8042") || customOhifUrl.includes("8042") || customOhifUrl === "/" || customOhifUrl === "#") {
+      customOhifUrl = "/ohif/viewer";
+    }
+  }
+
   // Default to relative same-origin /ohif/viewer if empty
   if (!customOhifUrl || customOhifUrl === "/" || customOhifUrl === "#") {
     customOhifUrl = "/ohif/viewer";

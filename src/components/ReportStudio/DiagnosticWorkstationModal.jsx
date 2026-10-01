@@ -292,15 +292,18 @@ export default function DiagnosticWorkstationModal({ studyUID, initialModality =
           const instId = vpState.sopInstanceUid || vpState.SOPInstanceUID || vpState.instanceId;
           const sDesc = vpState.seriesDescription || vpState.SeriesDescription;
 
-          if (instId) {
+          if (instId || sUid || sDesc) {
             const sliceText = `${sDesc || "Diagnostic Viewport"} | Slice ${fNum || 1}${vpState.totalSlices > 1 ? `/${vpState.totalSlices}` : ''}`;
             setActiveViewportInfo({
               instance_id: instId,
-              preview_url: `/api/pacs/instance-preview/${instId}?studyUID=${encodeURIComponent(studyUID)}`,
+              sopInstanceUid: instId,
+              seriesInstanceUid: sUid,
+              preview_url: instId ? `/api/pacs/instance-preview/${instId}?studyUID=${encodeURIComponent(studyUID)}` : null,
               caption: sliceText,
               frameNumber: fNum,
               totalSlices: vpState.totalSlices,
-              seriesDescription: sDesc
+              seriesDescription: sDesc,
+              dataUrl: vpState.dataUrl || null
             });
           }
 

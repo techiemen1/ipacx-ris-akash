@@ -139,6 +139,7 @@ try {
       if (authHeader) {
         proxyReq.setHeader("Authorization", authHeader);
       }
+      proxyReq.setHeader("Accept-Encoding", "identity");
     } catch (e) {
       // Ignore header setting error
     }
@@ -188,169 +189,220 @@ try {
     })
   );
 
-  const autoTrackScript = `
-<script>
-  (function() {
-    console.log("⚡ [OHIF AUTOTRACK INJECTED] Active viewport tracker initializing...");
-
-    function getActiveViewportState() {
-      try {
-        const sm = window.OHIF && window.OHIF.servicesManager;
-        const vpgs = sm && sm.services && sm.services.viewportGridService;
-        const cvps = sm && sm.services && sm.services.cornerstoneViewportService;
-        const dss = sm && sm.services && sm.services.displaySetService;
-
-        const activeVpId = vpgs && typeof vpgs.getState === "function" ? vpgs.getState().activeViewportId : null;
-        let activeVp = null;
-        if (vpgs && activeVpId && typeof vpgs.getViewport === "function") {
-          try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}
-        }
-
-        const csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;
-        let sliceIdx = 0;
-        let totalSlices = 1;
-        let imageIds = [];
-
-        if (csvp) {
-          try {
-            imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : [];
-            totalSlices = (imageIds && imageIds.length > 0) ? imageIds.length : 1;
-
-            let foundIdx = -1;
-            const currentImgId = typeof csvp.getCurrentImageId === "function" ? csvp.getCurrentImageId() : (typeof csvp.currentImageId === "string" ? csvp.currentImageId : null);
-            if (currentImgId && Array.isArray(imageIds) && imageIds.length > 0) {
-              foundIdx = imageIds.indexOf(currentImgId);
-              if (foundIdx < 0) {
-                foundIdx = imageIds.findIndex(id => id.includes(currentImgId) || currentImgId.includes(id));
-              }
-            }
-            if (foundIdx >= 0) {
-              sliceIdx = foundIdx;
-            } else if (typeof csvp.getCurrentImageIdIndex === "function" && typeof csvp.getCurrentImageIdIndex() === "number" && csvp.getCurrentImageIdIndex() >= 0) {
-              sliceIdx = csvp.getCurrentImageIdIndex();
-            } else if (typeof csvp.getSliceIndex === "function" && typeof csvp.getSliceIndex() === "number" && csvp.getSliceIndex() >= 0) {
-              sliceIdx = csvp.getSliceIndex();
-            } else if (typeof csvp.sliceIndex === "number" && csvp.sliceIndex >= 0) {
-              sliceIdx = csvp.sliceIndex;
-            } else if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {
-              const sd = window.cornerstone3D.utilities.getImageSliceData(csvp);
-              if (sd && typeof sd.imageIndex === "number" && sd.imageIndex >= 0) sliceIdx = sd.imageIndex;
-              if (sd && typeof sd.numberOfSlices === "number" && sd.numberOfSlices > 0) totalSlices = sd.numberOfSlices;
-            }
-          } catch(e) {}
-        }
-
-        // DOM Overlay Text Scrape inside OHIF (100% accurate fallback for VolumeViewport & StackViewport)
-        try {
-          const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[class*='border-primary'][data-cy='viewport-pane'], div[class*='ring-primary'][data-cy='viewport-pane'], div[data-cy='viewport-pane']") || document.body;
-          const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
-          const match = paneText.match(/(\d+)\s*\(\s*(\d+)\s*[\/\(]\s*(\d+)\s*\)/) || paneText.match(/\b(\d+)\s*[\/\(]\s*(\d+)\b/) || paneText.match(/(?:Slice|Im|Img|Image|Frame|F|I)\s*[:#]?\s*(\d+)/i);
-          if (match && parseInt(match[1], 10) > 0) {
-            const parsedSlice = parseInt(match[1], 10) - 1;
-            if (parsedSlice >= 0) sliceIdx = parsedSlice;
-            if (match[3]) totalSlices = parseInt(match[3], 10);
-            else if (match[2] && parseInt(match[2], 10) > parsedSlice) totalSlices = parseInt(match[2], 10);
-          }
-        } catch(e) {}
-
-        const dsUid = activeVp ? (activeVp.displaySetInstanceUID || (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null)) : null;
-        const ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;
-
-        let seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;
-        let seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;
-        let modality = ds ? (ds.Modality || ds.modality) : "CT";
-
-        // Query Cornerstone3D MetaData provider directly for exact image DICOM headers
-        if (csvp && imageIds && imageIds.length > 0) {
-          const currentImgId = imageIds[sliceIdx] || imageIds[0];
-          if (currentImgId && window.cornerstone3D && window.cornerstone3D.metaData) {
-            try {
-              const seriesMod = window.cornerstone3D.metaData.get("generalSeriesModule", currentImgId) || window.cornerstone3D.metaData.get("seriesModule", currentImgId);
-              if (seriesMod) {
-                if (!seriesUID) seriesUID = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid;
-                if (!seriesDesc) seriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc;
-                if (seriesMod.modality) modality = seriesMod.modality;
-              }
-            } catch(e) {}
-          }
-        }
-
-        // Native DOM overlay series text scrape inside OHIF
-        if (!seriesDesc || seriesDesc === "Diagnostic Viewport") {
-          try {
-            const activePane = document.querySelector("div[data-cy='viewport-pane'].active, div[class*='active'][data-cy='viewport-pane'], div[class*='viewport-pane'].active, div[data-cy='viewport-pane']") || document.body;
-            const paneText = activePane ? (activePane.innerText || activePane.textContent || "") : "";
-            const textLines = paneText.split("\n").map(l => l.trim()).filter(l => l.length > 1 && !/^\d{2}-[A-Za-z]{3}-\d{4}/.test(l) && !/^\d+\s*[\/\(]\s*\d+/.test(l) && !/W:\d+/.test(l));
-            if (textLines.length > 0) {
-              seriesDesc = textLines[0];
-            }
-          } catch(e) {}
-        }
-
-        if (!seriesDesc) seriesDesc = "Diagnostic Series";
-
-        const sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;
-
-        const canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (document.querySelector("div[data-cy='viewport-pane'].active canvas, div[class*='active'] canvas, canvas"));
-        const dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;
-
-        return {
-          seriesInstanceUID: seriesUID,
-          seriesDescription: seriesDesc,
-          sliceNumber: Math.max(1, sliceIdx + 1),
-          totalSlices: totalSlices,
-          sopInstanceUid: sopUid,
-          modality: modality,
-          dataUrl: dataUrl
-        };
-      } catch(err) {
-        console.warn("⚠️ OHIF AutoTrack error:", err.message);
-        return null;
-      }
-    }
-
-    function broadcastState(eventType) {
-      const state = getActiveViewportState();
-      if (!state) return;
-      try {
-        window.parent.postMessage({
-          type: eventType || 'OHIF_VIEWPORT_CHANGE',
-          eventName: eventType || 'OHIF_VIEWPORT_CHANGE',
-          payload: state,
-          ...state
-        }, '*');
-      } catch(e) {}
-    }
-
-    // Listen for requests from RIS Parent Window
-    window.addEventListener("message", function(event) {
-      if (!event.data || typeof event.data !== "object") return;
-
-      if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT" || event.data.type === "REQUEST_SNAPSHOT") {
-        const state = getActiveViewportState();
-        const payload = state || { status: "failed" };
-        event.source.postMessage({
-          type: "OHIF_VIEWPORT_STATE",
-          status: state ? "success" : "failed",
-          payload: payload,
-          ...payload
-        }, "*");
-      }
-    });
-
-    // Track user clicks, scrolls, and key presses
-    document.addEventListener("click", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
-    document.addEventListener("wheel", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
-    document.addEventListener("keydown", () => setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 150), true);
-
-    // Initial broadcast on load
-    window.addEventListener("load", () => {
-      setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 1500);
-      setTimeout(() => broadcastState('OHIF_VIEWPORT_CHANGE'), 3000);
-    });
-  })();
-</script>
-`;
+  const autoTrackScript = [
+    '<script>',
+    '(function() {',
+    '  console.log("⚡ [OHIF AUTOTRACK INJECTED] Active viewport tracker initializing...");',
+    '  function getActiveViewportState() {',
+    '    try {',
+    '      var sm = window.OHIF && window.OHIF.servicesManager;',
+    '      var vpgs = sm && sm.services && sm.services.viewportGridService;',
+    '      var cvps = sm && sm.services && sm.services.cornerstoneViewportService;',
+    '      var dss = sm && sm.services && sm.services.displaySetService;',
+    '      var gridState = vpgs && typeof vpgs.getState === "function" ? vpgs.getState() : null;',
+    '      var activeVpId = gridState ? gridState.activeViewportId : null;',
+    '      var activeVp = null;',
+    '      if (gridState && gridState.viewports && activeVpId) {',
+    '        var vps = gridState.viewports;',
+    '        if (typeof vps.get === "function") { activeVp = vps.get(activeVpId); }',
+    '        else if (Array.isArray(vps)) { activeVp = vps.find(function(v) { return v.id === activeVpId || v.viewportId === activeVpId; }); }',
+    '        else if (vps && typeof vps === "object") { activeVp = vps[activeVpId]; }',
+    '      }',
+    '      if (!activeVp && vpgs && activeVpId && typeof vpgs.getViewport === "function") {',
+    '        try { activeVp = vpgs.getViewport(activeVpId); } catch(e) {}',
+    '      }',
+    '      var csvp = cvps && activeVpId && typeof cvps.getCornerstoneViewport === "function" ? cvps.getCornerstoneViewport(activeVpId) : null;',
+    '      if (!csvp && window.cornerstone3D && window.cornerstone3D.getEnabledElements) {',
+    '        try {',
+    '          var enabledEls = window.cornerstone3D.getEnabledElements();',
+    '          if (Array.isArray(enabledEls) && enabledEls.length > 0) {',
+    '            var matchedEl = enabledEls.find(function(item) { return item.viewport && (item.viewport.id === activeVpId || item.viewportId === activeVpId); });',
+    '            csvp = matchedEl ? matchedEl.viewport : enabledEls[0].viewport;',
+    '          }',
+    '        } catch(e) {}',
+    '      }',
+    '      var activePane = null;',
+    '      if (csvp && csvp.element) {',
+    '        activePane = csvp.element.closest("div[data-cy=\'viewport-pane\']") || csvp.element.parentElement || csvp.element;',
+    '      }',
+    '      if (!activePane && activeVpId) {',
+    '        activePane = document.querySelector("div[data-cy=\'viewport-pane\'][data-viewport-id=\'" + activeVpId + "\']") || document.getElementById(activeVpId);',
+    '      }',
+    '      if (!activePane) {',
+    '        activePane = document.querySelector("div[aria-selected=\'true\'][data-cy=\'viewport-pane\'], div[data-cy=\'viewport-pane\'].active, div[class*=\'active\'][data-cy=\'viewport-pane\'], div[class*=\'border-primary\'][data-cy=\'viewport-pane\'], div[class*=\'ring-primary\'][data-cy=\'viewport-pane\']");',
+    '      }',
+    '      if (!activePane && document.activeElement) {',
+    '        activePane = document.activeElement.closest("div[data-cy=\'viewport-pane\']");',
+    '      }',
+    '      if (!activePane) {',
+    '        var allPanes = document.querySelectorAll("div[data-cy=\'viewport-pane\']");',
+    '        if (allPanes.length === 1) activePane = allPanes[0];',
+    '      }',
+    '      var sliceIdx = -1;',
+    '      var totalSlices = 1;',
+    '      var imageIds = [];',
+    '      if (csvp) {',
+    '        try {',
+    '          if (window.cornerstone3D && window.cornerstone3D.utilities && typeof window.cornerstone3D.utilities.getImageSliceData === "function") {',
+    '            var sd = window.cornerstone3D.utilities.getImageSliceData(csvp);',
+    '            if (sd) {',
+    '              if (typeof sd.imageIndex === "number" && sd.imageIndex >= 0) sliceIdx = sd.imageIndex;',
+    '              if (typeof sd.numberOfSlices === "number" && sd.numberOfSlices > 0) totalSlices = sd.numberOfSlices;',
+    '            }',
+    '          }',
+    '        } catch(e) {}',
+    '        if (sliceIdx < 0) {',
+    '          try {',
+    '            if (typeof csvp.getCurrentImageIdIndex === "function" && typeof csvp.getCurrentImageIdIndex() === "number" && csvp.getCurrentImageIdIndex() >= 0) {',
+    '              sliceIdx = csvp.getCurrentImageIdIndex();',
+    '            } else if (typeof csvp.getTargetImageIdIndex === "function" && typeof csvp.getTargetImageIdIndex() === "number" && csvp.getTargetImageIdIndex() >= 0) {',
+    '              sliceIdx = csvp.getTargetImageIdIndex();',
+    '            } else if (typeof csvp.getSliceIndex === "function" && typeof csvp.getSliceIndex() === "number" && csvp.getSliceIndex() >= 0) {',
+    '              sliceIdx = csvp.getSliceIndex();',
+    '            } else if (typeof csvp.sliceIndex === "number" && csvp.sliceIndex >= 0) {',
+    '              sliceIdx = csvp.sliceIndex;',
+    '            }',
+    '          } catch(e) {}',
+    '        }',
+    '        try {',
+    '          imageIds = typeof csvp.getImageIds === "function" ? csvp.getImageIds() : (csvp.imageIds || []);',
+    '          if (Array.isArray(imageIds) && imageIds.length > 0) {',
+    '            if (totalSlices <= 1) totalSlices = imageIds.length;',
+    '            if (sliceIdx < 0) {',
+    '              var currentImgId = typeof csvp.getCurrentImageId === "function" ? csvp.getCurrentImageId() : (csvp.currentImageId || null);',
+    '              if (currentImgId) {',
+    '                var foundIdx = imageIds.indexOf(currentImgId);',
+    '                if (foundIdx < 0) {',
+    '                  foundIdx = imageIds.findIndex(function(id) { return id.includes(currentImgId) || currentImgId.includes(id); });',
+    '                }',
+    '                if (foundIdx >= 0) sliceIdx = foundIdx;',
+    '              }',
+    '            }',
+    '          }',
+    '        } catch(e) {}',
+    '      }',
+    '      if (activePane) {',
+    '        try {',
+    '          var paneText = activePane.innerText || activePane.textContent || "";',
+    '          var rOHIFOverlay = new RegExp("(?:\\\\d+\\\\s*:\\\\s*)?(\\\\d+)\\\\s*\\\\(\\\\s*(\\\\d+)\\\\s*[\\\\/\\\\(]\\\\s*(\\\\d+)\\\\s*\\\\)", "i");',
+    '          var rSlash = new RegExp("\\\\b(\\\\d+)\\\\s*[\\\\/\\\\(]\\\\s*(\\\\d+)\\\\b", "i");',
+    '          var rSlice = new RegExp("(?:Slice|Im|Img|Image|Frame|F|I)\\\\s*[:#]?\\\\s*(\\\\d+)", "i");',
+    '          var match = paneText.match(rOHIFOverlay) || paneText.match(rSlash) || paneText.match(rSlice);',
+    '          if (match) {',
+    '            var parsedNum = parseInt(match[1], 10);',
+    '            if (parsedNum > 0) {',
+    '              var parsedIndex = parsedNum - 1;',
+    '              if (sliceIdx <= 0 || sliceIdx !== parsedIndex) {',
+    '                sliceIdx = parsedIndex;',
+    '              }',
+    '            }',
+    '            var parsedTotal = match[3] ? parseInt(match[3], 10) : (match[2] ? parseInt(match[2], 10) : 0);',
+    '            if (parsedTotal > totalSlices) totalSlices = parsedTotal;',
+    '          }',
+    '        } catch(e) {}',
+    '      }',
+    '      if (sliceIdx < 0) sliceIdx = 0;',
+    '      var dsUid = activeVp ? (',
+    '        activeVp.displaySetInstanceUID ||',
+    '        (Array.isArray(activeVp.displaySetInstanceUIDs) ? activeVp.displaySetInstanceUIDs[0] : null) ||',
+    '        (activeVp.displaySetOptions && activeVp.displaySetOptions[0] ? (activeVp.displaySetOptions[0].displaySetInstanceUID || (Array.isArray(activeVp.displaySetOptions[0].displaySetInstanceUIDs) ? activeVp.displaySetOptions[0].displaySetInstanceUIDs[0] : null)) : null)',
+    '      ) : null;',
+    '      var ds = (dss && dsUid && typeof dss.getDisplaySetByUID === "function") ? dss.getDisplaySetByUID(dsUid) : null;',
+    '      var seriesUID = ds ? (ds.SeriesInstanceUID || ds.seriesInstanceUid) : null;',
+    '      var seriesDesc = ds ? (ds.SeriesDescription || ds.seriesDescription) : null;',
+    '      var modality = ds ? (ds.Modality || ds.modality) : "CT";',
+    '      if (csvp && imageIds && imageIds.length > 0) {',
+    '        var currentImgId = imageIds[sliceIdx] || imageIds[0];',
+    '        if (currentImgId && window.cornerstone3D && window.cornerstone3D.metaData) {',
+    '          try {',
+    '            var seriesMod = window.cornerstone3D.metaData.get("generalSeriesModule", currentImgId) || window.cornerstone3D.metaData.get("seriesModule", currentImgId);',
+    '            if (seriesMod) {',
+    '              if (!seriesUID) seriesUID = seriesMod.seriesInstanceUID || seriesMod.seriesInstanceUid;',
+    '              if (!seriesDesc) seriesDesc = seriesMod.seriesDescription || seriesMod.seriesDesc;',
+    '              if (seriesMod.modality) modality = seriesMod.modality;',
+    '            }',
+    '          } catch(e) {}',
+    '        }',
+    '      }',
+    '      if ((!seriesDesc || seriesDesc === "Diagnostic Viewport" || seriesDesc === "Diagnostic Series") && activePane) {',
+    '        try {',
+    '          var paneText = activePane.innerText || activePane.textContent || "";',
+    '          var rDate = new RegExp("^\\\\d{2}-[A-Za-z]{3}-\\\\d{4}");',
+    '          var rSlice = new RegExp("^\\\\d+\\\\s*[\\\\/\\\\(]\\\\s*\\\\d+");',
+    '          var rWL = new RegExp("W:\\\\d+");',
+    '          var textLines = paneText.split("\\n").map(function(l) { return l.trim(); }).filter(function(l) {',
+    '            return l.length > 1 && !rDate.test(l) && !rSlice.test(l) && !rWL.test(l);',
+    '          });',
+    '          if (textLines.length > 0) {',
+    '            seriesDesc = textLines[0];',
+    '          }',
+    '        } catch(e) {}',
+    '      }',
+    '      if (!seriesDesc) seriesDesc = "Diagnostic Series";',
+    '      var sopUid = (ds && ds.images && ds.images[sliceIdx]) ? (ds.images[sliceIdx].SOPInstanceUID || ds.images[sliceIdx].sopInstanceUid) : null;',
+    '      var canvas = csvp && csvp.element ? csvp.element.querySelector("canvas") : (activePane ? activePane.querySelector("canvas") : document.querySelector("canvas"));',
+    '      var dataUrl = canvas && canvas.width > 50 ? canvas.toDataURL("image/jpeg", 0.92) : null;',
+    '      return {',
+    '        seriesInstanceUID: seriesUID,',
+    '        seriesDescription: seriesDesc,',
+    '        sliceNumber: Math.max(1, sliceIdx + 1),',
+    '        totalSlices: totalSlices,',
+    '        sopInstanceUid: sopUid,',
+    '        modality: modality,',
+    '        dataUrl: dataUrl',
+    '      };',
+    '    } catch(err) {',
+    '      console.warn("⚠️ OHIF AutoTrack error:", err.message);',
+    '      return null;',
+    '    }',
+    '  }',
+    '  function broadcastState(eventType) {',
+    '    var state = getActiveViewportState();',
+    '    if (!state) return;',
+    '    try {',
+    '      window.parent.postMessage({',
+    '        type: eventType || "OHIF_VIEWPORT_CHANGE",',
+    '        eventName: eventType || "OHIF_VIEWPORT_CHANGE",',
+    '        payload: state,',
+    '        seriesInstanceUID: state.seriesInstanceUID,',
+    '        seriesDescription: state.seriesDescription,',
+    '        sliceNumber: state.sliceNumber,',
+    '        totalSlices: state.totalSlices,',
+    '        sopInstanceUid: state.sopInstanceUid,',
+    '        modality: state.modality,',
+    '        dataUrl: state.dataUrl',
+    '      }, "*");',
+    '    } catch(e) {}',
+    '  }',
+    '  window.addEventListener("message", function(event) {',
+    '    if (!event.data || typeof event.data !== "object") return;',
+    '    if (event.data.type === "OHIF_GET_ACTIVE_VIEWPORT" || event.data.type === "REQUEST_SNAPSHOT") {',
+    '      var state = getActiveViewportState();',
+    '      var payload = state || { status: "failed" };',
+    '      event.source.postMessage({',
+    '        type: "OHIF_VIEWPORT_STATE",',
+    '        status: state ? "success" : "failed",',
+    '        payload: payload,',
+    '        seriesInstanceUID: payload.seriesInstanceUID,',
+    '        seriesDescription: payload.seriesDescription,',
+    '        sliceNumber: payload.sliceNumber,',
+    '        totalSlices: payload.totalSlices,',
+    '        sopInstanceUid: payload.sopInstanceUid,',
+    '        modality: payload.modality,',
+    '        dataUrl: payload.dataUrl',
+    '      }, "*");',
+    '    }',
+    '  });',
+    '  document.addEventListener("click", function() { setTimeout(function() { broadcastState("OHIF_VIEWPORT_CHANGE"); }, 150); }, true);',
+    '  document.addEventListener("wheel", function() { setTimeout(function() { broadcastState("OHIF_VIEWPORT_CHANGE"); }, 150); }, true);',
+    '  document.addEventListener("keydown", function() { setTimeout(function() { broadcastState("OHIF_VIEWPORT_CHANGE"); }, 150); }, true);',
+    '  window.addEventListener("load", function() {',
+    '    setTimeout(function() { broadcastState("OHIF_VIEWPORT_CHANGE"); }, 1500);',
+    '    setTimeout(function() { broadcastState("OHIF_VIEWPORT_CHANGE"); }, 3000);',
+    '  });',
+    '})();',
+    '</script>'
+  ].join('\n');
 
   app.use(
     "/viewer",
@@ -370,8 +422,22 @@ try {
         proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
           const contentType = proxyRes.headers["content-type"] || "";
           if (contentType.includes("html")) {
-            const body = responseBuffer.toString("utf8");
-            return body.replace("</head>", `${autoTrackScript}\n</head>`);
+            let bodyStr = "";
+            const encoding = proxyRes.headers["content-encoding"];
+            try {
+              if (encoding === "gzip") {
+                bodyStr = zlib.gunzipSync(responseBuffer).toString("utf8");
+              } else if (encoding === "deflate") {
+                bodyStr = zlib.inflateSync(responseBuffer).toString("utf8");
+              } else {
+                bodyStr = responseBuffer.toString("utf8");
+              }
+            } catch (e) {
+              bodyStr = responseBuffer.toString("utf8");
+            }
+            delete proxyRes.headers["content-encoding"];
+            delete proxyRes.headers["content-length"];
+            return bodyStr.replace("</head>", `${autoTrackScript}\n</head>`);
           }
           return responseBuffer;
         }),
@@ -396,8 +462,22 @@ try {
         proxyRes: responseInterceptor(async (responseBuffer, proxyRes) => {
           const contentType = proxyRes.headers["content-type"] || "";
           if (contentType.includes("html")) {
-            const body = responseBuffer.toString("utf8");
-            return body.replace("</head>", `${autoTrackScript}\n</head>`);
+            let bodyStr = "";
+            const encoding = proxyRes.headers["content-encoding"];
+            try {
+              if (encoding === "gzip") {
+                bodyStr = zlib.gunzipSync(responseBuffer).toString("utf8");
+              } else if (encoding === "deflate") {
+                bodyStr = zlib.inflateSync(responseBuffer).toString("utf8");
+              } else {
+                bodyStr = responseBuffer.toString("utf8");
+              }
+            } catch (e) {
+              bodyStr = responseBuffer.toString("utf8");
+            }
+            delete proxyRes.headers["content-encoding"];
+            delete proxyRes.headers["content-length"];
+            return bodyStr.replace("</head>", `${autoTrackScript}\n</head>`);
           }
           return responseBuffer;
         }),

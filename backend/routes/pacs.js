@@ -986,91 +986,15 @@ router.get("/direct-instance/:studyUID/:seriesUID/:instanceId", asyncHandler(asy
 }));
 
 router.post("/v2/key-images/save", asyncHandler(async (req, res) => {
-  console.log("🔍 [TRACE 5: BACKEND SAVE] Received payload:", req.body);
-  const { 
-    reportId, 
-    studyUID, 
-    seriesUID, 
-    instanceId, 
-    sliceNumber,
-    seriesDescription,
-    modality
-  } = req.body;
-
-  if (!studyUID || !seriesUID || !instanceId) {
-    return res.status(400).json({ success: false, error: "Missing required parameters: studyUID, seriesUID, or instanceId" });
-  }
-
-  console.log("[V2 Key Image Save] Request:", {
-    reportId, studyUID, seriesUID, instanceId, sliceNumber
+  console.log("🔍 [V2 Key Image Save] Processing payload:", { 
+    studyUID: req.body.studyUID, 
+    seriesUID: req.body.seriesUID, 
+    instanceId: req.body.instanceId, 
+    sliceNumber: req.body.sliceNumber,
+    hasDataUrl: !!(req.body.dataUrl && req.body.dataUrl.length > 500)
   });
-
-  let buffer = null;
-
-  // 1. Priority 1: Direct live canvas Base64 JPEG dataUrl provided by frontend
-  if (req.body.dataUrl && typeof req.body.dataUrl === "string" && req.body.dataUrl.startsWith("data:image")) {
-    try {
-      const base64Data = req.body.dataUrl.replace(/^data:image\/\w+;base64,/, "");
-      const b = Buffer.from(base64Data, "base64");
-      if (b && b.length > 500) {
-        buffer = b;
-        console.log("✅ [V2 Key Image Save] Using live active canvas dataUrl buffer:", buffer.length, "bytes");
-      }
-    } catch (e) {
-      console.warn("Failed parsing live dataUrl base64:", e.message);
-    }
-  }
-
-  // 2. Priority 2: Fetch rendered slice buffer directly from PACS (Orthanc / DCM4CHEE-ARC)
-  if (!buffer || buffer.length < 500) {
-    buffer = await hybridPacsGateway.fetchHybridInstanceBuffer(
-      studyUID,
-      seriesUID,
-      instanceId,
-      sliceNumber
-    );
-  }
-
-  if (!buffer || buffer.length < 500) {
-    throw new Error("Failed to fetch instance from PACS");
-  }
-
-  const reportImagesDir = path.join(__dirname, "../uploads/report_images");
-  if (!fs.existsSync(reportImagesDir)) {
-    fs.mkdirSync(reportImagesDir, { recursive: true });
-  }
-
-  const cleanStudy = String(studyUID || 'study').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const cleanSeriesDesc = String(seriesDescription || 'series').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `key_${cleanStudy}_${cleanSeriesDesc}_s${sliceNumber}_${Date.now()}.jpg`;
-  const filePath = path.join(reportImagesDir, filename);
-  fs.writeFileSync(filePath, buffer);
-
-  const previewUrl = `/uploads/report_images/${filename}`;
-
-  const result = await pool.query(
-    `INSERT INTO public.study_key_images 
-     (report_id, study_uid, series_uid, sop_instance_uid, instance_id, slice_number, series_description, modality, image_path, preview_url, caption, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
-     RETURNING *`,
-    [
-      reportId || null,
-      studyUID,
-      seriesUID,
-      instanceId,
-      instanceId,
-      sliceNumber,
-      seriesDescription || "Unknown",
-      modality || "CT",
-      filePath,
-      previewUrl,
-      `${seriesDescription || 'Series'} | ${sliceNumber}`
-    ]
-  );
-
-  const dbRow = result.rows[0];
-  console.log("🔍 [TRACE 5: BACKEND SAVE] DB Inserted Row:", dbRow ? { id: dbRow.id, series_description: dbRow.series_description, preview_url: dbRow.preview_url } : "FAILED");
-  res.json({ success: true, data: result.rows[0] });
+  const result = await processKeyImageSave(req.body, req.user);
+  res.json({ success: true, data: result });
 }));
 
 router.post("/v1/studies/:studyId/key-images", asyncHandler(async (req, res) => {
